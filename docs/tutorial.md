@@ -525,7 +525,7 @@ In VV, modules are very similar to functions.
   the code is executed as a main module.  
 
 Also, you can use `import` expression to load the
-[Standard Library](https://github.com/malivvan/vv/blob/master/docs/stdlib.md) as
+[Standard Library](https://github.com/malivvan/vv/blob/master/docs/std.md) as
 well.
 
 ```golang

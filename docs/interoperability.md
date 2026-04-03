@@ -150,14 +150,14 @@ the following Script functions.
 
 SetImports sets the import modules with corresponding names. Script **does not**
 include any modules by default. You can use this function to include the
-[Standard Library](https://github.com/malivvan/vv/blob/master/docs/stdlib.md).
+[Standard Library](https://github.com/malivvan/vv/blob/master/docs/std.md).
 
 ```golang
 s := vv.NewScript([]byte(`math := import("math"); a := math.abs(-19.84)`))
 
-s.SetImports(stdlib.GetModuleMap("math"))
+s.SetImports(std.GetModuleMap("math"))
 // or, to include all stdlib at once
-s.SetImports(stdlib.GetModuleMap(stdlib.AllModuleNames()...))
+s.SetImports(std.GetModuleMap(std.AllModuleNames()...))
 ```
 
 You can also include VV's written module using `objects.SourceModule`

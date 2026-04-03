@@ -9,32 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/malivvan/vv/pkg/cli"
+	"github.com/malivvan/vv/std"
 	"github.com/malivvan/vv/vm"
 	"github.com/malivvan/vv/vm/parser"
-	"github.com/malivvan/vv/vm/stdlib"
 )
 
-var (
-	version string
-	commit  string
-)
-
-func Version() string {
-	if version == "" {
-		return "unknown"
-	}
-	return version
-}
-
-func Commit() string {
-	if commit == "" {
-		return "unknown"
-	}
-	return commit
-}
-
-var Modules = stdlib.GetModuleMap(stdlib.AllModuleNames()...)
+// Modules is a map of all standard library modules.
+var Modules = std.GetModuleMap(std.AllModuleNames()...)
 
 // CompileOnly compiles the source code and writes the compiled binary into
 // outputFile.
@@ -207,88 +188,4 @@ func basename(s string) string {
 		return s[:n]
 	}
 	return s
-}
-
-func NewCli(ui cli.ActionFunc) (*cli.App, error) {
-	app := &cli.App{
-		Name:      "vv",
-		Usage:     "a general-purpose programming language",
-		Version:   version,
-		Reader:    os.Stdin,
-		Writer:    os.Stdout,
-		ErrWriter: os.Stderr,
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "home",
-				Usage:   "VV home directory",
-				EnvVars: []string{"VVHOME"},
-				Value:   filepath.Join(os.Getenv("HOME"), ".vv"),
-			},
-		},
-	}
-
-	app.Action = ui
-	app.Commands = []*cli.Command{
-		{
-			Name:    "version",
-			Aliases: []string{"v"},
-			Usage:   "print version information",
-			Action: func(c *cli.Context) error {
-				fmt.Printf("vv v%s [%s]\n", Version(), Commit())
-				return nil
-			},
-		},
-		{
-			Name:    "run",
-			Aliases: []string{"r"},
-			Usage:   "run a VV program",
-			Action: func(ctx *cli.Context) error {
-				if ctx.Args().Len() != 1 {
-					return fmt.Errorf("run command requires exactly one argument")
-				}
-				inputFile := ctx.Args().Get(0)
-				data, err := os.ReadFile(inputFile)
-				if err != nil {
-					return fmt.Errorf("error reading input file %s: %w", inputFile, err)
-				}
-				if string(data[:len(Magic)]) == Magic {
-					return RunCompiled(ctx.Context, data)
-				}
-				return CompileAndRun(ctx.Context, data, inputFile)
-			},
-		},
-		{
-			Name:    "build",
-			Aliases: []string{"b"},
-			Usage:   "build a VV program",
-			Flags: []cli.Flag{
-				&cli.StringFlag{
-					Name:    "output",
-					Aliases: []string{"o"},
-					Usage:   "output file name",
-					Value:   "",
-				},
-			},
-			Action: func(c *cli.Context) error {
-				if c.Args().Len() != 1 {
-					return fmt.Errorf("build command requires exactly one argument")
-				}
-				inputFile := c.Args().Get(0)
-				outputFile := c.String("output")
-				if outputFile == "" {
-					outputFile = filepath.Base(inputFile) + ".out"
-				}
-				data, err := os.ReadFile(inputFile)
-				if err != nil {
-					return fmt.Errorf("error reading input file %s: %w", inputFile, err)
-				}
-				if err := CompileOnly(data, inputFile, outputFile); err != nil {
-					return fmt.Errorf("error compiling program: %w", err)
-				}
-				fmt.Printf("Compiled %s to %s\n", inputFile, outputFile)
-				return nil
-			},
-		},
-	}
-	return app, nil
 }
