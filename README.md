@@ -165,29 +165,5 @@ make release    # build for all platforms
 make docs       # generate docs
 ```
 
-## Milestones
-- [x] console ui module
-- [x] routines and channels
-- [ ] scriptable webserver module
-- [ ] sh compatible shell for direct bytecode execution
-- [ ] secure self updates using github-releases
-- [ ] ssh system service for running programs in the background
-- [ ] webassembly port with web worker support for concurrency
-
-> **NOTE** there will never be any form of cgo support / usage
-
-## Packages
-| package               | repository                                                                                                               | license                                                                  |
-|-----------------------|--------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
-| `cui`                 | [codeberg.org/tslocum/cview](https://codeberg.org/tslocum/cview/src/commit/242e7c1f1b61a4b3722a1afb45ca1165aefa9a59)     | [MIT](pkg/cui/LICENSE)                                                   |
-| `cui/bind.go`         | [codeberg.org/tslocum/cbind](https://codeberg.org/tslocum/cbind/src/commit/5cd49d3cfccbe4eefaab8a5282826aa95100aa42)     | [MIT](pkg/cui/LICENSE)                                                   |
-| `cui/chart`           | [github.com/navidys/tvxwidgets](https://github.com/navidys/tvxwidgets/tree/96bcc0450684693eebd4f8e3e95fcc40eae2dbaa)     | [MIT](pkg/cui/chart/LICENSE)                                             |
-| `cui/editor`          | [github.com/pgavlin/femto](https://github.com/pgavlin/femto/tree/0c9d20f9cac4e331c04ec606b7e19b6f1cdef1d6)               | [MIT](pkg/cui/editor/LICENSE), [MIT](pkg/cui/editor/LICENSE-THIRD-PARTY) |
-| `cui/menu`            | [github.com/Racinettee/tmenu](https://github.com/Racinettee/tmenu/tree/73ccc3e8d2b648710839be343c76bd8d5a921188)         | [BSD 3-Clause License](pkg/cui/menu/LICENSE)                             |
-| `cui/vte`             | [git.sr.ht/~rockorager/tcell-term](https://git.sr.ht/~rockorager/tcell-term/refs/v0.10.0)                                | [MIT](pkg/cui/vte/LICENSE)                                               |
-| `sh/readline`         | [github.com/ergochat/readline](https://github.com/ergochat/readline/tree/16c2b715d64d44ca79cc211873c4492404cd0bd1)       | [MIT](pkg/sh/readline/LICENSE)                                           |
-| `ssh`                 | [github.com/ferama/rospo](https://github.com/ferama/rospo/tree/v0.15.0)                                                  | [MIT](pkg/ssh/LICENSE)                                                   |
-| `cli`                 | [github.com/aperturerobotics/cli](https://github.com/aperturerobotics/cli/tree/e94e49de9c89861f2331e136f0d7492ec6c63098) | [MIT](pkg/cli/LICENSE)                                                   |
-
 ## Fork / Credits
 This is a continuation of the [github.com/d5/tengo](https://github.com/d5/tengo) project starting of this [pull request](https://github.com/d5/tengo/pull/330) implementing go routines and channels. Special thanks goes to [d5](https://github.com/d5/) for his work on the tengo language and [Bai-Yingjie](https://github.com/Bai-Yingjie) for implementing the foundation of concurrency while retaining the original tests of the project. 

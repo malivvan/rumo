@@ -14,6 +14,27 @@ import (
 	"github.com/malivvan/vv/vm/parser"
 )
 
+var (
+	version string
+	commit  string
+)
+
+// Version returns the version of vv.
+func Version() string {
+	if version == "" {
+		return "unknown"
+	}
+	return version
+}
+
+// Commit returns the commit hash of vv.
+func Commit() string {
+	if commit == "" {
+		return "unknown"
+	}
+	return commit
+}
+
 // Modules is a map of all standard library modules.
 var Modules = std.GetModuleMap(std.AllModuleNames()...)
 

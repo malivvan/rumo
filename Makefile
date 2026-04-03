@@ -44,24 +44,10 @@ install/test:
 	@go install golang.org/x/lint/golint@latest
 	@go install gotest.tools/gotestsum@latest
 
-install/release:
-	@go install go.mills.io/zs@latest
-
-install: install/build install/test install/release
+install: install/build install/test
 
 lint:
 	@golint -set_exit_status ./vvm/...
-
-docs:
-	@rm -rf build/docs
-	@mkdir -p build/docs
-	@find ./docs/ -type f -name "*.md" -exec sh -c 'zs -p build $$1 > build/$${1%.md}.html' _ {} \;
-	@cd build/docs && find . -type f -name "*.html" -exec sh -c 'echo "- [$${1%.html}](./$$1)" >> index.md' _ {} \;
-	@ZS_TITLE="Documentation" zs -p build build/docs/index.md > build/docs/index.html
-	@ZS_TITLE="Release" zs -p build build/release.md > build/docs/release.html
-	@cp -rf .zs/js build/docs/js
-	@cp -rf .zs/css build/docs/css
-	@cp -rf .zs/img build/docs/img
 
 test: generate lint
 	@GODEBUG=randseednop=0 gotestsum --format $(TEST_FORMAT) --format-hide-empty-pkg --hide-summary skipped --raw-command -- go test -json -race -cover ./ ./vvm/...
