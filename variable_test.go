@@ -4,8 +4,8 @@ import (
 	"github.com/malivvan/vv"
 	"testing"
 
-	"github.com/malivvan/vv/vvm"
-	"github.com/malivvan/vv/vvm/require"
+	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/vv/vm/require"
 )
 
 type VariableTest struct {
@@ -18,7 +18,7 @@ type VariableTest struct {
 	CharValue   rune
 	BoolValue   bool
 	StringValue string
-	Object      vvm.Object
+	Object      vm.Object
 	IsUndefined bool
 }
 
@@ -34,7 +34,7 @@ func TestVariable(t *testing.T) {
 			CharValue:   rune(1),
 			BoolValue:   true,
 			StringValue: "1",
-			Object:      &vvm.Int{Value: 1},
+			Object:      &vm.Int{Value: 1},
 		},
 		{
 			Name:        "b",
@@ -43,7 +43,7 @@ func TestVariable(t *testing.T) {
 			FloatValue:  52.11,
 			StringValue: "52.11",
 			BoolValue:   true,
-			Object:      &vvm.String{Value: "52.11"},
+			Object:      &vm.String{Value: "52.11"},
 		},
 		{
 			Name:        "c",
@@ -54,13 +54,13 @@ func TestVariable(t *testing.T) {
 			FloatValue:  0,
 			BoolValue:   true,
 			StringValue: "true",
-			Object:      vvm.TrueValue,
+			Object:      vm.TrueValue,
 		},
 		{
 			Name:        "d",
 			Value:       nil,
 			ValueType:   "undefined",
-			Object:      vvm.UndefinedValue,
+			Object:      vm.UndefinedValue,
 			IsUndefined: true,
 		},
 	}

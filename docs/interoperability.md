@@ -29,7 +29,7 @@ The following is an example where a VV script is compiled and run with no
 input/output variables.
 
 ```golang
-import "github.com/malivvan/vv/vvm"
+import "github.com/malivvan/vv/vm"
 
 var code = `
 reduce := func(seq, fn) {
@@ -57,7 +57,7 @@ output variable is accessed through
 import (
     "fmt"
 
-    "github.com/malivvan/vv/vvm"
+    "github.com/malivvan/vv/vm"
 )
 
 func main() {

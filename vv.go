@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/malivvan/vv/pkg/cli"
-	"github.com/malivvan/vv/vvm"
-	"github.com/malivvan/vv/vvm/parser"
-	"github.com/malivvan/vv/vvm/stdlib"
+	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/vv/vm/parser"
+	"github.com/malivvan/vv/vm/stdlib"
 )
 
 var (
@@ -97,23 +97,23 @@ func RunCompiled(ctx context.Context, data []byte) (err error) {
 func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string) {
 	stdin := bufio.NewScanner(in)
 	fileSet := parser.NewFileSet()
-	globals := make([]vvm.Object, vvm.GlobalsSize)
-	symbolTable := vvm.NewSymbolTable()
-	for idx, fn := range vvm.GetAllBuiltinFunctions() {
+	globals := make([]vm.Object, vm.GlobalsSize)
+	symbolTable := vm.NewSymbolTable()
+	for idx, fn := range vm.GetAllBuiltinFunctions() {
 		symbolTable.DefineBuiltin(idx, fn.Name)
 	}
 
 	// embed println function
 	symbol := symbolTable.Define("__repl_println__")
-	globals[symbol.Index] = &vvm.BuiltinFunction{
+	globals[symbol.Index] = &vm.BuiltinFunction{
 		Name: "println",
-		Value: func(ctx context.Context, args ...vvm.Object) (ret vvm.Object, err error) {
+		Value: func(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 			var printArgs []interface{}
 			for _, arg := range args {
-				if _, isUndefined := arg.(*vvm.Undefined); isUndefined {
+				if _, isUndefined := arg.(*vm.Undefined); isUndefined {
 					printArgs = append(printArgs, "<undefined>")
 				} else {
-					s, _ := vvm.ToString(arg)
+					s, _ := vm.ToString(arg)
 					printArgs = append(printArgs, s)
 				}
 			}
@@ -123,7 +123,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string) {
 		},
 	}
 
-	var constants []vvm.Object
+	var constants []vm.Object
 	for {
 		_, _ = fmt.Fprint(out, prompt)
 		scanned := stdin.Scan()
@@ -141,14 +141,14 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string) {
 		}
 
 		file = addPrints(file)
-		c := vvm.NewCompiler(srcFile, symbolTable, constants, Modules, nil)
+		c := vm.NewCompiler(srcFile, symbolTable, constants, Modules, nil)
 		if err := c.Compile(file); err != nil {
 			_, _ = fmt.Fprintln(out, err.Error())
 			continue
 		}
 
 		bytecode := c.Bytecode()
-		machine := vvm.NewVM(ctx, bytecode, globals, -1)
+		machine := vm.NewVM(ctx, bytecode, globals, -1)
 		if err := machine.Run(); err != nil {
 			_, _ = fmt.Fprintln(out, err.Error())
 			continue

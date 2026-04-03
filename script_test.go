@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/malivvan/vv/vvm"
-	"github.com/malivvan/vv/vvm/require"
-	"github.com/malivvan/vv/vvm/stdlib"
-	"github.com/malivvan/vv/vvm/token"
+	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/vv/vm/stdlib"
+	"github.com/malivvan/vv/vm/token"
 )
 
 func TestExample(t *testing.T) {
@@ -70,15 +70,15 @@ func TestScript_Add(t *testing.T) {
 	require.NoError(t, s.Add("b", 5))     // b = 5
 	require.NoError(t, s.Add("b", "foo")) // b = "foo"  (re-define before compilation)
 	require.NoError(t, s.Add("test",
-		func(ctx context.Context, args ...vvm.Object) (ret vvm.Object, err error) {
+		func(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 			if len(args) > 0 {
 				switch arg := args[0].(type) {
-				case *vvm.Int:
-					return &vvm.Int{Value: arg.Value + 1}, nil
+				case *vm.Int:
+					return &vm.Int{Value: arg.Value + 1}, nil
 				}
 			}
 
-			return &vvm.Int{Value: 0}, nil
+			return &vm.Int{Value: 0}, nil
 		}))
 	p, err := s.Compile()
 	require.NoError(t, err)
@@ -219,14 +219,14 @@ for i:=1; i<=d; i++ {
 
 e := mod1.double(s)
 `)
-	mod1 := map[string]vvm.Object{
-		"double": &vvm.BuiltinFunction{
-			Value: func(ctx context.Context, args ...vvm.Object) (
-				ret vvm.Object,
+	mod1 := map[string]vm.Object{
+		"double": &vm.BuiltinFunction{
+			Value: func(ctx context.Context, args ...vm.Object) (
+				ret vm.Object,
 				err error,
 			) {
-				arg0, _ := vvm.ToInt64(args[0])
-				ret = &vvm.Int{Value: arg0 * 2}
+				arg0, _ := vm.ToInt64(args[0])
+				ret = &vm.Int{Value: arg0 * 2}
 				return
 			},
 		},
@@ -236,7 +236,7 @@ e := mod1.double(s)
 	_ = scr.Add("a", 0)
 	_ = scr.Add("b", 0)
 	_ = scr.Add("c", 0)
-	mods := vvm.NewModuleMap()
+	mods := vm.NewModuleMap()
 	mods.AddBuiltinModule("mod1", mod1)
 	scr.SetImports(mods)
 	compiled, err := scr.Compile()
@@ -276,7 +276,7 @@ e := mod1.double(s)
 }
 
 type Counter struct {
-	vvm.ObjectImpl
+	vm.ObjectImpl
 	value int64
 }
 
@@ -290,8 +290,8 @@ func (o *Counter) String() string {
 
 func (o *Counter) BinaryOp(
 	op token.Token,
-	rhs vvm.Object,
-) (vvm.Object, error) {
+	rhs vm.Object,
+) (vm.Object, error) {
 	switch rhs := rhs.(type) {
 	case *Counter:
 		switch op {
@@ -300,7 +300,7 @@ func (o *Counter) BinaryOp(
 		case token.Sub:
 			return &Counter{value: o.value - rhs.value}, nil
 		}
-	case *vvm.Int:
+	case *vm.Int:
 		switch op {
 		case token.Add:
 			return &Counter{value: o.value + rhs.Value}, nil
@@ -316,7 +316,7 @@ func (o *Counter) IsFalsy() bool {
 	return o.value == 0
 }
 
-func (o *Counter) Equals(t vvm.Object) bool {
+func (o *Counter) Equals(t vm.Object) bool {
 	if tc, ok := t.(*Counter); ok {
 		return o.value == tc.value
 	}
@@ -324,12 +324,12 @@ func (o *Counter) Equals(t vvm.Object) bool {
 	return false
 }
 
-func (o *Counter) Copy() vvm.Object {
+func (o *Counter) Copy() vm.Object {
 	return &Counter{value: o.value}
 }
 
-func (o *Counter) Call(_ context.Context, _ ...vvm.Object) (vvm.Object, error) {
-	return &vvm.Int{Value: o.value}, nil
+func (o *Counter) Call(_ context.Context, _ ...vm.Object) (vm.Object, error) {
+	return &vm.Int{Value: o.value}, nil
 }
 
 func (o *Counter) CanCall() bool {
@@ -370,7 +370,7 @@ func compiledGetCounter(t *testing.T, p *vv.Program, name string, expected *Coun
 func TestScriptSourceModule(t *testing.T) {
 	// script1 imports "mod1"
 	scr := vv.NewScript([]byte(`out := import("mod")`))
-	mods := vvm.NewModuleMap()
+	mods := vm.NewModuleMap()
 	mods.AddSourceModule("mod", []byte(`export 5`))
 	scr.SetImports(mods)
 	p, err := scr.Run()
@@ -379,7 +379,7 @@ func TestScriptSourceModule(t *testing.T) {
 
 	// executing module function
 	scr = vv.NewScript([]byte(`fn := import("mod"); out := fn()`))
-	mods = vvm.NewModuleMap()
+	mods = vm.NewModuleMap()
 	mods.AddSourceModule("mod",
 		[]byte(`a := 3; export func() { return a + 5 }`))
 	scr.SetImports(mods)
@@ -388,16 +388,16 @@ func TestScriptSourceModule(t *testing.T) {
 	require.Equal(t, int64(8), p.Get("out").Value())
 
 	scr = vv.NewScript([]byte(`out := import("mod")`))
-	mods = vvm.NewModuleMap()
+	mods = vm.NewModuleMap()
 	mods.AddSourceModule("mod",
 		[]byte(`text := import("text"); export text.title("foo")`))
 	mods.AddBuiltinModule("text",
-		map[string]vvm.Object{
-			"title": &vvm.BuiltinFunction{
+		map[string]vm.Object{
+			"title": &vm.BuiltinFunction{
 				Name: "title",
-				Value: func(ctx context.Context, args ...vvm.Object) (vvm.Object, error) {
-					s, _ := vvm.ToString(args[0])
-					return &vvm.String{Value: strings.Title(s)}, nil
+				Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+					s, _ := vm.ToString(args[0])
+					return &vm.String{Value: strings.Title(s)}, nil
 				}},
 		})
 	scr.SetImports(mods)
