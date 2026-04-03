@@ -1,13 +1,10 @@
 package vv
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
-	"github.com/klauspost/compress/zstd"
-	"io"
-
 	"fmt"
+
 	"github.com/malivvan/vv/vvm"
 	"github.com/malivvan/vv/vvm/encoding"
 
@@ -251,17 +248,6 @@ func (p *Program) Unmarshal(b []byte) (err error) {
 		return fmt.Errorf("invalid crc64: %d != %d", hash, crc.Sum64())
 	}
 
-	buf := bytes.NewBuffer(body)
-	cmp, err := zstd.NewReader(buf, zstd.WithDecoderConcurrency(1))
-	if err != nil {
-		return err
-	}
-	body, err = io.ReadAll(cmp)
-	if err != nil {
-		return err
-	}
-	cmp.Close()
-
 	n := 0
 	n, p.globalIndices, err = encoding.UnmarshalMap[string, int](n, body, encoding.UnmarshalString, encoding.UnmarshalInt)
 	if err != nil {
@@ -306,24 +292,8 @@ func (p *Program) Marshal() ([]byte, error) {
 	if n != len(data) {
 		return nil, fmt.Errorf("encoded length mismatch: %d != %d", n, len(data))
 	}
-
-	var buf bytes.Buffer
-	cmp, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
-	if err != nil {
-		return nil, err
-	}
-	_, err = cmp.Write(data)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := cmp.Write(code); err != nil {
-		return nil, err
-	}
-	err = cmp.Close()
-	if err != nil {
-		return nil, err
-	}
-	body := buf.Bytes()
+	
+	body := append(data, code...)
 
 	var head [8]byte
 	head[0] = Magic[0]

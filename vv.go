@@ -4,16 +4,15 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/malivvan/vv/pkg/cli"
-	"github.com/malivvan/vv/pkg/sh"
-	"github.com/malivvan/vv/vvm"
-	"github.com/malivvan/vv/vvm/parser"
-	"github.com/malivvan/vv/vvm/stdlib"
 	"io"
-	"mvdan.cc/sh/v3/interp"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/malivvan/vv/pkg/cli"
+	"github.com/malivvan/vv/vvm"
+	"github.com/malivvan/vv/vvm/parser"
+	"github.com/malivvan/vv/vvm/stdlib"
 )
 
 var (
@@ -210,27 +209,6 @@ func basename(s string) string {
 	return s
 }
 
-func programExecutor(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
-	return func(ctx context.Context, args []string) error {
-		if len(args) > 0 {
-			if args[0] == "vv" {
-				if app, err := NewCli(nil); err == nil {
-					return app.RunContext(ctx, args)
-				}
-			} else {
-				path := args[0]
-				if !(strings.HasPrefix(path, "./") || strings.HasPrefix(path, "/")) {
-					path = filepath.Join(os.Getenv("VVHOME"), "bin", path)
-				}
-				if b, err := os.ReadFile(path); err == nil && len(b) > len(Magic) && string(b[:len(Magic)]) == Magic {
-					return RunCompiled(ctx, b)
-				}
-			}
-		}
-		return next(ctx, args)
-	}
-}
-
 func NewCli(ui cli.ActionFunc) (*cli.App, error) {
 	app := &cli.App{
 		Name:      "vv",
@@ -257,33 +235,6 @@ func NewCli(ui cli.ActionFunc) (*cli.App, error) {
 			Usage:   "print version information",
 			Action: func(c *cli.Context) error {
 				fmt.Printf("vv v%s [%s]\n", Version(), Commit())
-				return nil
-			},
-		},
-		{
-			Name:    "sh",
-			Aliases: []string{"shell"},
-			Usage:   "run shell",
-			Flags: []cli.Flag{
-				&cli.StringFlag{
-					Name:    "command",
-					Aliases: []string{"c"},
-					Usage:   "command to run in shell",
-					Value:   "",
-				},
-			},
-			Action: func(c *cli.Context) error {
-				if err := sh.Exec(&sh.Config{
-					Stdin:    c.App.Reader,
-					Stdout:   c.App.Writer,
-					Stderr:   c.App.ErrWriter,
-					Args:     c.Args().Slice(),
-					Command:  c.String("command"),
-					Executor: programExecutor,
-				}); err != nil {
-					_, _ = fmt.Fprintf(os.Stderr, "Error running shell: %s\n", err.Error())
-					os.Exit(1)
-				}
 				return nil
 			},
 		},

@@ -15,5 +15,4 @@ var BuiltinModules = map[string]map[string]vvm.Object{
 	"json":   jsonModule,
 	"base64": base64Module,
 	"hex":    hexModule,
-	"cui":    cuiModule,
 }

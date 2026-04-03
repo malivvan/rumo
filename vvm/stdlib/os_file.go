@@ -16,10 +16,10 @@ func makeOSFile(file *os.File) *vvm.ImmutableMap {
 				Value: FuncARE(file.Chdir),
 			}, //
 			// chown(uid int, gid int) => true/error
-			"chown": &vvm.BuiltinFunction{
-				Name:  "chown",
-				Value: FuncAIIRE(file.Chown),
-			}, //
+			//"chown": &vvm.BuiltinFunction{
+			//	Name:  "chown",
+			//	Value: FuncAIIRE(file.Chown),
+			//}, //
 			// close() => error
 			"close": &vvm.BuiltinFunction{
 				Name:  "close",

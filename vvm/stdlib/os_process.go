@@ -15,10 +15,10 @@ func makeOSProcessState(state *os.ProcessState) *vvm.ImmutableMap {
 				Name:  "exited",
 				Value: FuncARB(state.Exited),
 			},
-			"pid": &vvm.BuiltinFunction{
-				Name:  "pid",
-				Value: FuncARI(state.Pid),
-			},
+			//"pid": &vvm.BuiltinFunction{
+			//	Name:  "pid",
+			//	Value: FuncARI(state.Pid),
+			//},
 			"string": &vvm.BuiltinFunction{
 				Name:  "string",
 				Value: FuncARS(state.String),

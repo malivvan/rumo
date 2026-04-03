@@ -84,10 +84,10 @@ var osModule = map[string]vvm.Object{
 		Name:  "getgid",
 		Value: FuncARI(os.Getgid),
 	}, // getgid() => int
-	"getgroups": &vvm.BuiltinFunction{
-		Name:  "getgroups",
-		Value: FuncARIsE(os.Getgroups),
-	}, // getgroups() => array(string)/error
+	//"getgroups": &vvm.BuiltinFunction{
+	//	Name:  "getgroups",
+	//	Value: FuncARIsE(os.Getgroups),
+	//}, // getgroups() => array(string)/error
 	"getpagesize": &vvm.BuiltinFunction{
 		Name:  "getpagesize",
 		Value: FuncARI(os.Getpagesize),
@@ -112,10 +112,10 @@ var osModule = map[string]vvm.Object{
 		Name:  "hostname",
 		Value: FuncARSE(os.Hostname),
 	}, // hostname() => string/error
-	"lchown": &vvm.BuiltinFunction{
-		Name:  "lchown",
-		Value: FuncASIIRE(os.Lchown),
-	}, // lchown(name string, uid int, gid int) => error
+	//"lchown": &vvm.BuiltinFunction{
+	//	Name:  "lchown",
+	//	Value: FuncASIIRE(os.Lchown),
+	//}, // lchown(name string, uid int, gid int) => error
 	"link": &vvm.BuiltinFunction{
 		Name:  "link",
 		Value: FuncASSRE(os.Link),
