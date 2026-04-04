@@ -162,7 +162,6 @@ make test       # run tests
 make install    # install tools 
 make build      # build for current platform 
 make release    # build for all platforms
-make docs       # generate docs
 ```
 
 ## Fork / Credits
