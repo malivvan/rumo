@@ -28,9 +28,11 @@ var osModule = map[string]vm.Object{
 	"mode_named_pipe":     &vm.Int{Value: int64(os.ModeNamedPipe)},
 	"mode_socket":         &vm.Int{Value: int64(os.ModeSocket)},
 	"mode_setuid":         &vm.Int{Value: int64(os.ModeSetuid)},
+	"mode_setgid":         &vm.Int{Value: int64(os.ModeSetgid)},
 	"mode_setgui":         &vm.Int{Value: int64(os.ModeSetgid)},
 	"mode_char_device":    &vm.Int{Value: int64(os.ModeCharDevice)},
 	"mode_sticky":         &vm.Int{Value: int64(os.ModeSticky)},
+	"mode_irregular":      &vm.Int{Value: int64(os.ModeIrregular)},
 	"mode_type":           &vm.Int{Value: int64(os.ModeType)},
 	"mode_perm":           &vm.Int{Value: int64(os.ModePerm)},
 	"path_separator":      &vm.Char{Value: os.PathSeparator},
@@ -84,10 +86,10 @@ var osModule = map[string]vm.Object{
 		Name:  "getgid",
 		Value: FuncARI(os.Getgid),
 	}, // getgid() => int
-	//"getgroups": &vm.BuiltinFunction{
-	//	Name:  "getgroups",
-	//	Value: FuncARIsE(os.Getgroups),
-	//}, // getgroups() => array(string)/error
+	"getgroups": &vm.BuiltinFunction{
+		Name:  "getgroups",
+		Value: FuncARIsE(os.Getgroups),
+	}, // getgroups() => array(int)/error
 	"getpagesize": &vm.BuiltinFunction{
 		Name:  "getpagesize",
 		Value: FuncARI(os.Getpagesize),
@@ -112,10 +114,10 @@ var osModule = map[string]vm.Object{
 		Name:  "hostname",
 		Value: FuncARSE(os.Hostname),
 	}, // hostname() => string/error
-	//"lchown": &vm.BuiltinFunction{
-	//	Name:  "lchown",
-	//	Value: FuncASIIRE(os.Lchown),
-	//}, // lchown(name string, uid int, gid int) => error
+	"lchown": &vm.BuiltinFunction{
+		Name:  "lchown",
+		Value: FuncASIIRE(os.Lchown),
+	}, // lchown(name string, uid int, gid int) => error
 	"link": &vm.BuiltinFunction{
 		Name:  "link",
 		Value: FuncASSRE(os.Link),

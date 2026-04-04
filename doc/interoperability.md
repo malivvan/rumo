@@ -138,7 +138,7 @@ Users can add and use a custom user type in VV code by implementing
 [Object](https://godoc.org/github.com/malivvan/vv#Object) interface. VV runtime
 will treat the user types in the same way it does to the runtime types with no
 performance overhead. See
-[Object Types](https://github.com/malivvan/vv/blob/master/docs/objects.md) for
+[Object Types](objects.md) for
 more details.
 
 ## Sandbox Environments
@@ -150,7 +150,7 @@ the following Script functions.
 
 SetImports sets the import modules with corresponding names. Script **does not**
 include any modules by default. You can use this function to include the
-[Standard Library](https://github.com/malivvan/vv/blob/master/docs/std.md).
+[Standard Library](stdlib.md).
 
 ```golang
 s := vv.NewScript([]byte(`math := import("math"); a := math.abs(-19.84)`))

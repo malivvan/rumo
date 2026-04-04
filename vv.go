@@ -120,7 +120,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string) {
 				}
 			}
 			printArgs = append(printArgs, "\n")
-			_, _ = fmt.Print(printArgs...)
+			_, _ = fmt.Fprint(out, printArgs...)
 			return
 		},
 	}

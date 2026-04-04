@@ -2,23 +2,13 @@
 title: standard library
 ---
 
-- [os](https://github.com/malivvan/vv/blob/master/docs/stdlib-os.md):
-  platform-independent interface to operating system functionality.
-- [text](https://github.com/malivvan/vv/blob/master/docs/stdlib-text.md): regular
-  expressions, string conversion, and manipulation
-- [math](https://github.com/malivvan/vv/blob/master/docs/stdlib-math.md):
-  mathematical constants and functions
-- [times](https://github.com/malivvan/vv/blob/master/docs/stdlib-times.md):
-  time-related functions
-- [rand](https://github.com/malivvan/vv/blob/master/docs/stdlib-rand.md):
-  random functions
-- [fmt](https://github.com/malivvan/vv/blob/master/docs/stdlib-fmt.md):
-  formatting functions
-- [json](https://github.com/malivvan/vv/blob/master/docs/stdlib-json.md): JSON
-  functions
-- [enum](https://github.com/malivvan/vv/blob/master/docs/stdlib-enum.md):
-  Enumeration functions
-- [hex](https://github.com/malivvan/vv/blob/master/docs/stdlib-hex.md): hex
-  encoding and decoding functions
-- [base64](https://github.com/malivvan/vv/blob/master/docs/stdlib-base64.md):
-  base64 encoding and decoding functions
+- [`os`](stdlib-os.md): platform-independent interface to operating system functionality.
+- [`text`](stdlib-text.md): regular expressions, string conversion, and manipulation
+- [`math`](stdlib-math.md): mathematical constants and functions
+- [`times`](stdlib-times.md): time-related functions
+- [`rand`](stdlib-rand.md): random functions
+- [`fmt`](stdlib-fmt.md): formatting functions
+- [`json`](stdlib-json.md): JSON functions
+- [`enum`](stdlib-enum.md): enumeration functions
+- [`hex`](stdlib-hex.md): hex encoding and decoding functions
+- [`base64`](stdlib-base64.md): base64 encoding and decoding functions

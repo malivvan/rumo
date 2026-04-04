@@ -62,7 +62,7 @@ IsFalsy() bool
 ```
 
 IsFalsy method should return true if the underlying value is considered to be
-[falsy](https://github.com/malivvan/vv/blob/master/docs/runtime-types.md#objectisfalsy).
+[falsy](runtime-types.md#objectisfalsy).
 
 ```golang
 Equals(o Object) bool
@@ -222,7 +222,7 @@ These are the basic types VV runtime supports out of the box:
   [ReturnValue](https://godoc.org/github.com/malivvan/vv#ReturnValue)
 
 See
-[Runtime Types](https://github.com/malivvan/vv/blob/master/docs/runtime-types.md)
+[Runtime Types](runtime-types.md)
 for more details on these runtime types.
 
 ## User Object Types

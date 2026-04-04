@@ -2,69 +2,79 @@
 title: cli
 ---
 
+VV is designed as an embedding script language for Go, but it also ships with a small CLI in `cmd/` for running source files, running compiled bytecode, building compiled bytecode files, and starting a REPL.
 
-VV is designed as an embedding script language for Go, but, it can also be
-compiled and executed as native binary using `vv` CLI tool.
+## Building the CLI
 
-## Installing VV CLI
-
-To install `vv` tool, run:
+This repository currently exposes the CLI from `./cmd`, so the most reliable way to install or build a `vv` binary is:
 
 ```bash
-go get github.com/malivvan/vv/cmd/vv
+go build -o vv ./cmd
+# or
+make build
+```
+
+If you want it on your `PATH`:
+
+```bash
+go build -o /usr/local/bin/vv ./cmd
 ```
 
 Or, you can download the precompiled binaries from
-[here](https://github.com/malivvan/vv/releases/latest).
+[the latest release](https://github.com/malivvan/vv/releases/latest).
+
+## Commands
+
+```bash
+vv <file>
+vv run <file>
+vv build <file> [output_file]
+vv -o <output_file> <file>
+vv version
+vv help
+```
+
+- `vv <file>` runs either a `.vv` source file or a compiled VV bytecode file.
+- `vv run <file>` does the same explicitly.
+- `vv build <file> [output_file]` compiles a source file into VV bytecode.
+- `vv -o <output_file> <file>` is a shorthand for choosing the build output file.
+- `vv version` prints the embedded version string.
+- Running `vv` with no arguments starts the REPL.
 
 ## Compiling and Executing VV Code
 
-You can directly execute the VV source code by running `vv` tool with
-your VV source file (`*.vv`).
+You can directly execute VV source code:
 
 ```bash
 vv myapp.vv
+# equivalent to
+vv run myapp.vv
 ```
 
-Or, you can compile the code into a binary file and execute it later.
+You can also compile the code into a VV bytecode file and execute it later:
 
 ```bash
-vv -o myapp myapp.vv   # compile 'myapp.vv' into binary file 'myapp'
-vv myapp                  # execute the compiled binary `myapp`
+vv build myapp.vv myapp.out
+vv myapp.out
 ```
 
-Or, you can make vv source file executable
+The `-o` shorthand is also supported:
 
 ```bash
-# copy vv executable to a dir where PATH environment variable includes
-cp vv /usr/local/bin/
-
-# add shebang line to source file
-cat > myapp.vv << EOF
-#!/usr/local/bin/vv
-fmt := import("fmt")
-fmt.println("Hello World!")
-EOF
-
-# make myapp.vv file executable
-chmod +x myapp.vv
-
-# run your script
-./myapp.vv
+vv -o myapp.out myapp.vv
+vv myapp.out
 ```
-
-**Note: Your source file must have `.vv` extension.**
 
 ## Resolving Relative Import Paths
 
-If there are vv source module files which are imported with relative import
-paths, CLI has `-resolve` flag. Flag enables to import a module relative to
-importing file. This behavior will be default at version 3.
+When file imports are enabled by the embedding application, relative imports are
+resolved from the importing file. This version also rejects imports that escape
+that initial import root.
 
 ## VV REPL
 
-You can run VV [REPL](https://en.wikipedia.org/wiki/Read–eval–print_loop)
-if you run `vv` with no arguments.
+You can run the VV [REPL](https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop)
+by running `vv` with no arguments.
 
 ```bash
 vv

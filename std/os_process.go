@@ -8,17 +8,17 @@ import (
 	"github.com/malivvan/vv/vm"
 )
 
-func makeOSProcessState(state *os.ProcessState) *vm.ImmutableMap {
+func makeOSProcessState(pid int, state *os.ProcessState) *vm.ImmutableMap {
 	return &vm.ImmutableMap{
 		Value: map[string]vm.Object{
 			"exited": &vm.BuiltinFunction{
 				Name:  "exited",
 				Value: FuncARB(state.Exited),
 			},
-			//"pid": &vm.BuiltinFunction{
-			//	Name:  "pid",
-			//	Value: FuncARI(state.Pid),
-			//},
+			"pid": &vm.BuiltinFunction{
+				Name:  "pid",
+				Value: FuncARI(func() int { return pid }),
+			},
 			"string": &vm.BuiltinFunction{
 				Name:  "string",
 				Value: FuncARS(state.String),
@@ -69,7 +69,7 @@ func makeOSProcess(proc *os.Process) *vm.ImmutableMap {
 					if err != nil {
 						return wrapError(err), nil
 					}
-					return makeOSProcessState(state), nil
+					return makeOSProcessState(proc.Pid, state), nil
 				},
 			},
 		},

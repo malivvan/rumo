@@ -45,6 +45,7 @@ type Compiler struct {
 	parent          *Compiler
 	modulePath      string
 	importDir       string
+	importBase      string
 	constants       []Object
 	symbolTable     *SymbolTable
 	scopes          []compilationScope
@@ -532,6 +533,9 @@ func (c *Compiler) Compile(node parser.Node) error {
 			}
 		} else if c.allowFileImport {
 			moduleName := node.ModuleName
+			if filepath.IsAbs(moduleName) {
+				return c.errorf(node, "absolute file imports are not allowed: %s", node.ModuleName)
+			}
 			if !strings.HasSuffix(moduleName, ".vv") {
 				moduleName += ".vv"
 			}
@@ -541,6 +545,15 @@ func (c *Compiler) Compile(node parser.Node) error {
 			if err != nil {
 				return c.errorf(node, "module file path error: %s",
 					err.Error())
+			}
+			if c.importBase != "" {
+				importAllowed, err := isPathWithinBase(c.importBase, modulePath)
+				if err != nil {
+					return c.errorf(node, "module file path error: %s", err.Error())
+				}
+				if !importAllowed {
+					return c.errorf(node, "module file path escapes import root: %s", node.ModuleName)
+				}
 			}
 
 			moduleSrc, err := os.ReadFile(modulePath)
@@ -632,6 +645,9 @@ func (c *Compiler) EnableFileImport(enable bool) {
 // SetImportDir sets the initial import directory path for file imports.
 func (c *Compiler) SetImportDir(dir string) {
 	c.importDir = dir
+	if c.importBase == "" {
+		c.importBase = dir
+	}
 }
 
 func (c *Compiler) compileAssign(
@@ -1076,10 +1092,25 @@ func (c *Compiler) fork(file *parser.SourceFile, modulePath string, symbolTable 
 	child.parent = c              // parent to set to current compiler
 	child.allowFileImport = c.allowFileImport
 	child.importDir = c.importDir
+	child.importBase = c.importBase
 	if isFile && c.importDir != "" {
 		child.importDir = filepath.Dir(modulePath)
 	}
 	return child
+}
+
+func isPathWithinBase(base, target string) (bool, error) {
+	rel, err := filepath.Rel(base, target)
+	if err != nil {
+		return false, err
+	}
+	if rel == "." {
+		return true, nil
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (c *Compiler) error(node parser.Node, err error) error {

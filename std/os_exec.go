@@ -112,6 +112,9 @@ func makeOSExecCommand(cmd *exec.Cmd) *vm.ImmutableMap {
 					if len(args) != 0 {
 						return nil, vm.ErrWrongNumArguments
 					}
+					if cmd.Process == nil {
+						return vm.UndefinedValue, nil
+					}
 					return makeOSProcess(cmd.Process), nil
 				},
 			},

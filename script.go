@@ -1,6 +1,7 @@
 package vv
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -112,8 +113,9 @@ func (s *Script) Compile() (*Program, error) {
 	}
 
 	fileSet := parser.NewFileSet()
-	srcFile := fileSet.AddFile(s.name, -1, len(s.input))
-	p := parser.NewParser(srcFile, s.input, nil)
+	input := normalizeSource(s.input)
+	srcFile := fileSet.AddFile(s.name, -1, len(input))
+	p := parser.NewParser(srcFile, input, nil)
 	file, err := p.ParseFile()
 	if err != nil {
 		return nil, err
@@ -155,6 +157,17 @@ func (s *Script) Compile() (*Program, error) {
 		globals:       globals,
 		maxAllocs:     s.maxAllocs,
 	}, nil
+}
+
+func normalizeSource(input []byte) []byte {
+	input = bytes.TrimPrefix(input, []byte{0xEF, 0xBB, 0xBF})
+	if bytes.HasPrefix(input, []byte("#!")) {
+		if idx := bytes.IndexByte(input, '\n'); idx >= 0 {
+			return input[idx+1:]
+		}
+		return []byte{}
+	}
+	return input
 }
 
 // Run compiles and runs the scripts. Use returned compiled object to access

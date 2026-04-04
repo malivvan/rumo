@@ -18,9 +18,9 @@ fmt := import("fmt")
 - `printf(format, args...)`: Prints a formatted string to the standard output.
   It does not append the newline character at the end. The first argument must
   a String object. See
-  [this](https://github.com/malivvan/vv/blob/master/docs/formatting.md) for more
+  [formatting.md](formatting.md) for more
   details on formatting.
 - `sprintf(format, args...)`: Returns a formatted string. Alias of the builtin
   function `format`. The first argument must be a String object. See
-  [this](https://github.com/malivvan/vv/blob/master/docs/formatting.md) for more
+  [formatting.md](formatting.md) for more
   details on formatting.

@@ -1,74 +1,102 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/malivvan/vv"
 )
 
-var version string
-
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(1)
+	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
+	if len(args) == 0 {
+		vv.RunREPL(ctx, in, out, ">> ")
+		return 0
 	}
-	ctx := context.Background()
-	switch os.Args[1] {
+
+	switch args[0] {
+	case "-h", "--help", "help":
+		usage(errOut)
+		return 0
 	case "version":
-		fmt.Println(version)
+		_, _ = fmt.Fprintln(out, vv.Version())
+		return 0
 	case "run":
-		if len(os.Args) < 3 {
-			println("usage: vv run <input_file>")
-			os.Exit(1)
+		if len(args) != 2 {
+			_, _ = fmt.Fprintln(errOut, "usage: vv run <input_file>")
+			return 1
 		}
-		inputFile := os.Args[2]
-		data, err := os.ReadFile(inputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input file %s: %s\n", inputFile, err.Error())
-			os.Exit(1)
-		}
-		if string(data[:len(vv.Magic)]) == vv.Magic {
-			err = vv.RunCompiled(ctx, data)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error compiling %s: %s\n", inputFile, err.Error())
-				os.Exit(1)
-			}
-		}
-		err = vv.CompileAndRun(ctx, data, inputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error compiling %s: %s\n", inputFile, err.Error())
-			os.Exit(1)
-		}
+		return runFile(ctx, args[1], errOut)
 	case "build":
-		if len(os.Args) < 4 {
-			println("usage: vv build <input_file> <output_file>")
-			os.Exit(1)
+		switch len(args) {
+		case 2:
+			return buildFile(args[1], "", out, errOut)
+		case 3:
+			return buildFile(args[1], args[2], out, errOut)
+		default:
+			_, _ = fmt.Fprintln(errOut, "usage: vv build <input_file> [output_file]")
+			return 1
 		}
-		inputFile := os.Args[2]
-		outputFile := os.Args[3]
-		if outputFile == "" {
-			outputFile = filepath.Base(inputFile) + ".out"
+	case "-o":
+		if len(args) != 3 {
+			_, _ = fmt.Fprintln(errOut, "usage: vv -o <output_file> <input_file>")
+			return 1
 		}
-		data, err := os.ReadFile(inputFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading input file %s: %s\n", inputFile, err.Error())
-			os.Exit(1)
-		}
-		if err := vv.CompileOnly(data, inputFile, outputFile); err != nil {
-			fmt.Fprintf(os.Stderr, "Error compiling %s: %s\n", inputFile, err.Error())
-			os.Exit(1)
-		}
-		fmt.Printf("Compiled %s to %s\n", inputFile, outputFile)
+		return buildFile(args[2], args[1], out, errOut)
 	default:
-		usage()
-		os.Exit(1)
+		return runFile(ctx, args[0], errOut)
 	}
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s [build|run|version] [OPTIONS]\n", os.Args[0])
+func usage(out io.Writer) {
+	_, _ = fmt.Fprintf(out, "usage: %s [run <file> | build <file> [output] | -o <output> <file> | version]\n", os.Args[0])
+}
+
+func runFile(ctx context.Context, inputFile string, errOut io.Writer) int {
+	data, err := os.ReadFile(inputFile)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error reading input file %s: %s\n", inputFile, err.Error())
+		return 1
+	}
+
+	if bytes.HasPrefix(data, []byte(vv.Magic)) {
+		if err := vv.RunCompiled(ctx, data); err != nil {
+			_, _ = fmt.Fprintf(errOut, "Error running %s: %s\n", inputFile, err.Error())
+			return 1
+		}
+		return 0
+	}
+
+	if err := vv.CompileAndRun(ctx, data, inputFile); err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error compiling %s: %s\n", inputFile, err.Error())
+		return 1
+	}
+	return 0
+}
+
+func buildFile(inputFile, outputFile string, out, errOut io.Writer) int {
+	if outputFile == "" {
+		outputFile = filepath.Base(inputFile) + ".out"
+	}
+
+	data, err := os.ReadFile(inputFile)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error reading input file %s: %s\n", inputFile, err.Error())
+		return 1
+	}
+
+	if err := vv.CompileOnly(data, inputFile, outputFile); err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error compiling %s: %s\n", inputFile, err.Error())
+		return 1
+	}
+
+	_, _ = fmt.Fprintf(out, "Compiled %s to %s\n", inputFile, outputFile)
+	return 0
 }

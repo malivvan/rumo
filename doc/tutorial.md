@@ -41,7 +41,7 @@ Here's a list of all available value types in VV.
 | immutable map | [immutable](#immutable-values) map | - |
 | undefined | [undefined](#undefined-values) value | - |
 | function | [function](#function-values) value | - |  
-| _user-defined_ | value of [user-defined types](https://github.com/malivvan/vv/blob/master/docs/objects.md) | - |
+| _user-defined_ | value of [user-defined types](objects.md) | - |
 
 ### Error Values
 
@@ -272,7 +272,7 @@ a = [1, 2, 3]   // re-assigned 'array'
 
 Although the type is not directly specified in VV, one can use type
 conversion
-[builtin functions](https://github.com/malivvan/vv/blob/master/docs/builtins.md)
+[builtin functions](builtins.md)
 to convert between value types.
 
 ```golang
@@ -283,7 +283,7 @@ b4 := bool(1)         // true
 c5 := char("X")       // 'X'
 ```
 
-See [Operators](https://github.com/malivvan/vv/blob/master/docs/operators.md)
+See [Operators](operators.md)
 for more details on type coercions.
 
 ## Operators
@@ -298,7 +298,7 @@ for more details on type coercions.
 | `^`   | bitwise complement | int |
 
 _In VV, all values can be either
-[truthy or falsy](https://github.com/malivvan/vv/blob/d5-patch-1/docs/runtime-types.md#objectisfalsy)._
+[truthy or falsy](runtime-types.md#objectisfalsy)._
 
 ### Binary Operators
 
@@ -323,7 +323,7 @@ _In VV, all values can be either
 | `>`   | greater than | int, float, char, time, string |
 | `>=`   | greater than or equal to | int, float, char, time, string |
 
-_See [Operators](https://github.com/malivvan/vv/blob/master/docs/operators.md)
+_See [Operators](operators.md)
 for more details._
 
 ### Ternary Operators
@@ -525,7 +525,7 @@ In VV, modules are very similar to functions.
   the code is executed as a main module.  
 
 Also, you can use `import` expression to load the
-[Standard Library](https://github.com/malivvan/vv/blob/master/docs/std.md) as
+[Standard Library](stdlib.md) as
 well.
 
 ```golang

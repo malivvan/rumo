@@ -25,7 +25,8 @@ os := import("os")
 - `mode_named_pipe`
 - `mode_socket`
 - `mode_setuid`
-- `mode_setgui`
+- `mode_setgid`
+- `mode_setgui` (legacy compatibility alias of `mode_setgid`)
 - `mode_char_device`
 - `mode_sticky`
 - `mode_irregular`
@@ -53,7 +54,7 @@ os := import("os")
   environment.
 - `exit(code int)`: causes the current program to exit with the given status
   code.
-- `expand_env(s string) => string`: replaces ${var} or $var in the string
+- `expand_env(s string) => string`: replaces `${var}` or `$var` in the string
   according to the values of the current environment variables.
 - `getegid() => int`: returns the numeric effective group id of the caller.
 - `getenv(key string) => string`: retrieves the value of the environment
@@ -80,7 +81,7 @@ os := import("os")
 - `mkdir_all(name string, perm int) => error`: creates a directory named path,
   along with any necessary parents, and returns nil, or else returns an error.
 - `read_file(name string) => bytes/error`: reads the contents of a file into
-  a byte array
+  a byte array.
 - `readlink(name string) => string/error`: returns the destination of the
   named symbolic link.
 - `remove(name string) => error`: removes the named file or (empty) directory.
@@ -91,8 +92,8 @@ os := import("os")
 - `setenv(key string, value string) => error`: sets the value of the
   environment variable named by the key.
 - `stat(filename string) => FileInfo/error`: returns a file info structure
-  describing the file
-- `symlink(oldname string newname string) => error`: creates newname as a
+  describing the file.
+- `symlink(oldname string, newname string) => error`: creates newname as a
   symbolic link to oldname.
 - `temp_dir() => string`: returns the default directory to use for temporary
   files.
@@ -101,23 +102,18 @@ os := import("os")
 - `unsetenv(key string) => error`: unsets a single environment variable.
 - `create(name string) => File/error`: creates the named file with mode 0666
   (before umask), truncating it if it already exists.
-- `open(name string) => File/error`: opens the named file for reading. If
-  successful, methods on the returned file can be used for reading; the
-  associated file descriptor has mode O_RDONLY.
+- `open(name string) => File/error`: opens the named file for reading.
 - `open_file(name string, flag int, perm int) => File/error`: is the
-  generalized open call; most users will use Open or Create instead. It opens
-  the named file with specified flag (O_RDONLY etc.) and perm (before umask),
-  if applicable.
+  generalized open call; most users will use `open` or `create` instead.
 - `find_process(pid int) => Process/error`: looks for a running process by its
   pid.
 - `start_process(name string, argv [string], dir string, env [string]) => Process/error`:
   starts a new process with the program, arguments and attributes specified by
-  name, argv and attr. The argv slice will become os.Args in the new process,
-  so it normally starts with the program name.
+  `name`, `argv`, `dir`, and `env`.
 - `exec_look_path(file string) => string/error`: searches for an executable
   named file in the directories named by the PATH environment variable.
-- `exec(name string, args...) => Command/error`: returns the Command to execute
-  the named program with the given arguments.
+- `exec(name, args...) => Command`: returns a command object for the named
+  program with the given arguments.
 
 ## File
 
@@ -127,29 +123,25 @@ file.write_string("some data")
 file.close()
 ```
 
-- `chdir() => true/error`: changes the current working directory to the file,
-- `chown(uid int, gid int) => true/error`: changes the numeric uid and gid of
-  the named file.
+- `chdir() => error`: changes the current working directory to the file.
 - `close() => error`: closes the File, rendering it unusable for I/O.
-- `name() => string`: returns the name of the file as presented to Open.
+- `name() => string`: returns the name of the file as presented to `open`.
 - `readdirnames(n int) => [string]/error`: reads and returns a slice of names
   from the directory.
 - `sync() => error`: commits the current contents of the file to stable storage.
-- `write(bytes) => int/error`: writes len(b) bytes to the File.
-- `write_string(string) => int/error`: is like 'write', but writes the contents
-  of string s rather than a slice of bytes.
-- `read(bytes) => int/error`: reads up to len(b) bytes from the File.
-- `stat() => FileInfo/error`: returns a file info structure describing the file
+- `write(bytes) => int/error`: writes `len(b)` bytes to the File.
+- `write_string(string) => int/error`: is like `write`, but writes the contents
+  of a string.
+- `read(bytes) => int/error`: reads up to `len(b)` bytes from the File.
+- `stat() => FileInfo/error`: returns a file info structure describing the file.
 - `chmod(mode int) => error`: changes the mode of the file to mode.
 - `seek(offset int, whence int) => int/error`: sets the offset for the next
-  Read or Write on file to offset, interpreted according to whence: 0 means
-  relative to the origin of the file, 1 means relative to the current offset,
-  and 2 means relative to the end.
+  read or write on file to offset, interpreted according to whence.
 
 ## Process
 
 ```golang
-proc := start_process("app", ["arg1", "arg2"], "dir", [])
+proc := os.start_process("app", ["arg1", "arg2"], "dir", [])
 proc.wait()
 ```
 
@@ -162,29 +154,18 @@ proc.wait()
 
 ## ProcessState
 
-```golang
-proc := start_process("app", ["arg1", "arg2"], "dir", [])
-stat := proc.wait()
-pid := stat.pid()
-```
-
 - `exited() => bool`: reports whether the program has exited.
 - `pid() => int`: returns the process id of the exited process.
 - `string() => string`: returns a string representation of the process.
 - `success() => bool`: reports whether the program exited successfully, such as
   with exit status 0 on Unix.
 
-```golang
-cmd := exec.command("echo", ["foo", "bar"])
-output := cmd.output()
-```
-
 ## FileInfo
 
 - `name`: name of the file the info describes
 - `mtime`: time the file was last modified
 - `size`: file size in bytes
-- `mode`: file permissions as in int, comparable to octal permissions
+- `mode`: file permissions as an int, comparable to octal permissions
 - `directory`: boolean indicating if the file is a directory
 
 ## Command
@@ -200,4 +181,5 @@ output := cmd.output()
 - `set_path(path string)`: sets the path of the command to run.
 - `set_dir(dir string)`: sets the working directory of the process.
 - `set_env(env [string])`: sets the environment of the process.
-- `process() => Process`: returns the underlying process, once started.
+- `process() => Process|undefined`: returns the underlying process once the
+  command has started.
