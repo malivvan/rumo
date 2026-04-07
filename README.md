@@ -1,3 +1,9 @@
+<picture>
+ <source media="(prefers-color-scheme: light)" srcset="doc/img/rumo_light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="doc/img/rumo.png">
+ <img alt="rumo logo" src="doc/img/rumo.png" width="500">
+</picture>
+
 # ![test](https://github.com/malivvan/rumo/workflows/test/badge.svg) [![Release](https://img.shields.io/github/v/release/malivvan/vv.svg?sort=semver)](https://github.com/malivvan/rumo/releases/latest) [![Go Report Card](https://goreportcard.com/badge/github.com/malivvan/rumo)](https://goreportcard.com/report/github.com/malivvan/rumo) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 rumo is a small, fast and secure script language for Go supporting routines and channels
 
