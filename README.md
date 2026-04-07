@@ -1,7 +1,7 @@
 <picture>
  <source media="(prefers-color-scheme: light)" srcset="doc/img/logo.png">
   <source media="(prefers-color-scheme: dark)" srcset="doc/img/logo_dark.png">
- <img alt="rumo logo" src="doc/img/logo.png" width="600" style="margin-bottom:-50px; padding: 10px 0 0 5px;">
+ <img alt="rumo logo" src="doc/img/logo.png" width="600" style="margin-bottom:-50px; padding: 10px 0 -50px 5px;">
 </picture>
 
 # ![test](https://github.com/malivvan/rumo/workflows/test/badge.svg) [![Release](https://img.shields.io/github/v/release/malivvan/vv.svg?sort=semver)](https://github.com/malivvan/rumo/releases/latest) [![Go Report Card](https://goreportcard.com/badge/github.com/malivvan/rumo)](https://goreportcard.com/report/github.com/malivvan/rumo) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
