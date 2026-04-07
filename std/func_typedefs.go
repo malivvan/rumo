@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 // FuncAR transform a function of 'func()' signature into CallableFunc type.

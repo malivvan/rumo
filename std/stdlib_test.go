@@ -3,13 +3,13 @@ package std_test
 import (
 	"context"
 	"fmt"
-	"github.com/malivvan/vv"
 	"testing"
 	"time"
 
-	"github.com/malivvan/vv/std"
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/rumo"
+	"github.com/malivvan/rumo/std"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/require"
 )
 
 type ARR = []interface{}
@@ -233,7 +233,7 @@ func object(v interface{}) vm.Object {
 }
 
 func expect(t *testing.T, input string, expected interface{}) {
-	s := vv.NewScript([]byte(input))
+	s := rumo.NewScript([]byte(input))
 	s.SetImports(std.GetModuleMap(std.AllModuleNames()...))
 	c, err := s.Run()
 	require.NoError(t, err)

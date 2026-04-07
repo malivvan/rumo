@@ -10,11 +10,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/malivvan/vv"
-
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/parser"
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/parser"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 // NoError asserts err is not an error.
@@ -186,8 +185,8 @@ func Equal(t *testing.T, expected, actual interface{}, msg ...interface{}) {
 		if expected != actual.(error) {
 			failExpectedActual(t, expected, actual, msg...)
 		}
-	case *vv.Program:
-		if !expected.Equals(actual.(*vv.Program)) {
+	case *rumo.Program:
+		if !expected.Equals(actual.(*rumo.Program)) {
 			failExpectedActual(t, expected, actual, msg...)
 		}
 	default:

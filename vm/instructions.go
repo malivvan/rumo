@@ -3,7 +3,7 @@ package vm
 import (
 	"fmt"
 
-	"github.com/malivvan/vv/vm/parser"
+	"github.com/malivvan/rumo/vm/parser"
 )
 
 // MakeInstruction returns a bytecode for an opcode and the operands.

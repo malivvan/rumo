@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"unicode/utf8"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 // safeSet holds the value true if the ASCII character with the given array
@@ -240,7 +240,7 @@ func Encode(o vm.Object) ([]byte, error) {
 		b = strconv.AppendInt(b, o.Value, 10)
 	case *vm.String:
 		// string encoding bug is fixed with newly introduced function
-		// encodeString(). See: https://github.com/malivvan/vv/issues/268
+		// encodeString(). See: https://github.com/malivvan/rumo/issues/268
 		b = encodeString(b, o.Value)
 	case *vm.Time:
 		y, err := o.Value.MarshalJSON()

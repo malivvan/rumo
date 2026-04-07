@@ -1,8 +1,8 @@
-package vv
+package rumo
 
 import (
 	"errors"
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 // Variable is a user-defined variable for the script.

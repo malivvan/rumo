@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 var timesModule = map[string]vm.Object{

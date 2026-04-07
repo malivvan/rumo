@@ -240,7 +240,7 @@ func ToInterface(o Object) (res interface{}) {
 	return
 }
 
-// FromInterface will attempt to convert an interface{} v to a vvm Object
+// FromInterface will attempt to convert an interface{} v to a vm Object
 func FromInterface(v interface{}) (Object, error) {
 	switch v := v.(type) {
 	case nil:

@@ -14,22 +14,22 @@ title: interoperability
 
 ## Using Scripts
 
-Embedding and executing the VV code in Go is very easy. At a high level,
+Embedding and executing the rumo code in Go is very easy. At a high level,
 this process is like:
 
-- create a [Script](https://godoc.org/github.com/malivvan/vv#Script) instance with
+- create a [Script](https://godoc.org/github.com/malivvan/rumo#Script) instance with
 your code,
 - _optionally_ add some
-[Script Variables](https://godoc.org/github.com/malivvan/vv#Variable) to Script,
+[Script Variables](https://godoc.org/github.com/malivvan/rumo#Variable) to Script,
 - compile or directly run the script,
 - retrieve _output_ values from the
-[Compiled](https://godoc.org/github.com/malivvan/vv#Compiled) instance.
+[Compiled](https://godoc.org/github.com/malivvan/rumo#Compiled) instance.
 
-The following is an example where a VV script is compiled and run with no
+The following is an example where a rumo script is compiled and run with no
 input/output variables.
 
 ```golang
-import "github.com/malivvan/vv/vm"
+import "github.com/malivvan/rumo/vm"
 
 var code = `
 reduce := func(seq, fn) {
@@ -42,7 +42,7 @@ print(reduce([1, 2, 3], func(x, s) { s += x }))
 `
 
 func main() {
-    s := vv.NewScript([]byte(code))
+    s := rumo.NewScript([]byte(code))
     if _, err := s.Run(); err != nil {
         panic(err)
     }
@@ -51,17 +51,17 @@ func main() {
 
 Here's another example where an input variable is added to the script, and, an
 output variable is accessed through
-[Variable.Int](https://godoc.org/github.com/malivvan/vv#Variable.Int) function:
+[Variable.Int](https://godoc.org/github.com/malivvan/rumo#Variable.Int) function:
 
 ```golang
 import (
     "fmt"
 
-    "github.com/malivvan/vv/vm"
+    "github.com/malivvan/rumo/vm"
 )
 
 func main() {
-    s := vv.NewScript([]byte(`a := b + 20`))
+    s := rumo.NewScript([]byte(`a := b + 20`))
 
     // define variable 'b'
     _ = s.Add("b", 10)
@@ -94,48 +94,48 @@ func main() {
 ```
 
 A variable `b` is defined by the user before compilation using
-[Script.Add](https://godoc.org/github.com/malivvan/vv#Script.Add) function. Then a
+[Script.Add](https://godoc.org/github.com/malivvan/rumo#Script.Add) function. Then a
 compiled bytecode `c` is used to execute the bytecode and get the value of
 global variables. In this example, the value of global variable `a` is read
-using [Compiled.Get](https://godoc.org/github.com/malivvan/vv#Compiled.Get)
+using [Compiled.Get](https://godoc.org/github.com/malivvan/rumo#Compiled.Get)
 function. See
-[documentation](https://godoc.org/github.com/malivvan/vv#Variable) for the
+[documentation](https://godoc.org/github.com/malivvan/rumo#Variable) for the
 full list of variable value functions.
 
 Value of the global variables can be replaced using
-[Compiled.Set](https://godoc.org/github.com/malivvan/vv#Compiled.Set) function.
+[Compiled.Set](https://godoc.org/github.com/malivvan/rumo#Compiled.Set) function.
 But it will return an error if you try to set the value of un-defined global
 variables _(e.g. trying to set the value of `x` in the example)_.  
 
 ### Type Conversion Table
 
 When adding a Variable
-_([Script.Add](https://godoc.org/github.com/malivvan/vv#Script.Add))_, Script
-converts Go values into VV values based on the following conversion table.
+_([Script.Add](https://godoc.org/github.com/malivvan/rumo#Script.Add))_, Script
+converts Go values into rumo values based on the following conversion table.
 
-| Go Type | VV Type | Note |
-| :--- | :--- | :--- |
-|`nil`|`Undefined`||
-|`string`|`String`||
-|`int64`|`Int`||
-|`int`|`Int`||
-|`bool`|`Bool`||
-|`rune`|`Char`||
-|`byte`|`Char`||
-|`float64`|`Float`||
-|`[]byte`|`Bytes`||
-|`time.Time`|`Time`||
-|`error`|`Error{String}`|use `error.Error()` as String value|
-|`map[string]Object`|`Map`||
-|`map[string]interface{}`|`Map`|individual elements converted to VV objects|
-|`[]Object`|`Array`||
-|`[]interface{}`|`Array`|individual elements converted to VV objects|
-|`Object`|`Object`|_(no type conversion performed)_|
+| Go Type | Rumo Type       | Note |
+| :--- |:----------------| :--- |
+|`nil`| `Undefined`     ||
+|`string`| `String`        ||
+|`int64`| `Int`           ||
+|`int`| `Int`           ||
+|`bool`| `Bool`          ||
+|`rune`| `Char`          ||
+|`byte`| `Char`          ||
+|`float64`| `Float`         ||
+|`[]byte`| `Bytes`         ||
+|`time.Time`| `Time`          ||
+|`error`| `Error{String}` |use `error.Error()` as String value|
+|`map[string]Object`| `Map`           ||
+|`map[string]interface{}`| `Map`           |individual elements converted to VV objects|
+|`[]Object`| `Array`         ||
+|`[]interface{}`| `Array`         |individual elements converted to VV objects|
+|`Object`| `Object`        |_(no type conversion performed)_|
 
 ### User Types
 
 Users can add and use a custom user type in VV code by implementing
-[Object](https://godoc.org/github.com/malivvan/vv#Object) interface. VV runtime
+[Object](https://godoc.org/github.com/malivvan/rumo#Object) interface. VV runtime
 will treat the user types in the same way it does to the runtime types with no
 performance overhead. See
 [Object Types](objects.md) for
@@ -153,7 +153,7 @@ include any modules by default. You can use this function to include the
 [Standard Library](stdlib.md).
 
 ```golang
-s := vv.NewScript([]byte(`math := import("math"); a := math.abs(-19.84)`))
+s := rumo.NewScript([]byte(`math := import("math"); a := math.abs(-19.84)`))
 
 s.SetImports(std.GetModuleMap("math"))
 // or, to include all stdlib at once
@@ -164,9 +164,9 @@ You can also include VV's written module using `objects.SourceModule`
 (which implements `objects.Importable`).
 
 ```golang
-s := vv.NewScript([]byte(`double := import("double"); a := double(20)`))
+s := rumo.NewScript([]byte(`double := import("double"); a := double(20)`))
 
-mods := vv.NewModuleMap()
+mods := rumo.NewModuleMap()
 mods.AddSourceModule("double", []byte(`export func(x) { return x * 2 }`))
 s.SetImports(mods)
 ```
@@ -182,13 +182,13 @@ number (e.g. `-1`) if you don't need to limit the number of allocations.
 EnableFileImport enables or disables module loading from the local files. It's
 disabled by default.
 
-### vv.MaxStringLen
+### rumo.MaxStringLen
 
 Sets the maximum byte-length of string values. This limit applies to all
 running VM instances in the process. Also it's not recommended to set or update
 this value while any VM is executing.
 
-### vv.MaxBytesLen
+### rumo.MaxBytesLen
 
 Sets the maximum length of bytes values. This limit applies to all running VM
 instances in the process. Also it's not recommended to set or update this value
@@ -208,7 +208,7 @@ concurrent use by multiple goroutines.
 
 ```golang
 for i := 0; i < concurrency; i++ {
-    go func(compiled *vv.Compiled) {
+    go func(compiled *rumo.Compiled) {
         // inputs
         _ = compiled.Set("a", rand.Intn(10))
         _ = compiled.Set("b", rand.Intn(10))
@@ -228,8 +228,8 @@ for i := 0; i < concurrency; i++ {
 ## Compiler and VM
 
 Although it's not recommended, you can directly create and run the VV
-[Compiler](https://godoc.org/github.com/malivvan/vv#Compiler), and
-[VM](https://godoc.org/github.com/malivvan/vv#VM) for yourself instead of using
+[Compiler](https://godoc.org/github.com/malivvan/rumo#Compiler), and
+[VM](https://godoc.org/github.com/malivvan/rumo#VM) for yourself instead of using
 Scripts and Script Variables. It's a bit more involved as you have to manage
 the symbol tables and global variables between them, but, basically that's what
 Script and Script Variable is doing internally.

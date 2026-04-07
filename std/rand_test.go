@@ -5,14 +5,21 @@ import (
 	"os"
 	"testing"
 
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/require"
 )
 
 func TestRand(t *testing.T) {
-	if os.Getenv("GODEBUG") != "randseednop=0" {
-		t.Skip("GODEBUG=randseednop=0 is not set, skipping test")
+	if goDebug, ok := os.LookupEnv("GODEBUG"); !ok || goDebug != "randseednop=0" {
+		err := os.Setenv("GODEBUG", "randseednop=0")
+		require.NoError(t, err)
+		defer func() {
+			err = os.Unsetenv("GODEBUG")
+			require.NoError(t, err)
+		}()
+
 	}
+
 	var seed int64 = 1234
 	r := rand.New(rand.NewSource(seed))
 

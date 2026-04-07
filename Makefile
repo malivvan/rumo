@@ -11,8 +11,8 @@ TEST_FORMAT ?= pkgname
 
 define build
 	@mkdir -p build
-	$(eval OUTPUT := $(if $(filter windows,$(1)),vv-$(1)-$(2).exe,vv-$(1)-$(2)))
-	$(eval URL := $(shell if [ -z "$(VERSION)" ]; then echo -n "" ; else echo -n https://github.com/malivvan/vv/releases/download/$(VERSION)/$(OUTPUT); fi))
+	$(eval OUTPUT := $(if $(filter windows,$(1)),rumo-$(1)-$(2).exe,rumo-$(1)-$(2)))
+	$(eval URL := $(shell if [ -z "$(VERSION)" ]; then echo -n "" ; else echo -n https://github.com/malivvan/rumo/releases/download/$(VERSION)/$(OUTPUT); fi))
 	$(eval SERIAL := $(shell if [ -z "$(VERSION)" ]; then uuidgen --random ; else uuidgen --sha1 --namespace @url --name $(URL); fi))
 	@echo "$(OUTPUT)"
 	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) GOFLAGS=-tags="$(4)" cyclonedx-gomod \
@@ -23,8 +23,8 @@ define build
 	build -trimpath -tags="$(4)" \
 	  -ldflags="$(3) \
 	  -buildid=$(SERIAL) \
-	  -X github.com/malivvan/vv.commit=$(COMMIT) \
-	  -X github.com/malivvan/vv.version=$(VERSION)" \
+	  -X github.com/malivvan/rumo.commit=$(COMMIT) \
+	  -X github.com/malivvan/rumo.version=$(VERSION)" \
 	  -o build/$(OUTPUT) ./cmd
 	@if [ ! -f build/release.md ]; then \
 	  echo "| filename | serial |" > build/release.md; \
@@ -50,8 +50,8 @@ lint:
 	@golint -set_exit_status ./vm/...
 
 test: generate lint
-	@GODEBUG=randseednop=0 gotestsum --format $(TEST_FORMAT) --format-hide-empty-pkg --hide-summary skipped --raw-command -- go test -json -race -cover ./...
-	@go run ./cmd ./vm/testdata/cli/test.vv > /dev/null 2>&1 || (echo "END TO END TEST FAILED" && exit 1)
+	@gotestsum --format $(TEST_FORMAT) --format-hide-empty-pkg --hide-summary skipped --raw-command -- go test -json -race -cover ./...
+	@go run ./cmd ./vm/testdata/cli/test.rumo > /dev/null 2>&1 || (echo "END TO END TEST FAILED" && exit 1)
 
 fmt:
 	@go fmt ./...

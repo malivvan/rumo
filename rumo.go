@@ -1,4 +1,4 @@
-package vv
+package rumo
 
 import (
 	"bufio"
@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/malivvan/vv/std"
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/parser"
+	"github.com/malivvan/rumo/std"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/parser"
 )
 
 var (
@@ -19,7 +19,7 @@ var (
 	commit  string
 )
 
-// Version returns the version of vv.
+// Version returns the version of rumo.
 func Version() string {
 	if version == "" {
 		return "unknown"
@@ -27,7 +27,7 @@ func Version() string {
 	return version
 }
 
-// Commit returns the commit hash of vv.
+// Commit returns the commit hash of rumo.
 func Commit() string {
 	if commit == "" {
 		return "unknown"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 var fmtModule = map[string]vm.Object{

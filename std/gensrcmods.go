@@ -16,7 +16,7 @@ var vvModFileRE = regexp.MustCompile(`^srcmod_(\w+).vv$`)
 func main() {
 	modules := make(map[string]string)
 
-	// enumerate all vvm module files
+	// enumerate all rumo module files
 	files, err := os.ReadDir(".")
 	if err != nil {
 		log.Fatal(err)

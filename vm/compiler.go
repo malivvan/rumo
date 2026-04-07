@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/malivvan/vv/vm/parser"
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo/vm/parser"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 // compilationScope represents a compiled instructions and the last two
@@ -518,7 +518,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 			}
 
 			switch v := v.(type) {
-			case []byte: // module written in vvm
+			case []byte: // module written in rumo
 				compiled, err := c.compileModule(node,
 					node.ModuleName, v, false)
 				if err != nil {
@@ -536,8 +536,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 			if filepath.IsAbs(moduleName) {
 				return c.errorf(node, "absolute file imports are not allowed: %s", node.ModuleName)
 			}
-			if !strings.HasSuffix(moduleName, ".vv") {
-				moduleName += ".vv"
+			if !strings.HasSuffix(moduleName, ".rumo") {
+				moduleName += ".rumo"
 			}
 
 			modulePath, err := filepath.Abs(

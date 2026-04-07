@@ -4,7 +4,7 @@ import (
 	"context"
 	"math/rand"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 var randModule = map[string]vm.Object{

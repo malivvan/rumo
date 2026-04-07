@@ -1,5 +1,5 @@
-# ![test](https://github.com/malivvan/vv/workflows/test/badge.svg) [![Release](https://img.shields.io/github/v/release/malivvan/vv.svg?sort=semver)](https://github.com/malivvan/vv/releases/latest) [![Go Report Card](https://goreportcard.com/badge/github.com/malivvan/vv)](https://goreportcard.com/report/github.com/malivvan/vv) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-vv is a small, fast and secure script language for Go supporting routines and channels
+# ![test](https://github.com/malivvan/rumo/workflows/test/badge.svg) [![Release](https://img.shields.io/github/v/release/malivvan/vv.svg?sort=semver)](https://github.com/malivvan/rumo/releases/latest) [![Go Report Card](https://goreportcard.com/badge/github.com/malivvan/rumo)](https://goreportcard.com/report/github.com/malivvan/rumo) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+rumo is a small, fast and secure script language for Go supporting routines and channels
 
 > This is pre release software so expect bugs and breaking changes
 
@@ -11,7 +11,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/malivvan/vv"
+	"github.com/malivvan/rumo"
 )
 
 func main() {
@@ -29,7 +29,7 @@ each([a, b, c, d], func(x) {
 })`
 
 	// create a new script instance
-	script := vv.NewScript([]byte(src))
+	script := rumo.NewScript([]byte(src))
 
 	// add variables with default values
 	_ = script.Add("a", 0)

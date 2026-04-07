@@ -1,6 +1,6 @@
 package parser
 
-import "github.com/malivvan/vv/vm/encoding"
+import "github.com/malivvan/rumo/vm/encoding"
 
 // SizeFile returns the size of the encoded SourceFile.
 func SizeFile(f *SourceFile) int {

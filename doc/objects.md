@@ -4,15 +4,15 @@ title: object types
 
 ## Table of Contents
 
-- [VV Objects](#vv-objects)
+- [Rumo Objects](#rumo-objects)
 - [Runtime Object Types](#runtime-object-types)
 - [User Object Types](#user-object-types)
 
-## VV Objects
+## Rumo Objects
 
-In VV, all object types _(both [runtime types](#runtime-object-types) and
+In rumo, all object types _(both [runtime types](#runtime-object-types) and
 [user types](#user-object-types))_ must implement
-[Object](https://godoc.org/github.com/malivvan/vv#Object) interface.
+[Object](https://godoc.org/github.com/malivvan/rumo#Object) interface.
 
 ### Object Interface
 
@@ -36,7 +36,7 @@ the value is required, most commonly when being converted into String value.
 BinaryOp(op token.Token, rhs Object) (res Object, err error)
 ```
 
-In VV, a type can overload binary operators
+In rumo, a type can overload binary operators
 (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `^`, `&^`, `>>`, `<<`, `>`, `>=`; _note
 that `<` and `<=` operators are not overloadable as they're simply implemented
 by switching left-hand side and right-hand side of `>`/`>=` operator_) by
@@ -159,7 +159,7 @@ Iterate() Iterator
 ```
 
 The Iterate method should return another object that implements
-[Iterator](https://godoc.org/github.com/malivvan/vv#Iterator) interface.
+[Iterator](https://godoc.org/github.com/malivvan/rumo#Iterator) interface.
 
 ### Iterator Interface
 
@@ -193,33 +193,33 @@ again.
 
 ## Runtime Object Types
 
-These are the basic types VV runtime supports out of the box:
+These are the basic types the rumo runtime supports out of the box:
 
-- Primitive value types: [Int](https://godoc.org/github.com/malivvan/vv#Int),
-  [String](https://godoc.org/github.com/malivvan/vv#String),
-  [Float](https://godoc.org/github.com/malivvan/vv#Float),
-  [Bool](https://godoc.org/github.com/malivvan/vv#ArrayIterator),
-  [Char](https://godoc.org/github.com/malivvan/vv#Char),
-  [Bytes](https://godoc.org/github.com/malivvan/vv#Bytes),
-  [Time](https://godoc.org/github.com/malivvan/vv#Time)
-- Composite value types: [Array](https://godoc.org/github.com/malivvan/vv#Array),
-  [ImmutableArray](https://godoc.org/github.com/malivvan/vv#ImmutableArray),
-  [Map](https://godoc.org/github.com/malivvan/vv#Map),
-  [ImmutableMap](https://godoc.org/github.com/malivvan/vv#ImmutableMap)
+- Primitive value types: [Int](https://godoc.org/github.com/malivvan/rumo#Int),
+  [String](https://godoc.org/github.com/malivvan/rumo#String),
+  [Float](https://godoc.org/github.com/malivvan/rumo#Float),
+  [Bool](https://godoc.org/github.com/malivvan/rumo#ArrayIterator),
+  [Char](https://godoc.org/github.com/malivvan/rumo#Char),
+  [Bytes](https://godoc.org/github.com/malivvan/rumo#Bytes),
+  [Time](https://godoc.org/github.com/malivvan/rumo#Time)
+- Composite value types: [Array](https://godoc.org/github.com/malivvan/rumo#Array),
+  [ImmutableArray](https://godoc.org/github.com/malivvan/rumo#ImmutableArray),
+  [Map](https://godoc.org/github.com/malivvan/rumo#Map),
+  [ImmutableMap](https://godoc.org/github.com/malivvan/rumo#ImmutableMap)
 - Functions:
-  [CompiledFunction](https://godoc.org/github.com/malivvan/vv#CompiledFunction),
-  [BuiltinFunction](https://godoc.org/github.com/malivvan/vv#BuiltinFunction),
-  [UserFunction](https://godoc.org/github.com/malivvan/vv#UserFunction)
-- [Iterators](https://godoc.org/github.com/malivvan/vv#Iterator):
-  [StringIterator](https://godoc.org/github.com/malivvan/vv#StringIterator),
-  [ArrayIterator](https://godoc.org/github.com/malivvan/vv#ArrayIterator),
-  [MapIterator](https://godoc.org/github.com/malivvan/vv#MapIterator),
-  [ImmutableMapIterator](https://godoc.org/github.com/malivvan/vv#ImmutableMapIterator)
-- [Error](https://godoc.org/github.com/malivvan/vv#Error)
-- [Undefined](https://godoc.org/github.com/malivvan/vv#Undefined)
-- Other internal objects: [Break](https://godoc.org/github.com/malivvan/vv#Break),
-  [Continue](https://godoc.org/github.com/malivvan/vv#Continue),
-  [ReturnValue](https://godoc.org/github.com/malivvan/vv#ReturnValue)
+  [CompiledFunction](https://godoc.org/github.com/malivvan/rumo#CompiledFunction),
+  [BuiltinFunction](https://godoc.org/github.com/malivvan/rumo#BuiltinFunction),
+  [UserFunction](https://godoc.org/github.com/malivvan/rumo#UserFunction)
+- [Iterators](https://godoc.org/github.com/malivvan/rumo#Iterator):
+  [StringIterator](https://godoc.org/github.com/malivvan/rumo#StringIterator),
+  [ArrayIterator](https://godoc.org/github.com/malivvan/rumo#ArrayIterator),
+  [MapIterator](https://godoc.org/github.com/malivvan/rumo#MapIterator),
+  [ImmutableMapIterator](https://godoc.org/github.com/malivvan/rumo#ImmutableMapIterator)
+- [Error](https://godoc.org/github.com/malivvan/rumo#Error)
+- [Undefined](https://godoc.org/github.com/malivvan/rumo#Undefined)
+- Other internal objects: [Break](https://godoc.org/github.com/malivvan/rumo#Break),
+  [Continue](https://godoc.org/github.com/malivvan/rumo#Continue),
+  [ReturnValue](https://godoc.org/github.com/malivvan/rumo#ReturnValue)
 
 See
 [Runtime Types](runtime-types.md)
@@ -228,7 +228,7 @@ for more details on these runtime types.
 ## User Object Types
 
 Users can easily extend and add their own types by implementing the same
-[Object](https://godoc.org/github.com/malivvan/vv#Object) interface and the
+[Object](https://godoc.org/github.com/malivvan/rumo#Object) interface and the
 default `ObjectImpl` implementation. VV runtime will treat them in the
 same way as its runtime types with no performance overhead.
 
@@ -236,7 +236,7 @@ Here's an example user type implementation, `StringArray`:
 
 ```golang
 type StringArray struct {
-    vv.ObjectImpl
+    rumo.ObjectImpl
     Value []string
 }
 
@@ -244,7 +244,7 @@ func (o *StringArray) String() string {
     return strings.Join(o.Value, ", ")
 }
 
-func (o *StringArray) BinaryOp(op token.Token, rhs vv.Object) (vv.Object, error) {
+func (o *StringArray) BinaryOp(op token.Token, rhs rumo.Object) (rumo.Object, error) {
     if rhs, ok := rhs.(*StringArray); ok {
         switch op {
         case token.Add:
@@ -255,14 +255,14 @@ func (o *StringArray) BinaryOp(op token.Token, rhs vv.Object) (vv.Object, error)
         }
     }
 
-    return nil, vv.ErrInvalidOperator
+    return nil, rumo.ErrInvalidOperator
 }
 
 func (o *StringArray) IsFalsy() bool {
     return len(o.Value) == 0
 }
 
-func (o *StringArray) Equals(x vv.Object) bool {
+func (o *StringArray) Equals(x rumo.Object) bool {
     if x, ok := x.(*StringArray); ok {
         if len(o.Value) != len(x.Value) {
             return false
@@ -280,7 +280,7 @@ func (o *StringArray) Equals(x vv.Object) bool {
     return false
 }
 
-func (o *StringArray) Copy() vv.Object {
+func (o *StringArray) Copy() rumo.Object {
     return &StringArray{
         Value: append([]string{}, o.Value...),
     }
@@ -292,13 +292,13 @@ func (o *StringArray) TypeName() string {
 ```
 
 You can use a user type via either
-[Script.Add](https://godoc.org/github.com/malivvan/vv#Script.Add) or by directly
+[Script.Add](https://godoc.org/github.com/malivvan/rumo#Script.Add) or by directly
 manipulating the symbol table and the global variables. Here's an example code
 to add `StringArray` to the script:
 
 ```golang
 // script that uses 'my_list'
-s := vv.NewScript([]byte(`
+s := rumo.NewScript([]byte(`
     print(my_list + "three")
 `))
 
@@ -310,47 +310,47 @@ s.Run()                   // prints "one, two, three"
 It can also implement `IndexGet` and `IndexSet`:
 
 ```golang
-func (o *StringArray) IndexGet(index vv.Object) (vv.Object, error) {
-    intIdx, ok := index.(*vv.Int)
+func (o *StringArray) IndexGet(index rumo.Object) (rumo.Object, error) {
+    intIdx, ok := index.(*rumo.Int)
     if ok {
         if intIdx.Value >= 0 && intIdx.Value < int64(len(o.Value)) {
-            return &vv.String{Value: o.Value[intIdx.Value]}, nil
+            return &rumo.String{Value: o.Value[intIdx.Value]}, nil
         }
 
-        return nil, vv.ErrIndexOutOfBounds
+        return nil, rumo.ErrIndexOutOfBounds
     }
 
-    strIdx, ok := index.(*vv.String)
+    strIdx, ok := index.(*rumo.String)
     if ok {
         for vidx, str := range o.Value {
             if strIdx.Value == str {
-                return &vv.Int{Value: int64(vidx)}, nil
+                return &rumo.Int{Value: int64(vidx)}, nil
             }
         }
 
-        return vv.UndefinedValue, nil
+        return rumo.UndefinedValue, nil
     }
 
-    return nil, vv.ErrInvalidIndexType
+    return nil, rumo.ErrInvalidIndexType
 }
 
-func (o *StringArray) IndexSet(index, value vv.Object) error {
-    strVal, ok := vv.ToString(value)
+func (o *StringArray) IndexSet(index, value rumo.Object) error {
+    strVal, ok := rumo.ToString(value)
     if !ok {
-        return vv.ErrInvalidIndexValueType
+        return rumo.ErrInvalidIndexValueType
     }
 
-    intIdx, ok := index.(*vv.Int)
+    intIdx, ok := index.(*rumo.Int)
     if ok {
         if intIdx.Value >= 0 && intIdx.Value < int64(len(o.Value)) {
             o.Value[intIdx.Value] = strVal
             return nil
         }
 
-        return vv.ErrIndexOutOfBounds
+        return rumo.ErrIndexOutOfBounds
     }
 
-    return vv.ErrInvalidIndexType
+    return rumo.ErrInvalidIndexType
 }
 ```
 
@@ -361,14 +361,14 @@ func (o *StringArray) CanCall() bool {
     return true
 }
 
-func (o *StringArray) Call(args ...vv.Object) (ret vv.Object, err error) {
+func (o *StringArray) Call(args ...rumo.Object) (ret rumo.Object, err error) {
     if len(args) != 1 {
-        return nil, vv.ErrWrongNumArguments
+        return nil, rumo.ErrWrongNumArguments
     }
 
-    s1, ok := vv.ToString(args[0])
+    s1, ok := rumo.ToString(args[0])
     if !ok {
-        return nil, vv.ErrInvalidArgumentType{
+        return nil, rumo.ErrInvalidArgumentType{
             Name:     "first",
             Expected: "string",
             Found:    args[0].TypeName(),
@@ -377,18 +377,18 @@ func (o *StringArray) Call(args ...vv.Object) (ret vv.Object, err error) {
 
     for i, v := range o.Value {
         if v == s1 {
-            return &vv.Int{Value: int64(i)}, nil
+            return &rumo.Int{Value: int64(i)}, nil
         }
     }
 
-    return vv.UndefinedValue, nil
+    return rumo.UndefinedValue, nil
 }
 ```
 
 Then it can be "invoked":
 
 ```golang
-s := vv.NewScript([]byte(`
+s := rumo.NewScript([]byte(`
     print(my_list("two"))
 `))
 
@@ -404,14 +404,14 @@ func (o *StringArray) CanIterate() bool {
     return true
 }
 
-func (o *StringArray) Iterate() vv.Iterator {
+func (o *StringArray) Iterate() rumo.Iterator {
     return &StringArrayIterator{
         strArr: o,
     }
 }
 
 type StringArrayIterator struct {
-    vv.ObjectImpl
+    rumo.ObjectImpl
     strArr *StringArray
     idx    int
 }
@@ -425,12 +425,12 @@ func (i *StringArrayIterator) Next() bool {
     return i.idx <= len(i.strArr.Value)
 }
 
-func (i *StringArrayIterator) Key() vv.Object {
-    return &vv.Int{Value: int64(i.idx - 1)}
+func (i *StringArrayIterator) Key() rumo.Object {
+    return &rumo.Int{Value: int64(i.idx - 1)}
 }
 
-func (i *StringArrayIterator) Value() vv.Object {
-    return &vv.String{Value: i.strArr.Value[i.idx-1]}
+func (i *StringArrayIterator) Value() rumo.Object {
+    return &rumo.String{Value: i.strArr.Value[i.idx-1]}
 }
 ```
 

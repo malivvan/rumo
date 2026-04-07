@@ -1,7 +1,7 @@
 package std
 
 import (
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 func wrapError(err error) vm.Object {

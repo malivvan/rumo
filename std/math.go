@@ -3,7 +3,7 @@ package std
 import (
 	"math"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 var mathModule = map[string]vm.Object{

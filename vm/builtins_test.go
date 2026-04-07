@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 func Test_builtinDelete(t *testing.T) {

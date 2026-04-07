@@ -1,4 +1,4 @@
-#!/usr/bin/env vv
+#!/usr/bin/env rumo
 
 os := import("os")
 one := import("one")

@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 func TestTextRE(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"os/exec"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 func makeOSExecCommand(cmd *exec.Cmd) *vm.ImmutableMap {

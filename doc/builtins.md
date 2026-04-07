@@ -554,7 +554,7 @@ Returns `true` if the object's type is immutable map. Or it returns `false`.
 ## is_iterable
 
 Returns `true` if the object's type is iterable: array, immutable array, map,
-immutable map, string, and bytes are iterable types in VV.
+immutable map, string, and bytes are iterable types in rumo.
 
 ## is_time
 

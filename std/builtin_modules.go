@@ -1,7 +1,7 @@
 package std
 
 import (
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 // BuiltinModules are builtin type standard library modules.

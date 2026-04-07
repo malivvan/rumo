@@ -3,7 +3,7 @@ package std
 import (
 	"encoding/base64"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 var base64Module = map[string]vm.Object{

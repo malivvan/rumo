@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/malivvan/vv"
+	"github.com/malivvan/rumo"
 )
 
 func TestRunVersionUsesPackageVersion(t *testing.T) {
@@ -20,14 +20,14 @@ func TestRunVersionUsesPackageVersion(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("unexpected exit code: %d, stderr=%q", exitCode, stderr.String())
 	}
-	if got := stdout.String(); got != vv.Version()+"\n" {
+	if got := stdout.String(); got != rumo.Version()+"\n" {
 		t.Fatalf("unexpected version output: %q", got)
 	}
 }
 
 func TestRunCompiledFileExecutesOnlyOnce(t *testing.T) {
 	tempDir := t.TempDir()
-	sourceFile := filepath.Join(tempDir, "script.vv")
+	sourceFile := filepath.Join(tempDir, "script.rumo")
 	compiledFile := filepath.Join(tempDir, "script.out")
 	markerFile := filepath.Join(tempDir, "marker.txt")
 
@@ -39,7 +39,7 @@ f.close()
 	if err := os.WriteFile(sourceFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	if err := vv.CompileOnly([]byte(src), sourceFile, compiledFile); err != nil {
+	if err := rumo.CompileOnly([]byte(src), sourceFile, compiledFile); err != nil {
 		t.Fatalf("compile only: %v", err)
 	}
 
@@ -61,7 +61,7 @@ f.close()
 
 func TestRunShortInputDoesNotPanic(t *testing.T) {
 	tempDir := t.TempDir()
-	inputFile := filepath.Join(tempDir, "tiny.vv")
+	inputFile := filepath.Join(tempDir, "tiny.rumo")
 	if err := os.WriteFile(inputFile, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write tiny file: %v", err)
 	}
@@ -89,4 +89,3 @@ func TestRunWithoutArgsStartsRepl(t *testing.T) {
 		t.Fatalf("unexpected repl output: %q", got)
 	}
 }
-

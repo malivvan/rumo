@@ -7,7 +7,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 var osModule = map[string]vm.Object{

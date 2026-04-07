@@ -2,8 +2,8 @@ package vm
 
 import (
 	"errors"
-	"github.com/malivvan/vv/vm/encoding"
-	"github.com/malivvan/vv/vm/parser"
+	"github.com/malivvan/rumo/vm/encoding"
+	"github.com/malivvan/rumo/vm/parser"
 	"time"
 )
 

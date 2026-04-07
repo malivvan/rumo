@@ -3,10 +3,8 @@ title: tutorial
 ---
 
 
-VV's syntax is designed to be familiar to Go developers while being a bit
+rumo's syntax is designed to be familiar to Go developers while being a bit
 simpler and more streamlined.
-
-**You can test the VV code in online [Playground](https://vvlang.com).**
 
 ## Values and Value Types
 
@@ -23,29 +21,29 @@ true || false         // bool values
 func() { /*...*/ }    // function value
 ```
 
-Here's a list of all available value types in VV.
+Here's a list of all available value types in rumo.
 
-| VV Type | Description | Equivalent Type in Go |
-| :---: | :---: | :---: |
-| int | signed 64-bit integer value | `int64` |
-| float | 64-bit floating point value | `float64` |
-| bool | boolean value | `bool` |
-| char | unicode character | `rune` |
-| string | unicode string | `string` |
-| bytes | byte array | `[]byte` |
-| error | [error](#error-values) value | - |
-| time | time value | `time.Time` |
-| array | value array _(mutable)_ | `[]interface{}` |
-| immutable array | [immutable](#immutable-values) array | - |
-| map | value map with string keys _(mutable)_ | `map[string]interface{}` |
-| immutable map | [immutable](#immutable-values) map | - |
-| undefined | [undefined](#undefined-values) value | - |
-| function | [function](#function-values) value | - |  
-| _user-defined_ | value of [user-defined types](objects.md) | - |
+|    Rumo Type    |                Description                |  Equivalent Type in Go   |
+|:---------------:|:-----------------------------------------:|:------------------------:|
+|       int       |        signed 64-bit integer value        |         `int64`          |
+|      float      |        64-bit floating point value        |        `float64`         |
+|      bool       |               boolean value               |          `bool`          |
+|      char       |             unicode character             |          `rune`          |
+|     string      |              unicode string               |         `string`         |
+|     bytes       |                byte array                 |         `[]byte`         |
+|      error      |       [error](#error-values) value        |            -             |
+|      time       |                time value                 |       `time.Time`        |
+|      array      |          value array _(mutable)_          |     `[]interface{}`      |
+| immutable array |   [immutable](#immutable-values) array    |            -             |
+|       map       |  value map with string keys _(mutable)_   | `map[string]interface{}` |
+|  immutable map  |    [immutable](#immutable-values) map     |            -             |
+|    undefined    |   [undefined](#undefined-values) value    |            -             |
+|    function     |    [function](#function-values) value     |            -             |  
+| _user-defined_  | value of [user-defined types](objects.md) |            -             |
 
 ### Error Values
 
-In VV, an error can be represented using "error" typed values. An error
+In rumo, an error can be represented using "error" typed values. An error
 value is created using `error` expression, and, it must have an underlying
 value. The underlying value of an error value can be access using `.value`
 selector.  
@@ -60,7 +58,7 @@ if is_error(err1) {      // 'is_error' builtin function
 
 ### Immutable Values
 
-In VV, basically all values (except for array and map) are immutable.
+In rumo, basically all values (except for array and map) are immutable.
 
 ```golang
 s := "12345"
@@ -103,7 +101,7 @@ a.c[1] = 5     // illegal
 
 ### Undefined Values
 
-In VV, an "undefined" value can be used to represent an unexpected or
+In rumo, an "undefined" value can be used to represent an unexpected or
 non-existing value:  
 
 - A function that does not return a value explicitly considered to return
@@ -122,7 +120,7 @@ d := int("foo")             // d == undefined
 
 ### Array Values
 
-In VV, array is an ordered list of values of any types. Elements of an array
+In rumo, array is an ordered list of values of any types. Elements of an array
 can be accessed using indexer `[]`.
 
 ```golang
@@ -135,7 +133,7 @@ can be accessed using indexer `[]`.
 
 ### Map Values
 
-In VV, map is a set of key-value pairs where key is string and the value is
+In rumo, map is a set of key-value pairs where key is string and the value is
 of any value types. Value of a map can be accessed using indexer `[]` or
 selector '.' operators.
 
@@ -150,7 +148,7 @@ m.x                                   // == undefined
 
 ### Function Values
 
-In VV, function is a callable value with a number of function arguments and
+In rumo, function is a callable value with a number of function arguments and
 a return value. Just like any other values, functions can be passed into or
 returned from another function.
 
@@ -166,7 +164,7 @@ add5 := adder(5)
 nine := add5(4)    // == 9
 ```
 
-Unlike Go, VV does not have declarations. So the following code is illegal:
+Unlike Go, rumo does not have declarations. So the following code is illegal:
 
 ```golang
 func my_func(arg1, arg2) {  // illegal
@@ -174,7 +172,7 @@ func my_func(arg1, arg2) {  // illegal
 }
 ```
 
-VV also supports variadic functions/closures:
+rumo also supports variadic functions/closures:
 
 ```golang
 variadic := func (a, b, ...c) {
@@ -501,7 +499,7 @@ sum := import("./sum")  // load module from a local file
 fmt.print(sum(10))      // module function
 ```
 
-Another module in `sum.vv` file:
+Another module in `sum.rumo` file:
 
 ```golang
 base := 5

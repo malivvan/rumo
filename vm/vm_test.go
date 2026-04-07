@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/malivvan/vv/std"
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/parser"
-	"github.com/malivvan/vv/vm/require"
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo/std"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/parser"
+	"github.com/malivvan/rumo/vm/require"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 const testOut = "out"
@@ -1795,7 +1795,7 @@ func() {
 		nil, vm.UndefinedValue)
 
 	// 'f' in RHS at line 4 must reference global variable 'f'
-	// See https://github.com/malivvan/vv/issues/314
+	// See https://github.com/malivvan/rumo/issues/314
 	expectRun(t, `
 f := func() { return 2 }
 out = (func() {

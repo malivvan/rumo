@@ -3,7 +3,7 @@ package parser_test
 import (
 	"testing"
 
-	"github.com/malivvan/vv/vm/parser"
+	"github.com/malivvan/rumo/vm/parser"
 )
 
 func TestIdentListString(t *testing.T) {

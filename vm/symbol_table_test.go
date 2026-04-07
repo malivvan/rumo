@@ -3,8 +3,8 @@ package vm_test
 import (
 	"testing"
 
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/require"
 )
 
 func TestSymbolTable(t *testing.T) {

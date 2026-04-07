@@ -1,4 +1,4 @@
-package vv
+package rumo
 
 import (
 	"bytes"
@@ -6,14 +6,14 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/encoding"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/encoding"
 
 	"hash/crc64"
 	"path/filepath"
 	"sync"
 
-	"github.com/malivvan/vv/vm/parser"
+	"github.com/malivvan/rumo/vm/parser"
 )
 
 // Magic is a magic number every encoded Program starts with.

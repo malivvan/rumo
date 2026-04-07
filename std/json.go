@@ -5,8 +5,8 @@ import (
 	"context"
 	gojson "encoding/json"
 
-	"github.com/malivvan/vv/std/json"
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/std/json"
+	"github.com/malivvan/rumo/vm"
 )
 
 var jsonModule = map[string]vm.Object{

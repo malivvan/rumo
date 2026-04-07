@@ -5,7 +5,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 // byte order mark
@@ -23,8 +23,7 @@ const (
 // ScannerErrorHandler is an error handler for the scanner.
 type ScannerErrorHandler func(pos SourceFilePos, msg string)
 
-// Scanner reads the vvm source text. It's based on Go's scanner
-// implementation.
+// Scanner reads the rumo source text. It's based on Go's scanner implementation.
 type Scanner struct {
 	file         *SourceFile         // source file handle
 	src          []byte              // source

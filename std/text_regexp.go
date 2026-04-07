@@ -4,7 +4,7 @@ import (
 	"context"
 	"regexp"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 func makeTextRegexp(re *regexp.Regexp) *vm.ImmutableMap {

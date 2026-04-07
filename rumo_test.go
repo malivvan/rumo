@@ -1,4 +1,4 @@
-package vv_test
+package rumo_test
 
 import (
 	"bytes"
@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/malivvan/vv"
+	"github.com/malivvan/rumo"
 )
 
 func TestRunREPLWritesEvaluationToProvidedWriter(t *testing.T) {
 	var out bytes.Buffer
 
-	vv.RunREPL(context.Background(), strings.NewReader("1 + 1\n"), &out, ">> ")
+	rumo.RunREPL(context.Background(), strings.NewReader("1 + 1\n"), &out, ">> ")
 
 	got := out.String()
 	if !strings.Contains(got, "2\n") {
@@ -27,8 +27,8 @@ func TestRunREPLWritesEvaluationToProvidedWriter(t *testing.T) {
 
 func TestScriptRunSupportsShebangSource(t *testing.T) {
 	tempDir := t.TempDir()
-	s := vv.NewScript([]byte("#!/usr/bin/env vv\nanswer := 40 + 2\n"))
-	s.SetName(filepath.Join(tempDir, "script.vv"))
+	s := rumo.NewScript([]byte("#!/usr/bin/env rumo\nanswer := 40 + 2\n"))
+	s.SetName(filepath.Join(tempDir, "script.rumo"))
 
 	p, err := s.Run()
 	if err != nil {
@@ -46,18 +46,18 @@ func TestScriptFileImportAllowsNestedRelativeImportsWithinRoot(t *testing.T) {
 		t.Fatalf("mkdir root: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, "shared.vv"), []byte(`export 40`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "shared.rumo"), []byte(`export 40`), 0o644); err != nil {
 		t.Fatalf("write shared module: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
 		t.Fatalf("mkdir subdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "sub", "entry.vv"), []byte(`base := import("../shared"); export base + 2`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "sub", "entry.rumo"), []byte(`base := import("../shared"); export base + 2`), 0o644); err != nil {
 		t.Fatalf("write entry module: %v", err)
 	}
 
-	s := vv.NewScript([]byte(`out := import("./sub/entry")`))
-	s.SetName(filepath.Join(root, "main.vv"))
+	s := rumo.NewScript([]byte(`out := import("./sub/entry")`))
+	s.SetName(filepath.Join(root, "main.rumo"))
 	s.EnableFileImport(true)
 	if err := s.SetImportDir(root); err != nil {
 		t.Fatalf("set import dir: %v", err)
@@ -78,12 +78,12 @@ func TestScriptFileImportRejectsEscapingImportRoot(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatalf("mkdir root: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "outside.vv"), []byte(`export 99`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "outside.rumo"), []byte(`export 99`), 0o644); err != nil {
 		t.Fatalf("write outside module: %v", err)
 	}
 
-	s := vv.NewScript([]byte(`out := import("../outside")`))
-	s.SetName(filepath.Join(root, "main.vv"))
+	s := rumo.NewScript([]byte(`out := import("../outside")`))
+	s.SetName(filepath.Join(root, "main.rumo"))
 	s.EnableFileImport(true)
 	if err := s.SetImportDir(root); err != nil {
 		t.Fatalf("set import dir: %v", err)

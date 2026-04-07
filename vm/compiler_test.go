@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/parser"
-	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/parser"
+	"github.com/malivvan/rumo/vm/require"
 )
 
 func TestCompiler_Compile(t *testing.T) {
@@ -1006,7 +1006,7 @@ r["x"] = {
 
 	expectCompileError(t, `import("")`, "empty module name")
 
-	// https://github.com/malivvan/vv/issues/314
+	// https://github.com/d5/tengo/issues/314
 	expectCompileError(t, `
 (func() {
 	fn := fn()

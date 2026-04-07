@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/malivvan/vv/std"
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/rumo/std"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/require"
 )
 
 func TestFuncAIR(t *testing.T) {

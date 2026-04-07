@@ -5,7 +5,7 @@ package std
 import (
 	"context"
 	"fmt"
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 // AllModuleNames returns a list of all default module names.

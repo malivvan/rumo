@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 func makeOSFile(file *os.File) *vm.ImmutableMap {

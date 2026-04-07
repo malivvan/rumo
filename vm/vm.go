@@ -11,8 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/malivvan/vv/vm/parser"
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo/vm/parser"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 // ContextKey is a type for context keys used in the VM.

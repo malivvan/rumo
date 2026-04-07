@@ -3,9 +3,9 @@ package vm_test
 import (
 	"testing"
 
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/require"
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/require"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 func TestObject_TypeName(t *testing.T) {

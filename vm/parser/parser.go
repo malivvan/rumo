@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 type bailout struct{}
@@ -89,7 +89,7 @@ func (p ErrorList) Err() error {
 	return p
 }
 
-// Parser parses the vvm source files. It's based on Go's parser
+// Parser parses the rumo source files. It's based on Go's parser
 // implementation.
 type Parser struct {
 	file      *SourceFile

@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/parser"
-	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/parser"
+	"github.com/malivvan/rumo/vm/require"
 )
 
 type srcfile struct {

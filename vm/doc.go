@@ -1,3 +1,2 @@
-// vvm is a small, dynamic, fast, secure script language for Go.
-
+// Package vm provides a virtual machine for executing rumo bytecode
 package vm

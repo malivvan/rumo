@@ -1,3 +1,3 @@
-module github.com/malivvan/vv
+module github.com/malivvan/rumo
 
 go 1.25.8

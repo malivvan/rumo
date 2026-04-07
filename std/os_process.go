@@ -5,7 +5,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 func makeOSProcessState(pid int, state *os.ProcessState) *vm.ImmutableMap {

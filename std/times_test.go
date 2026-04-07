@@ -1,8 +1,8 @@
 package std_test
 
 import (
-	"github.com/malivvan/vv/vm"
-	"github.com/malivvan/vv/vm/require"
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/require"
 	"runtime"
 	"testing"
 	"time"

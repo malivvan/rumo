@@ -3,7 +3,7 @@ package parser
 import (
 	"strings"
 
-	"github.com/malivvan/vv/vm/token"
+	"github.com/malivvan/rumo/vm/token"
 )
 
 // Expr represents an expression node in the AST.

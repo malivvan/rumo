@@ -2,7 +2,7 @@ package std
 
 import (
 	"encoding/hex"
-	"github.com/malivvan/vv/vm"
+	"github.com/malivvan/rumo/vm"
 )
 
 var hexModule = map[string]vm.Object{
