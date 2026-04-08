@@ -1,12 +1,9 @@
-.PHONY: generate lint test fmt build docs
 .DEFAULT_GOAL := help
-
 
 COMMIT = $(shell git rev-parse HEAD)
 ifeq ($(shell git status --porcelain),)
 	VERSION = $(shell git describe --tags --abbrev=0)
 endif
-
 
 TEST_FORMAT ?= pkgname
 
@@ -38,35 +35,41 @@ define build
 	fi
 endef
 
-install/build:
+.PHONY: install/build
+install/build: ## Install build dependencies
 	@go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
 
-install/test:
+.PHONY: install/test
+install/test: ## Install test dependencies
 	@go install golang.org/x/lint/golint@latest
 	@go install gotest.tools/gotestsum@latest
 
-install: install/build install/test
+.PHONY: install
+install: install/build install/test ## Install all dependencies
 
-lint:
+.PHONY: lint
+lint: ## Run linters
 	@golint -set_exit_status ./vm/...
 
-test: generate lint
+.PHONY: test
+test: stdlib lint ## Run tests
 	@gotestsum --format $(TEST_FORMAT) --format-hide-empty-pkg --hide-summary skipped --raw-command -- go test -json -race -cover ./...
 	@go run ./cmd ./vm/testdata/cli/test.rumo > /dev/null 2>&1 || (echo "END TO END TEST FAILED" && exit 1)
 
-fmt:
+.PHONY: fmt
+fmt: ## Format code
 	@go fmt ./...
 
-generate:
-	@go generate ./vm/...
-
-build: clean
+.PHONY: build
+build: clean ## Build the project for the current platform
 	$(call build,$(shell go env GOOS),$(shell go env GOARCH),,)
 
-preview: clean
+.PHONY: preview
+preview: clean ## Build the project for the current platform with optimizations
 	$(call build,$(shell go env GOOS),$(shell go env GOARCH),-s -w,)
 
-release: clean
+.PHONY: release
+release: clean ## Build the project for all platforms with optimizations
 	$(call build,linux,386,-s -w,)
 	$(call build,linux,amd64,-s -w,)
 	$(call build,linux,arm,-s -w,)
@@ -78,20 +81,19 @@ release: clean
 	$(call build,windows,arm,-s -w,)
 	$(call build,windows,arm64,-s -w,)
 
-clean:
-	@rm -rf ./build
-
-
+.PHONY: info
 info: ## Show information about the dependencies
-	@goda cut -h - "github.com/malivvan/rumo/...:all" | grep --color=never github.com/malivvan/rumo | sort
-	@echo
-	@goda cut -h - "github.com/malivvan/rumo/...:all" | grep -v github.com/malivvan/rumo | sort
-	@echo
+	@goda cut -h - "github.com/malivvan/rumo/...:all" | grep --color=never github.com/malivvan/rumo | sort && echo
+	@goda cut -h - "github.com/malivvan/rumo/...:all" | grep -v github.com/malivvan/rumo | sort && echo
 	@goda cut -h - -std "github.com/malivvan/rumo/...:all" | grep -v github.com | grep -v golang.org | sort
 
+.PHONY: stdlib
+stdlib: ## Generates standard library
+	@go run ./std
 
-stdlib: ## Generates standard library source modules
-	@go run ./std/src/gen ./std/modules.go
+.PHONY: clean
+clean: ## Clean build artifacts
+	@rm -rf ./build
 
 .PHONY: help
 help: ## Shows this help
