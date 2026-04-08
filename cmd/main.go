@@ -5,10 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/malivvan/rumo"
+	"github.com/malivvan/rumo/std/shell"
 )
 
 func main() {
@@ -28,6 +30,26 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	case "version":
 		_, _ = fmt.Fprintln(out, rumo.Version())
 		return 0
+	case "shell":
+		// see readline.NewFromConfig for advanced options:
+		rl, err := shell.New("> ")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer rl.Close()
+		log.SetOutput(rl.Stderr()) // redraw the prompt correctly after log output
+
+		for {
+			line, err := rl.ReadLine()
+			// `err` is either nil, io.EOF, readline.ErrInterrupt, or an unexpected
+			// condition in stdin:
+			if err != nil {
+				panic(err)
+			}
+			// `line` is returned without the terminating \n or CRLF:
+			fmt.Fprintf(rl, "you wrote: %s\n", line)
+		}
+
 	case "run":
 		if len(args) != 2 {
 			_, _ = fmt.Fprintln(errOut, "usage: rumo run <input_file>")
