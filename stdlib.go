@@ -2,11 +2,13 @@ package rumo
 
 import (
 	"github.com/malivvan/rumo/std/base64"
+	"github.com/malivvan/rumo/std/cui"
 	"github.com/malivvan/rumo/std/fmt"
 	"github.com/malivvan/rumo/std/hex"
 	"github.com/malivvan/rumo/std/json"
 	"github.com/malivvan/rumo/std/math"
 	"github.com/malivvan/rumo/std/rand"
+	"github.com/malivvan/rumo/std/shell"
 	"github.com/malivvan/rumo/std/text"
 	"github.com/malivvan/rumo/std/times"
 	"github.com/malivvan/rumo/vm"
@@ -15,11 +17,13 @@ import (
 // BuiltinModules are source type standard library modules.
 var BuiltinModules = map[string]map[string]vm.Object{
 	"base64":   base64.Module.Objects(),
+	"cui":   cui.Module.Objects(),
 	"fmt":   fmt.Module.Objects(),
 	"hex":   hex.Module.Objects(),
 	"json":   json.Module.Objects(),
 	"math":   math.Module.Objects(),
 	"rand":   rand.Module.Objects(),
+	"shell":   shell.Module.Objects(),
 	"text":   text.Module.Objects(),
 	"times":   times.Module.Objects(),
 }
