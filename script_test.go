@@ -12,7 +12,6 @@ import (
 
 	"github.com/malivvan/rumo"
 
-	"github.com/malivvan/rumo/std"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/require"
 	"github.com/malivvan/rumo/vm/token"
@@ -111,7 +110,7 @@ func TestScript_Run(t *testing.T) {
 
 func TestScript_BuiltinModules(t *testing.T) {
 	s := rumo.NewScript([]byte(`math := import("math"); a := math.abs(-19.84)`))
-	s.SetImports(std.GetModuleMap("math"))
+	s.SetImports(rumo.GetModuleMap("math"))
 	p, err := s.Run()
 	require.NoError(t, err)
 	require.NotNil(t, p)
@@ -122,7 +121,7 @@ func TestScript_BuiltinModules(t *testing.T) {
 	require.NotNil(t, p)
 	programGet(t, p, "a", 19.84)
 
-	s.SetImports(std.GetModuleMap("os"))
+	s.SetImports(rumo.GetModuleMap("os"))
 	_, err = s.Run()
 	require.Error(t, err)
 
@@ -138,7 +137,7 @@ a := enum.all([1,2,3], func(_, v) {
 	return v > 0 
 })
 `))
-	s.SetImports(std.GetModuleMap("enum"))
+	s.SetImports(rumo.GetModuleMap("enum"))
 	c, err := s.Run()
 	require.NoError(t, err)
 	require.NotNil(t, c)

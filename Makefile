@@ -89,6 +89,10 @@ info: ## Show information about the dependencies
 	@echo
 	@goda cut -h - -std "github.com/malivvan/rumo/...:all" | grep -v github.com | grep -v golang.org | sort
 
+
+stdlib: ## Generates standard library source modules
+	@go run ./std/src/gen ./std/modules.go
+
 .PHONY: help
 help: ## Shows this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

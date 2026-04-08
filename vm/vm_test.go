@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/malivvan/rumo/std"
+	"github.com/malivvan/rumo"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/parser"
 	"github.com/malivvan/rumo/vm/require"
@@ -55,7 +55,7 @@ func (o *testopts) copy() *testopts {
 }
 
 func (o *testopts) Stdlib() *testopts {
-	o.modules.AddMap(std.GetModuleMap(std.AllModuleNames()...))
+	o.modules.AddMap(rumo.GetModuleMap(rumo.AllModuleNames()...))
 	return o
 }
 
@@ -3307,7 +3307,7 @@ func TestSourceModules(t *testing.T) {
 
 func testEnumModule(t *testing.T, input string, expected interface{}) {
 	expectRun(t, `enum := import("enum"); `+input,
-		Opts().Module("enum", std.SourceModules["enum"]),
+		Opts().Module("enum", rumo.SourceModules["enum"]),
 		expected)
 }
 

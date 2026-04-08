@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/malivvan/rumo/std"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/parser"
 )
@@ -36,7 +35,7 @@ func Commit() string {
 }
 
 // Modules is a map of all standard library modules.
-var Modules = std.GetModuleMap(std.AllModuleNames()...)
+var Modules = GetModuleMap(AllModuleNames()...)
 
 // CompileOnly compiles the source code and writes the compiled binary into
 // outputFile.

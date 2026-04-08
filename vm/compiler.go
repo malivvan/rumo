@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"github.com/malivvan/rumo/vm/parser"
@@ -98,8 +97,7 @@ func NewCompiler(file *parser.SourceFile, symbolTable *SymbolTable, constants []
 func (c *Compiler) Compile(node parser.Node) error {
 	if c.trace != nil {
 		if node != nil {
-			defer untracec(tracec(c, fmt.Sprintf("%s (%s)",
-				node.String(), reflect.TypeOf(node).Elem().Name())))
+			defer untracec(tracec(c, fmt.Sprintf("%s", node.String())))
 		} else {
 			defer untracec(tracec(c, "<nil>"))
 		}

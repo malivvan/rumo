@@ -2,11 +2,13 @@ package require
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -15,6 +17,172 @@ import (
 	"github.com/malivvan/rumo/vm/parser"
 	"github.com/malivvan/rumo/vm/token"
 )
+
+// ARR -
+type ARR = []interface{}
+
+// MAP -
+type MAP = map[string]interface{}
+
+// IARR -
+type IARR []interface{}
+
+// IMAP -
+type IMAP map[string]interface{}
+
+// Module loads a module and returns it as a CallRes for chaining calls.
+func Module(t *testing.T, moduleName string) CallRes {
+	mod := rumo.GetModuleMap(moduleName).GetBuiltinModule(moduleName)
+	if mod == nil {
+		return CallRes{T: t, E: fmt.Errorf("module not found: %s", moduleName)}
+	}
+
+	return CallRes{T: t, O: mod}
+}
+
+// Object converts a Go value to a vm.Object for comparison in tests.
+func Object(v interface{}) vm.Object {
+	switch v := v.(type) {
+	case vm.Object:
+		return v
+	case string:
+		return &vm.String{Value: v}
+	case int64:
+		return &vm.Int{Value: v}
+	case int: // for convenience
+		return &vm.Int{Value: int64(v)}
+	case bool:
+		if v {
+			return vm.TrueValue
+		}
+		return vm.FalseValue
+	case rune:
+		return &vm.Char{Value: v}
+	case byte: // for convenience
+		return &vm.Char{Value: rune(v)}
+	case float64:
+		return &vm.Float{Value: v}
+	case []byte:
+		return &vm.Bytes{Value: v}
+	case MAP:
+		objs := make(map[string]vm.Object)
+		for k, v := range v {
+			objs[k] = Object(v)
+		}
+
+		return &vm.Map{Value: objs}
+	case ARR:
+		var objs []vm.Object
+		for _, e := range v {
+			objs = append(objs, Object(e))
+		}
+
+		return &vm.Array{Value: objs}
+	case IMAP:
+		objs := make(map[string]vm.Object)
+		for k, v := range v {
+			objs[k] = Object(v)
+		}
+
+		return &vm.ImmutableMap{Value: objs}
+	case IARR:
+		var objs []vm.Object
+		for _, e := range v {
+			objs = append(objs, Object(e))
+		}
+
+		return &vm.ImmutableArray{Value: objs}
+	case time.Time:
+		return &vm.Time{Value: v}
+	case []int:
+		var objs []vm.Object
+		for _, e := range v {
+			objs = append(objs, &vm.Int{Value: int64(e)})
+		}
+
+		return &vm.Array{Value: objs}
+	}
+
+	panic(fmt.Errorf("unknown type: %T", v))
+}
+
+// Expect runs the input script and asserts that the value of "out" is equal to expected.
+func Expect(t *testing.T, input string, expected interface{}) {
+	s := rumo.NewScript([]byte(input))
+	s.SetImports(rumo.GetModuleMap(rumo.AllModuleNames()...))
+	c, err := s.Run()
+	NoError(t, err)
+	NotNil(t, c)
+	v := c.Get("out")
+	NotNil(t, v)
+	Equal(t, expected, v.Value())
+}
+
+// CallRes is a helper struct for chaining calls to module functions and asserting results.
+type CallRes struct {
+	T *testing.T
+	O interface{}
+	E error
+}
+
+// Call calls a function on the result of a previous call and returns a new CallRes for chaining.
+func (c CallRes) Call(funcName string, args ...interface{}) CallRes {
+	if c.E != nil {
+		return c
+	}
+
+	var oargs []vm.Object
+	for _, v := range args {
+		oargs = append(oargs, Object(v))
+	}
+
+	switch o := c.O.(type) {
+	case *vm.BuiltinModule:
+		m, ok := o.Attrs[funcName]
+		if !ok {
+			return CallRes{T: c.T, E: fmt.Errorf(
+				"function not found: %s", funcName)}
+		}
+
+		f, ok := m.(*vm.BuiltinFunction)
+		if !ok {
+			return CallRes{T: c.T, E: fmt.Errorf(
+				"non-callable: %s", funcName)}
+		}
+
+		res, err := f.Value(context.Background(), oargs...)
+		return CallRes{T: c.T, O: res, E: err}
+	case *vm.BuiltinFunction:
+		res, err := o.Value(context.Background(), oargs...)
+		return CallRes{T: c.T, O: res, E: err}
+	case *vm.ImmutableMap:
+		m, ok := o.Value[funcName]
+		if !ok {
+			return CallRes{T: c.T, E: fmt.Errorf("function not found: %s", funcName)}
+		}
+
+		f, ok := m.(*vm.BuiltinFunction)
+		if !ok {
+			return CallRes{T: c.T, E: fmt.Errorf("non-callable: %s", funcName)}
+		}
+
+		res, err := f.Value(context.Background(), oargs...)
+		return CallRes{T: c.T, O: res, E: err}
+	default:
+		panic(fmt.Errorf("unexpected object: %v (%T)", o, o))
+	}
+}
+
+// Expect asserts that the result of the previous call is equal to expected and that no error occurred.
+func (c CallRes) Expect(expected interface{}, msgAndArgs ...interface{}) {
+	NoError(c.T, c.E, msgAndArgs...)
+	Equal(c.T, Object(expected), c.O, msgAndArgs...)
+}
+
+// ExpectError asserts that the previous call resulted in an error.
+func (c CallRes) ExpectError() {
+	Error(c.T, c.E)
+}
 
 // NoError asserts err is not an error.
 func NoError(t *testing.T, err error, msg ...interface{}) {

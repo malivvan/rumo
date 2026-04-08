@@ -2,9 +2,9 @@ package vm
 
 import (
 	"fmt"
+
 	"github.com/malivvan/rumo/vm/encoding"
 	"github.com/malivvan/rumo/vm/parser"
-	"reflect"
 )
 
 // Bytecode is a compiled instructions and constants.
@@ -83,8 +83,7 @@ func (b *Bytecode) FormatConstants() (output []string) {
 				output = append(output, fmt.Sprintf("     %s", l))
 			}
 		default:
-			output = append(output, fmt.Sprintf("[% 3d] %s (%s|%p)",
-				cidx, cn, reflect.TypeOf(cn).Elem().Name(), &cn))
+			output = append(output, fmt.Sprintf("[% 3d] %s (%p)", cidx, cn, &cn))
 		}
 	}
 	return

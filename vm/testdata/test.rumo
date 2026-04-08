@@ -1,0 +1,8 @@
+b64 := import("base64")
+hex := import("hex")
+fmt := import("fmt")
+fmt.println(b64)
+fmt.println(b64.encode("hello world"))
+fmt.println(b64.decode("aGVsbG8gd29ybGQ="))
+fmt.println(hex.encode("hello world"))
+fmt.println(hex.decode("68656c6c6f20776f726c64"))

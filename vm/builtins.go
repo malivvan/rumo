@@ -2,7 +2,7 @@ package vm
 
 import "context"
 
-// BuiltinFuncs is a list of all builtin functions.
+// builtinFuncs is a list of all builtin functions.
 var builtinFuncs []*BuiltinFunction
 
 // if needVMObj is true, VM will pass [VMObj, args...] to fn when calling it.
