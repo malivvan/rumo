@@ -41,165 +41,50 @@ var osModule = map[string]vm.Object{
 	"seek_set":            &vm.Int{Value: int64(io.SeekStart)},
 	"seek_cur":            &vm.Int{Value: int64(io.SeekCurrent)},
 	"seek_end":            &vm.Int{Value: int64(io.SeekEnd)},
-	"args": &vm.BuiltinFunction{
-		Name:  "args",
-		Value: osArgs,
-	}, // args() => array(string)
+	"args":                &vm.BuiltinFunction{Name: "args", Value: osArgs}, // args() => array(string)
 	"chdir": &vm.BuiltinFunction{
-		Name:  "chdir",
-		Value: FuncASRE(os.Chdir),
+		Name: "chdir", Value: FuncASRE(os.Chdir),
 	}, // chdir(dir string) => error
-	"chmod": osFuncASFmRE("chmod", os.Chmod), // chmod(name string, mode int) => error
-	"chown": &vm.BuiltinFunction{
-		Name:  "chown",
-		Value: FuncASIIRE(os.Chown),
-	}, // chown(name string, uid int, gid int) => error
-	"clearenv": &vm.BuiltinFunction{
-		Name:  "clearenv",
-		Value: FuncAR(os.Clearenv),
-	}, // clearenv()
-	"environ": &vm.BuiltinFunction{
-		Name:  "environ",
-		Value: FuncARSs(os.Environ),
-	}, // environ() => array(string)
-	"exit": &vm.BuiltinFunction{
-		Name:  "exit",
-		Value: FuncAIR(os.Exit),
-	}, // exit(code int)
-	"expand_env": &vm.BuiltinFunction{
-		Name:  "expand_env",
-		Value: osExpandEnv,
-	}, // expand_env(s string) => string
-	"getegid": &vm.BuiltinFunction{
-		Name:  "getegid",
-		Value: FuncARI(os.Getegid),
-	}, // getegid() => int
-	"getenv": &vm.BuiltinFunction{
-		Name:  "getenv",
-		Value: FuncASRS(os.Getenv),
-	}, // getenv(s string) => string
-	"geteuid": &vm.BuiltinFunction{
-		Name:  "geteuid",
-		Value: FuncARI(os.Geteuid),
-	}, // geteuid() => int
-	"getgid": &vm.BuiltinFunction{
-		Name:  "getgid",
-		Value: FuncARI(os.Getgid),
-	}, // getgid() => int
-	"getgroups": &vm.BuiltinFunction{
-		Name:  "getgroups",
-		Value: FuncARIsE(os.Getgroups),
-	}, // getgroups() => array(int)/error
-	"getpagesize": &vm.BuiltinFunction{
-		Name:  "getpagesize",
-		Value: FuncARI(os.Getpagesize),
-	}, // getpagesize() => int
-	"getpid": &vm.BuiltinFunction{
-		Name:  "getpid",
-		Value: FuncARI(os.Getpid),
-	}, // getpid() => int
-	"getppid": &vm.BuiltinFunction{
-		Name:  "getppid",
-		Value: FuncARI(os.Getppid),
-	}, // getppid() => int
-	"getuid": &vm.BuiltinFunction{
-		Name:  "getuid",
-		Value: FuncARI(os.Getuid),
-	}, // getuid() => int
-	"getwd": &vm.BuiltinFunction{
-		Name:  "getwd",
-		Value: FuncARSE(os.Getwd),
-	}, // getwd() => string/error
-	"hostname": &vm.BuiltinFunction{
-		Name:  "hostname",
-		Value: FuncARSE(os.Hostname),
-	}, // hostname() => string/error
-	"lchown": &vm.BuiltinFunction{
-		Name:  "lchown",
-		Value: FuncASIIRE(os.Lchown),
-	}, // lchown(name string, uid int, gid int) => error
-	"link": &vm.BuiltinFunction{
-		Name:  "link",
-		Value: FuncASSRE(os.Link),
-	}, // link(oldname string, newname string) => error
-	"lookup_env": &vm.BuiltinFunction{
-		Name:  "lookup_env",
-		Value: osLookupEnv,
-	}, // lookup_env(key string) => string/false
-	"mkdir":     osFuncASFmRE("mkdir", os.Mkdir),        // mkdir(name string, perm int) => error
-	"mkdir_all": osFuncASFmRE("mkdir_all", os.MkdirAll), // mkdir_all(name string, perm int) => error
-	"readlink": &vm.BuiltinFunction{
-		Name:  "readlink",
-		Value: FuncASRSE(os.Readlink),
-	}, // readlink(name string) => string/error
-	"remove": &vm.BuiltinFunction{
-		Name:  "remove",
-		Value: FuncASRE(os.Remove),
-	}, // remove(name string) => error
-	"remove_all": &vm.BuiltinFunction{
-		Name:  "remove_all",
-		Value: FuncASRE(os.RemoveAll),
-	}, // remove_all(name string) => error
-	"rename": &vm.BuiltinFunction{
-		Name:  "rename",
-		Value: FuncASSRE(os.Rename),
-	}, // rename(oldpath string, newpath string) => error
-	"setenv": &vm.BuiltinFunction{
-		Name:  "setenv",
-		Value: FuncASSRE(os.Setenv),
-	}, // setenv(key string, value string) => error
-	"symlink": &vm.BuiltinFunction{
-		Name:  "symlink",
-		Value: FuncASSRE(os.Symlink),
-	}, // symlink(oldname string newname string) => error
-	"temp_dir": &vm.BuiltinFunction{
-		Name:  "temp_dir",
-		Value: FuncARS(os.TempDir),
-	}, // temp_dir() => string
-	"truncate": &vm.BuiltinFunction{
-		Name:  "truncate",
-		Value: FuncASI64RE(os.Truncate),
-	}, // truncate(name string, size int) => error
-	"unsetenv": &vm.BuiltinFunction{
-		Name:  "unsetenv",
-		Value: FuncASRE(os.Unsetenv),
-	}, // unsetenv(key string) => error
-	"create": &vm.BuiltinFunction{
-		Name:  "create",
-		Value: osCreate,
-	}, // create(name string) => imap(file)/error
-	"open": &vm.BuiltinFunction{
-		Name:  "open",
-		Value: osOpen,
-	}, // open(name string) => imap(file)/error
-	"open_file": &vm.BuiltinFunction{
-		Name:  "open_file",
-		Value: osOpenFile,
-	}, // open_file(name string, flag int, perm int) => imap(file)/error
-	"find_process": &vm.BuiltinFunction{
-		Name:  "find_process",
-		Value: osFindProcess,
-	}, // find_process(pid int) => imap(process)/error
-	"start_process": &vm.BuiltinFunction{
-		Name:  "start_process",
-		Value: osStartProcess,
-	}, // start_process(name string, argv array(string), dir string, env array(string)) => imap(process)/error
-	"exec_look_path": &vm.BuiltinFunction{
-		Name:  "exec_look_path",
-		Value: FuncASRSE(exec.LookPath),
-	}, // exec_look_path(file) => string/error
-	"exec": &vm.BuiltinFunction{
-		Name:  "exec",
-		Value: osExec,
-	}, // exec(name, args...) => command
-	"stat": &vm.BuiltinFunction{
-		Name:  "stat",
-		Value: osStat,
-	}, // stat(name) => imap(fileinfo)/error
-	"read_file": &vm.BuiltinFunction{
-		Name:  "read_file",
-		Value: osReadFile,
-	}, // readfile(name) => array(byte)/error
+	"chmod":          osFuncASFmRE("chmod", os.Chmod),                                              // chmod(name string, mode int) => error
+	"chown":          &vm.BuiltinFunction{Name: "chown", Value: FuncASIIRE(os.Chown)},              // chown(name string, uid int, gid int) => error
+	"clearenv":       &vm.BuiltinFunction{Name: "clearenv", Value: FuncAR(os.Clearenv)},            // clearenv()
+	"environ":        &vm.BuiltinFunction{Name: "environ", Value: FuncARSs(os.Environ)},            // environ() => array(string)
+	"exit":           &vm.BuiltinFunction{Name: "exit", Value: FuncAIR(os.Exit)},                   // exit(code int)
+	"expand_env":     &vm.BuiltinFunction{Name: "expand_env", Value: osExpandEnv},                  // expand_env(s string) => string
+	"getegid":        &vm.BuiltinFunction{Name: "getegid", Value: FuncARI(os.Getegid)},             // getegid() => int
+	"getenv":         &vm.BuiltinFunction{Name: "getenv", Value: FuncASRS(os.Getenv)},              // getenv(s string) => string
+	"geteuid":        &vm.BuiltinFunction{Name: "geteuid", Value: FuncARI(os.Geteuid)},             // geteuid() => int
+	"getgid":         &vm.BuiltinFunction{Name: "getgid", Value: FuncARI(os.Getgid)},               // getgid() => int
+	"getgroups":      &vm.BuiltinFunction{Name: "getgroups", Value: FuncARIsE(os.Getgroups)},       // getgroups() => array(int)/error
+	"getpagesize":    &vm.BuiltinFunction{Name: "getpagesize", Value: FuncARI(os.Getpagesize)},     // getpagesize() => int
+	"getpid":         &vm.BuiltinFunction{Name: "getpid", Value: FuncARI(os.Getpid)},               // getpid() => int
+	"getppid":        &vm.BuiltinFunction{Name: "getppid", Value: FuncARI(os.Getppid)},             // getppid() => int
+	"getuid":         &vm.BuiltinFunction{Name: "getuid", Value: FuncARI(os.Getuid)},               // getuid() => int
+	"getwd":          &vm.BuiltinFunction{Name: "getwd", Value: FuncARSE(os.Getwd)},                // getwd() => string/error
+	"hostname":       &vm.BuiltinFunction{Name: "hostname", Value: FuncARSE(os.Hostname)},          // hostname() => string/error
+	"lchown":         &vm.BuiltinFunction{Name: "lchown", Value: FuncASIIRE(os.Lchown)},            // lchown(name string, uid int, gid int) => error
+	"link":           &vm.BuiltinFunction{Name: "link", Value: FuncASSRE(os.Link)},                 // link(oldname string, newname string) => error
+	"lookup_env":     &vm.BuiltinFunction{Name: "lookup_env", Value: osLookupEnv},                  // lookup_env(key string) => string/false
+	"mkdir":          osFuncASFmRE("mkdir", os.Mkdir),                                              // mkdir(name string, perm int) => error
+	"mkdir_all":      osFuncASFmRE("mkdir_all", os.MkdirAll),                                       // mkdir_all(name string, perm int) => error
+	"readlink":       &vm.BuiltinFunction{Name: "readlink", Value: FuncASRSE(os.Readlink)},         // readlink(name string) => string/error
+	"remove":         &vm.BuiltinFunction{Name: "remove", Value: FuncASRE(os.Remove)},              // remove(name string) => error
+	"remove_all":     &vm.BuiltinFunction{Name: "remove_all", Value: FuncASRE(os.RemoveAll)},       // remove_all(name string) => error
+	"rename":         &vm.BuiltinFunction{Name: "rename", Value: FuncASSRE(os.Rename)},             // rename(oldpath string, newpath string) => error
+	"setenv":         &vm.BuiltinFunction{Name: "setenv", Value: FuncASSRE(os.Setenv)},             // setenv(key string, value string) => error
+	"symlink":        &vm.BuiltinFunction{Name: "symlink", Value: FuncASSRE(os.Symlink)},           // symlink(oldname string newname string) => error
+	"temp_dir":       &vm.BuiltinFunction{Name: "temp_dir", Value: FuncARS(os.TempDir)},            // temp_dir() => string
+	"truncate":       &vm.BuiltinFunction{Name: "truncate", Value: FuncASI64RE(os.Truncate)},       // truncate(name string, size int) => error
+	"unsetenv":       &vm.BuiltinFunction{Name: "unsetenv", Value: FuncASRE(os.Unsetenv)},          // unsetenv(key string) => error
+	"create":         &vm.BuiltinFunction{Name: "create", Value: osCreate},                         // create(name string) => imap(file)/error
+	"open":           &vm.BuiltinFunction{Name: "open", Value: osOpen},                             // open(name string) => imap(file)/error
+	"open_file":      &vm.BuiltinFunction{Name: "open_file", Value: osOpenFile},                    // open_file(name string, flag int, perm int) => imap(file)/error
+	"find_process":   &vm.BuiltinFunction{Name: "find_process", Value: osFindProcess},              // find_process(pid int) => imap(process)/error
+	"start_process":  &vm.BuiltinFunction{Name: "start_process", Value: osStartProcess},            // start_process(name string, argv array(string), dir string, env array(string)) => imap(process)/error
+	"exec_look_path": &vm.BuiltinFunction{Name: "exec_look_path", Value: FuncASRSE(exec.LookPath)}, // exec_look_path(file) => string/error
+	"exec":           &vm.BuiltinFunction{Name: "exec", Value: osExec},                             // exec(name, args...) => command
+	"stat":           &vm.BuiltinFunction{Name: "stat", Value: osStat},                             // stat(name) => imap(fileinfo)/error
+	"read_file":      &vm.BuiltinFunction{Name: "read_file", Value: osReadFile},                    // readfile(name) => array(byte)/error
 }
 
 func osReadFile(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {

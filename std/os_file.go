@@ -10,51 +10,15 @@ import (
 func makeOSFile(file *os.File) *vm.ImmutableMap {
 	return &vm.ImmutableMap{
 		Value: map[string]vm.Object{
-			// chdir() => true/error
-			"chdir": &vm.BuiltinFunction{
-				Name:  "chdir",
-				Value: FuncARE(file.Chdir),
-			}, //
-			// chown(uid int, gid int) => true/error
-			//"chown": &vm.BuiltinFunction{
-			//	Name:  "chown",
-			//	Value: FuncAIIRE(file.Chown),
-			//}, //
-			// close() => error
-			"close": &vm.BuiltinFunction{
-				Name:  "close",
-				Value: FuncARE(file.Close),
-			}, //
-			// name() => string
-			"name": &vm.BuiltinFunction{
-				Name:  "name",
-				Value: FuncARS(file.Name),
-			}, //
-			// readdirnames(n int) => array(string)/error
-			"readdirnames": &vm.BuiltinFunction{
-				Name:  "readdirnames",
-				Value: FuncAIRSsE(file.Readdirnames),
-			}, //
-			// sync() => error
-			"sync": &vm.BuiltinFunction{
-				Name:  "sync",
-				Value: FuncARE(file.Sync),
-			}, //
-			// write(bytes) => int/error
-			"write": &vm.BuiltinFunction{
-				Name:  "write",
-				Value: FuncAYRIE(file.Write),
-			}, //
-			// write(string) => int/error
-			"write_string": &vm.BuiltinFunction{
-				Name:  "write_string",
-				Value: FuncASRIE(file.WriteString),
-			}, //
-			// read(bytes) => int/error
-			"read": &vm.BuiltinFunction{
-				Name:  "read",
-				Value: FuncAYRIE(file.Read),
-			}, //
+			"chdir":        &vm.BuiltinFunction{Name: "chdir", Value: FuncARE(file.Chdir)},                  // chdir() => true/error
+			"chown":        &vm.BuiltinFunction{Name: "chown", Value: FuncAIIRE(file.Chown)},                // chown(uid int, gid int) => true/error
+			"close":        &vm.BuiltinFunction{Name: "close", Value: FuncARE(file.Close)},                  // close() => error
+			"name":         &vm.BuiltinFunction{Name: "name", Value: FuncARS(file.Name)},                    // name() => string
+			"readdirnames": &vm.BuiltinFunction{Name: "readdirnames", Value: FuncAIRSsE(file.Readdirnames)}, // readdirnames(n int) => array(string)/error
+			"sync":         &vm.BuiltinFunction{Name: "sync", Value: FuncARE(file.Sync)},                    // sync() => error
+			"write":        &vm.BuiltinFunction{Name: "write", Value: FuncAYRIE(file.Write)},                // write(bytes) => int/error
+			"write_string": &vm.BuiltinFunction{Name: "write_string", Value: FuncASRIE(file.WriteString)},   // write(string) => int/error
+			"read":         &vm.BuiltinFunction{Name: "read", Value: FuncAYRIE(file.Read)},                  // read(bytes) => int/error
 			// chmod(mode int) => error
 			"chmod": &vm.BuiltinFunction{
 				Name: "chmod",

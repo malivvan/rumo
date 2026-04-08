@@ -10,31 +10,11 @@ import (
 func makeOSExecCommand(cmd *exec.Cmd) *vm.ImmutableMap {
 	return &vm.ImmutableMap{
 		Value: map[string]vm.Object{
-			// combined_output() => bytes/error
-			"combined_output": &vm.BuiltinFunction{
-				Name:  "combined_output",
-				Value: FuncARYE(cmd.CombinedOutput),
-			},
-			// output() => bytes/error
-			"output": &vm.BuiltinFunction{
-				Name:  "output",
-				Value: FuncARYE(cmd.Output),
-			}, //
-			// run() => error
-			"run": &vm.BuiltinFunction{
-				Name:  "run",
-				Value: FuncARE(cmd.Run),
-			}, //
-			// start() => error
-			"start": &vm.BuiltinFunction{
-				Name:  "start",
-				Value: FuncARE(cmd.Start),
-			}, //
-			// wait() => error
-			"wait": &vm.BuiltinFunction{
-				Name:  "wait",
-				Value: FuncARE(cmd.Wait),
-			}, //
+			"combined_output": &vm.BuiltinFunction{Name: "combined_output", Value: FuncARYE(cmd.CombinedOutput)}, // combined_output() => bytes/error
+			"output":          &vm.BuiltinFunction{Name: "output", Value: FuncARYE(cmd.Output)},                  // output() => bytes/error
+			"run":             &vm.BuiltinFunction{Name: "run", Value: FuncARE(cmd.Run)},                         // run() => error
+			"start":           &vm.BuiltinFunction{Name: "start", Value: FuncARE(cmd.Start)},                     // start() => error
+			"wait":            &vm.BuiltinFunction{Name: "wait", Value: FuncARE(cmd.Wait)},                       // wait() => error
 			// set_path(path string)
 			"set_path": &vm.BuiltinFunction{
 				Name: "set_path",

@@ -10,22 +10,10 @@ import (
 )
 
 var jsonModule = map[string]vm.Object{
-	"decode": &vm.BuiltinFunction{
-		Name:  "decode",
-		Value: jsonDecode,
-	},
-	"encode": &vm.BuiltinFunction{
-		Name:  "encode",
-		Value: jsonEncode,
-	},
-	"indent": &vm.BuiltinFunction{
-		Name:  "encode",
-		Value: jsonIndent,
-	},
-	"html_escape": &vm.BuiltinFunction{
-		Name:  "html_escape",
-		Value: jsonHTMLEscape,
-	},
+	"decode":      &vm.BuiltinFunction{Name: "decode", Value: jsonDecode},
+	"encode":      &vm.BuiltinFunction{Name: "encode", Value: jsonEncode},
+	"indent":      &vm.BuiltinFunction{Name: "encode", Value: jsonIndent},
+	"html_escape": &vm.BuiltinFunction{Name: "html_escape", Value: jsonHTMLEscape},
 }
 
 func jsonDecode(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {

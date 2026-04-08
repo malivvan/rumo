@@ -1,5 +1,6 @@
 .PHONY: generate lint test fmt build docs
-default: build
+.DEFAULT_GOAL := help
+
 
 COMMIT = $(shell git rev-parse HEAD)
 ifeq ($(shell git status --porcelain),)
@@ -79,3 +80,15 @@ release: clean
 
 clean:
 	@rm -rf ./build
+
+
+info: ## Show information about the dependencies
+	@goda cut -h - "github.com/malivvan/rumo/...:all" | grep --color=never github.com/malivvan/rumo | sort
+	@echo
+	@goda cut -h - "github.com/malivvan/rumo/...:all" | grep -v github.com/malivvan/rumo | sort
+	@echo
+	@goda cut -h - -std "github.com/malivvan/rumo/...:all" | grep -v github.com | grep -v golang.org | sort
+
+.PHONY: help
+help: ## Shows this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

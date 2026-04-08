@@ -11,22 +11,10 @@ import (
 func makeOSProcessState(pid int, state *os.ProcessState) *vm.ImmutableMap {
 	return &vm.ImmutableMap{
 		Value: map[string]vm.Object{
-			"exited": &vm.BuiltinFunction{
-				Name:  "exited",
-				Value: FuncARB(state.Exited),
-			},
-			"pid": &vm.BuiltinFunction{
-				Name:  "pid",
-				Value: FuncARI(func() int { return pid }),
-			},
-			"string": &vm.BuiltinFunction{
-				Name:  "string",
-				Value: FuncARS(state.String),
-			},
-			"success": &vm.BuiltinFunction{
-				Name:  "success",
-				Value: FuncARB(state.Success),
-			},
+			"exited":  &vm.BuiltinFunction{Name: "exited", Value: FuncARB(state.Exited)},
+			"pid":     &vm.BuiltinFunction{Name: "pid", Value: FuncARI(func() int { return pid })},
+			"string":  &vm.BuiltinFunction{Name: "string", Value: FuncARS(state.String)},
+			"success": &vm.BuiltinFunction{Name: "success", Value: FuncARB(state.Success)},
 		},
 	}
 }
@@ -34,14 +22,8 @@ func makeOSProcessState(pid int, state *os.ProcessState) *vm.ImmutableMap {
 func makeOSProcess(proc *os.Process) *vm.ImmutableMap {
 	return &vm.ImmutableMap{
 		Value: map[string]vm.Object{
-			"kill": &vm.BuiltinFunction{
-				Name:  "kill",
-				Value: FuncARE(proc.Kill),
-			},
-			"release": &vm.BuiltinFunction{
-				Name:  "release",
-				Value: FuncARE(proc.Release),
-			},
+			"kill":    &vm.BuiltinFunction{Name: "kill", Value: FuncARE(proc.Kill)},
+			"release": &vm.BuiltinFunction{Name: "release", Value: FuncARE(proc.Release)},
 			"signal": &vm.BuiltinFunction{
 				Name: "signal",
 				Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
