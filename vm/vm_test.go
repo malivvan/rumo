@@ -387,8 +387,8 @@ out = func() {
 `, nil, 136)
 
 	// assigning different type value
-	expectRun(t, `a := 1; a = "foo"; out = a`, nil, "foo")              // global
-	expectRun(t, `func() { a := 1; a = "foo"; out = a }()`, nil, "foo") // local
+	expectRun(t, `a := 1; a = "foo"; out = a`, nil, "foo")                                                               // global
+	expectRun(t, `func() { a := 1; a = "foo"; out = a }()`, nil, "foo")                                                  // local
 	expectRun(t, `
 out = func() { 
 	a := 5
@@ -3307,7 +3307,7 @@ func TestSourceModules(t *testing.T) {
 
 func testEnumModule(t *testing.T, input string, expected interface{}) {
 	expectRun(t, `enum := import("enum"); `+input,
-		Opts().Module("enum", rumo.SourceModules["enum"]),
+		Opts().Module("enum", rumo.SourceModules["enum"].Module()),
 		expected)
 }
 
