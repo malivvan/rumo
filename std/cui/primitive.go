@@ -14,13 +14,13 @@ type Widget interface {
 	GetRect() (int, int, int, int)
 
 	// SetRect sets a new position of the widget.
-	SetRect(x, y, width, height int)
+	SetRect(x, y, width, height int) Widget
 
 	// GetVisible returns whether or not the widget is visible.
 	GetVisible() bool
 
 	// SetVisible sets whether or not the widget is visible.
-	SetVisible(v bool)
+	SetVisible(v bool) Widget
 
 	// InputHandler returns a handler which receives key events when it has focus.
 	// It is called by the App class.

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/malivvan/rumo/vm"
-	"github.com/malivvan/rumo/vm/encoding"
+	"github.com/malivvan/rumo/vm/codec"
 
 	"hash/crc64"
 	"path/filepath"
@@ -262,15 +262,15 @@ func (p *Program) Unmarshal(b []byte) (err error) {
 	}
 
 	n := 0
-	n, p.globalIndices, err = encoding.UnmarshalMap[string, int](n, body, encoding.UnmarshalString, encoding.UnmarshalInt)
+	n, p.globalIndices, err = codec.UnmarshalMap[string, int](n, body, codec.UnmarshalString, codec.UnmarshalInt)
 	if err != nil {
 		return err
 	}
-	n, p.globals, err = encoding.UnmarshalSlice[vm.Object](n, body, vm.UnmarshalObject)
+	n, p.globals, err = codec.UnmarshalSlice[vm.Object](n, body, vm.UnmarshalObject)
 	if err != nil {
 		return err
 	}
-	n, p.maxAllocs, err = encoding.UnmarshalInt64(n, body)
+	n, p.maxAllocs, err = codec.UnmarshalInt64(n, body)
 	if err != nil {
 		return err
 	}
@@ -296,12 +296,12 @@ func (p *Program) Marshal() ([]byte, error) {
 
 	n := 0
 	data := make([]byte,
-		encoding.SizeMap[string, int](p.globalIndices, encoding.SizeString, encoding.SizeInt)+
-			encoding.SizeSlice[vm.Object](p.globals, vm.SizeOfObject)+
-			encoding.SizeInt64())
-	n = encoding.MarshalMap[string, int](n, data, p.globalIndices, encoding.MarshalString, encoding.MarshalInt)
-	n = encoding.MarshalSlice[vm.Object](n, data, p.globals, vm.MarshalObject)
-	n = encoding.MarshalInt64(n, data, p.maxAllocs)
+		codec.SizeMap[string, int](p.globalIndices, codec.SizeString, codec.SizeInt)+
+			codec.SizeSlice[vm.Object](p.globals, vm.SizeOfObject)+
+			codec.SizeInt64())
+	n = codec.MarshalMap[string, int](n, data, p.globalIndices, codec.MarshalString, codec.MarshalInt)
+	n = codec.MarshalSlice[vm.Object](n, data, p.globals, vm.MarshalObject)
+	n = codec.MarshalInt64(n, data, p.maxAllocs)
 	if n != len(data) {
 		return nil, fmt.Errorf("encoded length mismatch: %d != %d", n, len(data))
 	}

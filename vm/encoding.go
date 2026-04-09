@@ -2,9 +2,10 @@ package vm
 
 import (
 	"errors"
-	"github.com/malivvan/rumo/vm/encoding"
-	"github.com/malivvan/rumo/vm/parser"
 	"time"
+
+	"github.com/malivvan/rumo/vm/codec"
+	"github.com/malivvan/rumo/vm/parser"
 )
 
 const (
@@ -106,52 +107,52 @@ func TypeOfObject(o Object) byte {
 // SizeOfObject returns the size of the given object.
 func SizeOfObject(o Object) int {
 	if o == nil {
-		return encoding.SizeByte()
+		return codec.SizeByte()
 	}
 	switch TypeOfObject(o) {
 	case _undefined:
-		return encoding.SizeByte()
+		return codec.SizeByte()
 	case _bool:
-		return encoding.SizeByte() + encoding.SizeBool()
+		return codec.SizeByte() + codec.SizeBool()
 	case _bytes:
-		return encoding.SizeByte() + encoding.SizeBytes(o.(*Bytes).Value)
+		return codec.SizeByte() + codec.SizeBytes(o.(*Bytes).Value)
 	case _char:
-		return encoding.SizeByte() + encoding.SizeInt32()
+		return codec.SizeByte() + codec.SizeInt32()
 	case _int:
-		return encoding.SizeByte() + encoding.SizeInt64()
+		return codec.SizeByte() + codec.SizeInt64()
 	case _float:
-		return encoding.SizeByte() + encoding.SizeFloat64()
+		return codec.SizeByte() + codec.SizeFloat64()
 	case _string:
-		return encoding.SizeByte() + encoding.SizeString(o.(*String).Value)
+		return codec.SizeByte() + codec.SizeString(o.(*String).Value)
 	case _time:
-		return encoding.SizeByte() + encoding.SizeInt64()
+		return codec.SizeByte() + codec.SizeInt64()
 	case _array:
-		return encoding.SizeByte() + encoding.SizeSlice(o.(*Array).Value, SizeOfObject)
+		return codec.SizeByte() + codec.SizeSlice(o.(*Array).Value, SizeOfObject)
 	case _map:
-		return encoding.SizeByte() + encoding.SizeMap(o.(*Map).Value, encoding.SizeString, SizeOfObject)
+		return codec.SizeByte() + codec.SizeMap(o.(*Map).Value, codec.SizeString, SizeOfObject)
 	case _immutableArray:
-		return encoding.SizeByte() + encoding.SizeSlice(o.(*ImmutableArray).Value, SizeOfObject)
+		return codec.SizeByte() + codec.SizeSlice(o.(*ImmutableArray).Value, SizeOfObject)
 	case _immutableMap:
-		return encoding.SizeByte() + encoding.SizeMap(o.(*ImmutableMap).Value, encoding.SizeString, SizeOfObject)
+		return codec.SizeByte() + codec.SizeMap(o.(*ImmutableMap).Value, codec.SizeString, SizeOfObject)
 	case _objectPtr:
 		v := o.(*ObjectPtr)
 		if v.Value != nil {
-			return encoding.SizeByte() + SizeOfObject(*v.Value)
+			return codec.SizeByte() + SizeOfObject(*v.Value)
 		}
-		return encoding.SizeByte() + SizeOfObject(nil)
+		return codec.SizeByte() + SizeOfObject(nil)
 	case _compiledFunction:
-		s := encoding.SizeBytes(o.(*CompiledFunction).Instructions)
-		s += encoding.SizeInt(o.(*CompiledFunction).NumLocals)
-		s += encoding.SizeInt(o.(*CompiledFunction).NumParameters)
-		s += encoding.SizeBool()
-		s += encoding.SizeMap(o.(*CompiledFunction).SourceMap, encoding.SizeInt, parser.SizePos)
-		s += encoding.SizeSlice[*ObjectPtr](o.(*CompiledFunction).Free, SizeOfObjectPtr)
-		return encoding.SizeByte() + s
+		s := codec.SizeBytes(o.(*CompiledFunction).Instructions)
+		s += codec.SizeInt(o.(*CompiledFunction).NumLocals)
+		s += codec.SizeInt(o.(*CompiledFunction).NumParameters)
+		s += codec.SizeBool()
+		s += codec.SizeMap(o.(*CompiledFunction).SourceMap, codec.SizeInt, parser.SizePos)
+		s += codec.SizeSlice[*ObjectPtr](o.(*CompiledFunction).Free, SizeOfObjectPtr)
+		return codec.SizeByte() + s
 	case _builtinFunction:
-		s := encoding.SizeString(o.(*BuiltinFunction).Name)
-		return encoding.SizeByte() + s
+		s := codec.SizeString(o.(*BuiltinFunction).Name)
+		return codec.SizeByte() + s
 	case _error:
-		return encoding.SizeByte() + SizeOfObject(o.(*Error).Value)
+		return codec.SizeByte() + SizeOfObject(o.(*Error).Value)
 	default:
 		panic("sizeof: unsupported type: " + o.TypeName())
 	}
@@ -160,46 +161,46 @@ func SizeOfObject(o Object) int {
 // MarshalObject marshals the given object into a byte slice.
 func MarshalObject(n int, b []byte, o Object) int {
 	if o == nil {
-		return encoding.MarshalByte(n, b, 0)
+		return codec.MarshalByte(n, b, 0)
 	}
 	switch TypeOfObject(o) {
 	case _undefined:
-		n = encoding.MarshalByte(n, b, _undefined)
+		n = codec.MarshalByte(n, b, _undefined)
 	case _bool:
-		n = encoding.MarshalByte(n, b, _bool)
-		n = encoding.MarshalBool(n, b, o.(*Bool).value)
+		n = codec.MarshalByte(n, b, _bool)
+		n = codec.MarshalBool(n, b, o.(*Bool).value)
 	case _bytes:
-		n = encoding.MarshalByte(n, b, _bytes)
-		n = encoding.MarshalBytes(n, b, o.(*Bytes).Value)
+		n = codec.MarshalByte(n, b, _bytes)
+		n = codec.MarshalBytes(n, b, o.(*Bytes).Value)
 	case _char:
-		n = encoding.MarshalByte(n, b, _char)
-		n = encoding.MarshalInt32(n, b, o.(*Char).Value)
+		n = codec.MarshalByte(n, b, _char)
+		n = codec.MarshalInt32(n, b, o.(*Char).Value)
 	case _int:
-		n = encoding.MarshalByte(n, b, _int)
-		n = encoding.MarshalInt64(n, b, o.(*Int).Value)
+		n = codec.MarshalByte(n, b, _int)
+		n = codec.MarshalInt64(n, b, o.(*Int).Value)
 	case _float:
-		n = encoding.MarshalByte(n, b, _float)
-		n = encoding.MarshalFloat64(n, b, o.(*Float).Value)
+		n = codec.MarshalByte(n, b, _float)
+		n = codec.MarshalFloat64(n, b, o.(*Float).Value)
 	case _string:
-		n = encoding.MarshalByte(n, b, _string)
-		n = encoding.MarshalString(n, b, o.(*String).Value)
+		n = codec.MarshalByte(n, b, _string)
+		n = codec.MarshalString(n, b, o.(*String).Value)
 	case _time:
-		n = encoding.MarshalByte(n, b, _time)
-		n = encoding.MarshalInt64(n, b, o.(*Time).Value.UnixNano())
+		n = codec.MarshalByte(n, b, _time)
+		n = codec.MarshalInt64(n, b, o.(*Time).Value.UnixNano())
 	case _array:
-		n = encoding.MarshalByte(n, b, _array)
-		n = encoding.MarshalSlice(n, b, o.(*Array).Value, MarshalObject)
+		n = codec.MarshalByte(n, b, _array)
+		n = codec.MarshalSlice(n, b, o.(*Array).Value, MarshalObject)
 	case _map:
-		n = encoding.MarshalByte(n, b, _map)
-		n = encoding.MarshalMap(n, b, o.(*Map).Value, encoding.MarshalString, MarshalObject)
+		n = codec.MarshalByte(n, b, _map)
+		n = codec.MarshalMap(n, b, o.(*Map).Value, codec.MarshalString, MarshalObject)
 	case _immutableArray:
-		n = encoding.MarshalByte(n, b, _immutableArray)
-		n = encoding.MarshalSlice(n, b, o.(*ImmutableArray).Value, MarshalObject)
+		n = codec.MarshalByte(n, b, _immutableArray)
+		n = codec.MarshalSlice(n, b, o.(*ImmutableArray).Value, MarshalObject)
 	case _immutableMap:
-		n = encoding.MarshalByte(n, b, _immutableMap)
-		n = encoding.MarshalMap(n, b, o.(*ImmutableMap).Value, encoding.MarshalString, MarshalObject)
+		n = codec.MarshalByte(n, b, _immutableMap)
+		n = codec.MarshalMap(n, b, o.(*ImmutableMap).Value, codec.MarshalString, MarshalObject)
 	case _objectPtr:
-		n = encoding.MarshalByte(n, b, _objectPtr)
+		n = codec.MarshalByte(n, b, _objectPtr)
 		if o.(*ObjectPtr).Value != nil {
 			n = MarshalObject(n, b, *o.(*ObjectPtr).Value)
 		} else {
@@ -207,18 +208,18 @@ func MarshalObject(n int, b []byte, o Object) int {
 		}
 	case _compiledFunction:
 		v := o.(*CompiledFunction)
-		n = encoding.MarshalByte(n, b, _compiledFunction)
-		n = encoding.MarshalBytes(n, b, v.Instructions)
-		n = encoding.MarshalInt(n, b, v.NumLocals)
-		n = encoding.MarshalInt(n, b, v.NumParameters)
-		n = encoding.MarshalBool(n, b, v.VarArgs)
-		n = encoding.MarshalMap(n, b, v.SourceMap, encoding.MarshalInt, parser.MarshalPos)
-		n = encoding.MarshalSlice(n, b, v.Free, func(n int, b []byte, o *ObjectPtr) int { return MarshalObject(n, b, o) })
+		n = codec.MarshalByte(n, b, _compiledFunction)
+		n = codec.MarshalBytes(n, b, v.Instructions)
+		n = codec.MarshalInt(n, b, v.NumLocals)
+		n = codec.MarshalInt(n, b, v.NumParameters)
+		n = codec.MarshalBool(n, b, v.VarArgs)
+		n = codec.MarshalMap(n, b, v.SourceMap, codec.MarshalInt, parser.MarshalPos)
+		n = codec.MarshalSlice(n, b, v.Free, func(n int, b []byte, o *ObjectPtr) int { return MarshalObject(n, b, o) })
 	case _builtinFunction:
-		n = encoding.MarshalByte(n, b, _builtinFunction)
-		n = encoding.MarshalString(n, b, o.(*BuiltinFunction).Name)
+		n = codec.MarshalByte(n, b, _builtinFunction)
+		n = codec.MarshalString(n, b, o.(*BuiltinFunction).Name)
 	case _error:
-		n = encoding.MarshalByte(n, b, _error)
+		n = codec.MarshalByte(n, b, _error)
 		n = MarshalObject(n, b, o.(*Error).Value)
 	default:
 		panic("marshal: unsupported type: " + o.TypeName())
@@ -232,7 +233,7 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		return nn + 1, nil, nil
 	}
 	var t byte
-	n, t, err = encoding.UnmarshalByte(nn, b)
+	n, t, err = codec.UnmarshalByte(nn, b)
 	if err != nil {
 		return nn, nil, err
 	}
@@ -241,69 +242,69 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 	case _undefined:
 		return n, o, nil
 	case _bool:
-		n, o.(*Bool).value, err = encoding.UnmarshalBool(n, b)
+		n, o.(*Bool).value, err = codec.UnmarshalBool(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _bytes:
-		n, o.(*Bytes).Value, err = encoding.UnmarshalBytes(n, b)
+		n, o.(*Bytes).Value, err = codec.UnmarshalBytes(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _char:
-		n, o.(*Char).Value, err = encoding.UnmarshalInt32(n, b)
+		n, o.(*Char).Value, err = codec.UnmarshalInt32(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _int:
-		n, o.(*Int).Value, err = encoding.UnmarshalInt64(n, b)
+		n, o.(*Int).Value, err = codec.UnmarshalInt64(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _float:
-		n, o.(*Float).Value, err = encoding.UnmarshalFloat64(n, b)
+		n, o.(*Float).Value, err = codec.UnmarshalFloat64(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _string:
-		n, o.(*String).Value, err = encoding.UnmarshalString(n, b)
+		n, o.(*String).Value, err = codec.UnmarshalString(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _time:
 		var v int64
-		n, v, err = encoding.UnmarshalInt64(n, b)
+		n, v, err = codec.UnmarshalInt64(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
 		o.(*Time).Value = time.Unix(0, v).In(time.UTC)
 		return n, o, nil
 	case _array:
-		n, o.(*Array).Value, err = encoding.UnmarshalSlice[Object](n, b, UnmarshalObject)
+		n, o.(*Array).Value, err = codec.UnmarshalSlice[Object](n, b, UnmarshalObject)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _map:
-		n, o.(*Map).Value, err = encoding.UnmarshalMap[string, Object](n, b, encoding.UnmarshalString, UnmarshalObject)
+		n, o.(*Map).Value, err = codec.UnmarshalMap[string, Object](n, b, codec.UnmarshalString, UnmarshalObject)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _immutableArray:
-		n, o.(*ImmutableArray).Value, err = encoding.UnmarshalSlice[Object](n, b, UnmarshalObject)
+		n, o.(*ImmutableArray).Value, err = codec.UnmarshalSlice[Object](n, b, UnmarshalObject)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _immutableMap:
-		n, o.(*ImmutableMap).Value, err = encoding.UnmarshalMap[string, Object](n, b, encoding.UnmarshalString, UnmarshalObject)
+		n, o.(*ImmutableMap).Value, err = codec.UnmarshalMap[string, Object](n, b, codec.UnmarshalString, UnmarshalObject)
 		if err != nil {
 			return nn, nil, err
 		}
@@ -319,27 +320,27 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		}
 		return n, o, nil
 	case _compiledFunction:
-		n, o.(*CompiledFunction).Instructions, err = encoding.UnmarshalBytes(n, b)
+		n, o.(*CompiledFunction).Instructions, err = codec.UnmarshalBytes(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
-		n, o.(*CompiledFunction).NumLocals, err = encoding.UnmarshalInt(n, b)
+		n, o.(*CompiledFunction).NumLocals, err = codec.UnmarshalInt(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
-		n, o.(*CompiledFunction).NumParameters, err = encoding.UnmarshalInt(n, b)
+		n, o.(*CompiledFunction).NumParameters, err = codec.UnmarshalInt(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
-		n, o.(*CompiledFunction).VarArgs, err = encoding.UnmarshalBool(n, b)
+		n, o.(*CompiledFunction).VarArgs, err = codec.UnmarshalBool(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
-		n, o.(*CompiledFunction).SourceMap, err = encoding.UnmarshalMap[int, parser.Pos](n, b, encoding.UnmarshalInt, parser.UnmarshalPos)
+		n, o.(*CompiledFunction).SourceMap, err = codec.UnmarshalMap[int, parser.Pos](n, b, codec.UnmarshalInt, parser.UnmarshalPos)
 		if err != nil {
 			return nn, nil, err
 		}
-		n, o.(*CompiledFunction).Free, err = encoding.UnmarshalSlice[*ObjectPtr](n, b, func(nn int, b []byte) (n int, o *ObjectPtr, err error) {
+		n, o.(*CompiledFunction).Free, err = codec.UnmarshalSlice[*ObjectPtr](n, b, func(nn int, b []byte) (n int, o *ObjectPtr, err error) {
 			var v Object
 			n, v, err = UnmarshalObject(nn, b)
 			if err != nil {
@@ -358,7 +359,7 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		return n, o, nil
 
 	case _builtinFunction:
-		n, o.(*BuiltinFunction).Name, err = encoding.UnmarshalString(n, b)
+		n, o.(*BuiltinFunction).Name, err = codec.UnmarshalString(n, b)
 		if err != nil {
 			return nn, nil, err
 		}

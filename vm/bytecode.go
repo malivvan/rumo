@@ -3,7 +3,7 @@ package vm
 import (
 	"fmt"
 
-	"github.com/malivvan/rumo/vm/encoding"
+	"github.com/malivvan/rumo/vm/codec"
 	"github.com/malivvan/rumo/vm/parser"
 )
 
@@ -46,10 +46,10 @@ func (b *Bytecode) Equals(other *Bytecode) bool {
 // Marshal writes Bytecode data to the writer.
 func (b *Bytecode) Marshal() ([]byte, error) {
 	n := 0
-	c := make([]byte, parser.SizeFileSet(b.FileSet)+SizeOfObject(b.MainFunction)+encoding.SizeSlice[Object](b.Constants, SizeOfObject))
+	c := make([]byte, parser.SizeFileSet(b.FileSet)+SizeOfObject(b.MainFunction)+codec.SizeSlice[Object](b.Constants, SizeOfObject))
 	n = parser.MarshalFileSet(n, c, b.FileSet)
 	n = MarshalObject(n, c, b.MainFunction)
-	n = encoding.MarshalSlice(n, c, b.Constants, MarshalObject)
+	n = codec.MarshalSlice(n, c, b.Constants, MarshalObject)
 	if n != len(c) {
 		return nil, fmt.Errorf("encoded length mismatch: %d != %d", n, len(c))
 	}
@@ -113,7 +113,7 @@ func (b *Bytecode) Unmarshal(data []byte, modules *ModuleMap) (err error) {
 	}
 	b.MainFunction = mainFunc
 
-	n, b.Constants, err = encoding.UnmarshalSlice[Object](n, data, UnmarshalObject)
+	n, b.Constants, err = codec.UnmarshalSlice[Object](n, data, UnmarshalObject)
 	if err != nil {
 		return err
 	}

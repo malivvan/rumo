@@ -1,28 +1,30 @@
 package parser
 
-import "github.com/malivvan/rumo/vm/encoding"
+import (
+	"github.com/malivvan/rumo/vm/codec"
+)
 
 // SizeFile returns the size of the encoded SourceFile.
 func SizeFile(f *SourceFile) int {
 	if f == nil {
-		return encoding.SizeByte()
+		return codec.SizeByte()
 	}
-	s := encoding.SizeString(f.Name)
-	s += encoding.SizeInt(f.Base)
-	s += encoding.SizeInt(f.Size)
-	s += encoding.SizeSlice(f.Lines, encoding.SizeInt)
+	s := codec.SizeString(f.Name)
+	s += codec.SizeInt(f.Base)
+	s += codec.SizeInt(f.Size)
+	s += codec.SizeSlice(f.Lines, codec.SizeInt)
 	return s
 }
 
 // MarshalFile encodes the SourceFile into the buffer.
 func MarshalFile(n int, b []byte, f *SourceFile) int {
 	if f == nil {
-		return encoding.MarshalByte(n, b, 0)
+		return codec.MarshalByte(n, b, 0)
 	}
-	n = encoding.MarshalString(n, b, f.Name)
-	n = encoding.MarshalInt(n, b, f.Base)
-	n = encoding.MarshalInt(n, b, f.Size)
-	n = encoding.MarshalSlice(n, b, f.Lines, encoding.MarshalInt)
+	n = codec.MarshalString(n, b, f.Name)
+	n = codec.MarshalInt(n, b, f.Base)
+	n = codec.MarshalInt(n, b, f.Size)
+	n = codec.MarshalSlice(n, b, f.Lines, codec.MarshalInt)
 	return n
 }
 
@@ -32,19 +34,19 @@ func UnmarshalFile(nn int, b []byte) (n int, f *SourceFile, err error) {
 		return nn + 1, nil, nil
 	}
 	f = &SourceFile{}
-	n, f.Name, err = encoding.UnmarshalString(nn, b)
+	n, f.Name, err = codec.UnmarshalString(nn, b)
 	if err != nil {
 		return nn, nil, err
 	}
-	n, f.Base, err = encoding.UnmarshalInt(n, b)
+	n, f.Base, err = codec.UnmarshalInt(n, b)
 	if err != nil {
 		return nn, nil, err
 	}
-	n, f.Size, err = encoding.UnmarshalInt(n, b)
+	n, f.Size, err = codec.UnmarshalInt(n, b)
 	if err != nil {
 		return nn, nil, err
 	}
-	n, f.Lines, err = encoding.UnmarshalSlice[int](n, b, encoding.UnmarshalInt)
+	n, f.Lines, err = codec.UnmarshalSlice[int](n, b, codec.UnmarshalInt)
 	if err != nil {
 		return nn, nil, err
 	}
@@ -54,20 +56,20 @@ func UnmarshalFile(nn int, b []byte) (n int, f *SourceFile, err error) {
 // SizeFileSet returns the size of the encoded SourceFileSet.
 func SizeFileSet(fs *SourceFileSet) int {
 	if fs == nil {
-		return encoding.SizeByte()
+		return codec.SizeByte()
 	}
-	s := encoding.SizeInt(fs.Base)
-	s += encoding.SizeSlice(fs.Files, SizeFile)
+	s := codec.SizeInt(fs.Base)
+	s += codec.SizeSlice(fs.Files, SizeFile)
 	return s
 }
 
 // MarshalFileSet encodes the SourceFileSet into the buffer.
 func MarshalFileSet(n int, b []byte, fs *SourceFileSet) int {
 	if fs == nil {
-		return encoding.MarshalByte(n, b, 0)
+		return codec.MarshalByte(n, b, 0)
 	}
-	n = encoding.MarshalInt(n, b, fs.Base)
-	n = encoding.MarshalSlice(n, b, fs.Files, MarshalFile)
+	n = codec.MarshalInt(n, b, fs.Base)
+	n = codec.MarshalSlice(n, b, fs.Files, MarshalFile)
 	return n
 }
 
@@ -77,11 +79,11 @@ func UnmarshalFileSet(nn int, b []byte) (n int, fs *SourceFileSet, err error) {
 		return nn + 1, nil, nil
 	}
 	fs = NewFileSet()
-	n, fs.Base, err = encoding.UnmarshalInt(nn, b)
+	n, fs.Base, err = codec.UnmarshalInt(nn, b)
 	if err != nil {
 		return n, nil, err
 	}
-	n, fs.Files, err = encoding.UnmarshalSlice[*SourceFile](n, b, UnmarshalFile)
+	n, fs.Files, err = codec.UnmarshalSlice[*SourceFile](n, b, UnmarshalFile)
 	if err != nil {
 		return n, nil, err
 	}
@@ -93,18 +95,18 @@ func UnmarshalFileSet(nn int, b []byte) (n int, fs *SourceFileSet, err error) {
 
 // SizePos returns the size of the encoded Pos.
 func SizePos(p Pos) int {
-	return encoding.SizeInt(int(p))
+	return codec.SizeInt(int(p))
 }
 
 // MarshalPos encodes the Pos into the buffer.
 func MarshalPos(n int, b []byte, p Pos) int {
-	return encoding.MarshalInt(n, b, int(p))
+	return codec.MarshalInt(n, b, int(p))
 }
 
 // UnmarshalPos decodes the Pos from the buffer.
 func UnmarshalPos(nn int, b []byte) (n int, p Pos, err error) {
 	var v int
-	n, v, err = encoding.UnmarshalInt(nn, b)
+	n, v, err = codec.UnmarshalInt(nn, b)
 	if err != nil {
 		return nn, NoPos, err
 	}

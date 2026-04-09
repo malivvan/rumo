@@ -171,12 +171,13 @@ func (c *BarChart) Draw(screen tcell.Screen) { //nolint:funlen,cyclop
 }
 
 // SetBorder sets border for this widget.
-func (c *BarChart) SetBorder(status bool) {
+func (c *BarChart) SetBorder(status bool) *BarChart {
 	c.Lock()
 	defer c.Unlock()
 
 	c.hasBorder = status
 	c.Box.SetBorder(status)
+	return c
 }
 
 // GetRect return widget current rect.
@@ -185,32 +186,36 @@ func (c *BarChart) GetRect() (int, int, int, int) {
 }
 
 // SetRect sets rect for this widget.
-func (c *BarChart) SetRect(x, y, width, height int) {
+func (c *BarChart) SetRect(x, y, width, height int) Widget {
 	c.Box.SetRect(x, y, width, height)
+	return c
 }
 
 // SetMaxValue sets maximum value of bars.
-func (c *BarChart) SetMaxValue(maxValue int) {
+func (c *BarChart) SetMaxValue(maxValue int) *BarChart {
 	c.Lock()
 	defer c.Unlock()
 
 	c.maxVal = maxValue
+	return c
 }
 
 // SetAxesColor sets axes x and y lines color.
-func (c *BarChart) SetAxesColor(color tcell.Color) {
+func (c *BarChart) SetAxesColor(color tcell.Color) *BarChart {
 	c.Lock()
 	defer c.Unlock()
 
 	c.axesColor = color
+	return c
 }
 
 // SetAxesLabelColor sets axes x and y label color.
-func (c *BarChart) SetAxesLabelColor(color tcell.Color) {
+func (c *BarChart) SetAxesLabelColor(color tcell.Color) *BarChart {
 	c.Lock()
 	defer c.Unlock()
 
 	c.axesLabelColor = color
+	return c
 }
 
 // AddBar adds new bar item to the bar chart widget.
@@ -242,7 +247,7 @@ func (c *BarChart) RemoveBar(label string) {
 }
 
 // SetBarValue sets bar values.
-func (c *BarChart) SetBarValue(name string, value int) {
+func (c *BarChart) SetBarValue(name string, value int) *BarChart {
 	c.Lock()
 	defer c.Unlock()
 
@@ -251,6 +256,7 @@ func (c *BarChart) SetBarValue(name string, value int) {
 			c.bars[i].value = value
 		}
 	}
+	return c
 }
 
 func getBarChartHeight(maxHeight int, value int, maxValue int) int {

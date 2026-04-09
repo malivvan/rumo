@@ -69,20 +69,22 @@ func (f *Flex) GetDirection() int {
 
 // SetDirection sets the direction in which the contained widgets are
 // distributed. This can be either FlexColumn (default) or FlexRow.
-func (f *Flex) SetDirection(direction int) {
+func (f *Flex) SetDirection(direction int) *Flex {
 	f.Lock()
 	defer f.Unlock()
 
 	f.direction = direction
+	return f
 }
 
 // SetFullScreen sets the flag which, when true, causes the flex layout to use
 // the entire screen space instead of whatever size it is currently assigned to.
-func (f *Flex) SetFullScreen(fullScreen bool) {
+func (f *Flex) SetFullScreen(fullScreen bool) *Flex {
 	f.Lock()
 	defer f.Unlock()
 
 	f.fullScreen = fullScreen
+	return f
 }
 
 // AddItem adds a new item to the container. The "fixedSize" argument is a width

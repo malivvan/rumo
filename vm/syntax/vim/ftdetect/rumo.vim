@@ -1,0 +1,1 @@
+autocmd BufRead,BufNewFile *.rumo set filetype=rumo

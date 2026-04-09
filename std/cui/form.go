@@ -39,13 +39,13 @@ type FormItem interface {
 
 	// SetLabelWidth sets the screen width of the label. A value of 0 will cause the
 	// widget to use the width of the label string.
-	SetLabelWidth(int)
+	SetLabelWidth(int) FormItem
 
 	// SetLabelColor sets the color of the label.
-	SetLabelColor(tcell.Color)
+	SetLabelColor(tcell.Color) FormItem
 
 	// SetLabelColor sets the color of the label when focused.
-	SetLabelColorFocused(tcell.Color)
+	SetLabelColorFocused(tcell.Color) FormItem
 
 	// GetFieldWidth returns the width of the form item's field (the area which
 	// is manipulated by the user) in number of screen cells. A value of 0
@@ -57,22 +57,22 @@ type FormItem interface {
 	GetFieldHeight() int
 
 	// SetFieldTextColor sets the text color of the input area.
-	SetFieldTextColor(tcell.Color)
+	SetFieldTextColor(tcell.Color) FormItem
 
 	// SetFieldTextColorFocused sets the text color of the input area when focused.
-	SetFieldTextColorFocused(tcell.Color)
+	SetFieldTextColorFocused(tcell.Color) FormItem
 
 	// SetFieldBackgroundColor sets the background color of the input area.
-	SetFieldBackgroundColor(tcell.Color)
+	SetFieldBackgroundColor(tcell.Color) FormItem
 
 	// SetFieldBackgroundColor sets the background color of the input area when focused.
-	SetFieldBackgroundColorFocused(tcell.Color)
+	SetFieldBackgroundColorFocused(tcell.Color) FormItem
 
 	// SetBackgroundColor sets the background color of the form item.
-	SetBackgroundColor(tcell.Color)
+	SetBackgroundColor(tcell.Color) FormItem
 
 	// SetFinishedFunc sets a callback invoked when the user leaves the form item.
-	SetFinishedFunc(func(key tcell.Key))
+	SetFinishedFunc(func(key tcell.Key)) FormItem
 }
 
 // Form allows you to combine multiple one-line form elements into a vertical
@@ -169,117 +169,130 @@ func NewForm() *Form {
 // SetItemPadding sets the number of empty rows between form items for vertical
 // layouts and the number of empty cells between form items for horizontal
 // layouts.
-func (f *Form) SetItemPadding(padding int) {
+func (f *Form) SetItemPadding(padding int) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.itemPadding = padding
+	return f
 }
 
 // SetHorizontal sets the direction the form elements are laid out. If set to
 // true, instead of positioning them from top to bottom (the default), they are
 // positioned from left to right, moving into the next row if there is not
 // enough space.
-func (f *Form) SetHorizontal(horizontal bool) {
+func (f *Form) SetHorizontal(horizontal bool) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.horizontal = horizontal
+	return f
 }
 
 // SetLabelColor sets the color of the labels.
-func (f *Form) SetLabelColor(color tcell.Color) {
+func (f *Form) SetLabelColor(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.labelColor = color
+	return f
 }
 
 // SetLabelColorFocused sets the color of the labels when focused.
-func (f *Form) SetLabelColorFocused(color tcell.Color) {
+func (f *Form) SetLabelColorFocused(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.labelColorFocused = color
+	return f
 }
 
 // SetFieldBackgroundColor sets the background color of the input areas.
-func (f *Form) SetFieldBackgroundColor(color tcell.Color) {
+func (f *Form) SetFieldBackgroundColor(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.fieldBackgroundColor = color
+	return f
 }
 
 // SetFieldBackgroundColorFocused sets the background color of the input areas when focused.
-func (f *Form) SetFieldBackgroundColorFocused(color tcell.Color) {
+func (f *Form) SetFieldBackgroundColorFocused(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.fieldBackgroundColorFocused = color
+	return f
 }
 
 // SetFieldTextColor sets the text color of the input areas.
-func (f *Form) SetFieldTextColor(color tcell.Color) {
+func (f *Form) SetFieldTextColor(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.fieldTextColor = color
+	return f
 }
 
 // SetFieldTextColorFocused sets the text color of the input areas when focused.
-func (f *Form) SetFieldTextColorFocused(color tcell.Color) {
+func (f *Form) SetFieldTextColorFocused(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.fieldTextColorFocused = color
+	return f
 }
 
 // SetButtonsAlign sets how the buttons align horizontally, one of AlignLeft
 // (the default), AlignCenter, and AlignRight. This is only
-func (f *Form) SetButtonsAlign(align int) {
+func (f *Form) SetButtonsAlign(align int) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.buttonsAlign = align
+	return f
 }
 
 // SetButtonBackgroundColor sets the background color of the buttons.
-func (f *Form) SetButtonBackgroundColor(color tcell.Color) {
+func (f *Form) SetButtonBackgroundColor(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.buttonBackgroundColor = color
+	return f
 }
 
 // SetButtonBackgroundColorFocused sets the background color of the buttons when focused.
-func (f *Form) SetButtonBackgroundColorFocused(color tcell.Color) {
+func (f *Form) SetButtonBackgroundColorFocused(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.buttonBackgroundColorFocused = color
+	return f
 }
 
 // SetButtonTextColor sets the color of the button texts.
-func (f *Form) SetButtonTextColor(color tcell.Color) {
+func (f *Form) SetButtonTextColor(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.buttonTextColor = color
+	return f
 }
 
 // SetButtonTextColorFocused sets the color of the button texts when focused.
-func (f *Form) SetButtonTextColorFocused(color tcell.Color) {
+func (f *Form) SetButtonTextColorFocused(color tcell.Color) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.buttonTextColorFocused = color
+	return f
 }
 
 // SetFocus shifts the focus to the form element with the given index, counting
 // non-button items first and buttons last. Note that this index is only used
 // when the form itself receives focus.
-func (f *Form) SetFocus(index int) {
+func (f *Form) SetFocus(index int) *Form {
 	f.Lock()
 	defer f.Unlock()
 
@@ -290,6 +303,7 @@ func (f *Form) SetFocus(index int) {
 	} else {
 		f.focusedElement = index
 	}
+	return f
 }
 
 // AddInputField adds an input field to the form. It has a label, an optional
@@ -590,20 +604,22 @@ func (f *Form) GetFocusedItemIndex() (formItem, button int) {
 // selection to the first item (similarly in the other direction). If set to
 // false, the selection won't change when navigating downwards on the last item
 // or navigating upwards on the first item.
-func (f *Form) SetWrapAround(wrapAround bool) {
+func (f *Form) SetWrapAround(wrapAround bool) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.wrapAround = wrapAround
+	return f
 }
 
-// SetCancelFunc sets a handler which is called when the user hits the Escape
+// SetCancelFunc sets a callback which is called when the user hits the Escape
 // key.
-func (f *Form) SetCancelFunc(callback func()) {
+func (f *Form) SetCancelFunc(callback func()) *Form {
 	f.Lock()
 	defer f.Unlock()
 
 	f.cancel = callback
+	return f
 }
 
 // GetAttributes returns the current attribute settings of a form.

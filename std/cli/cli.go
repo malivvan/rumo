@@ -7,38 +7,24 @@ import (
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
+	flag "github.com/spf13/pflag"
 )
 
-// Module provides a declarative CLI framework.
-var Module = module.NewBuiltin().
-	Func("new(config map) (app *App)                                creates a new CLI app from the given configuration map", cliNew).
-	Func("command(config map) (cmd map)                             creates a command configuration", cliCommand).
-	Func("string_flag(config map) (flag map)                        creates a string flag", cliStringFlag).
-	Func("bool_flag(config map) (flag map)                          creates a bool flag", cliBoolFlag).
-	Func("int_flag(config map) (flag map)                           creates an int flag", cliIntFlag).
-	Func("float_flag(config map) (flag map)                         creates a float flag", cliFloatFlag).
-	Func("string_slice_flag(config map) (flag map)                  creates a string slice flag", cliStringSliceFlag)
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-// fn creates a BuiltinFunction.
-func fn(name string, f vm.CallableFunc) vm.Object {
-	return &vm.BuiltinFunction{Name: name, Value: f}
+func init() {
+	Module = module.NewBuiltin().
+		Func("new(config map) (app *App)								creates a new CLI application from the given configuration map", cliNew).
+		Func("command(config map) (command map)							creates a command configuration", cliCommand).
+		Func("string_flag(config map) (flag map)						creates a string flag configuration", cliStringFlag).
+		Func("bool_flag(config map) (flag map)							creates a bool flag configuration", cliBoolFlag).
+		Func("int_flag(config map) (flag map)							creates an int flag configuration", cliIntFlag).
+		Func("float_flag(config map) (flag map)							creates a float flag configuration", cliFloatFlag).
+		Func("string_slice_flag(config map) (flag map)					creates a string slice flag configuration", cliStringSliceFlag)
 }
 
-// boolVal converts a Go bool to the appropriate vm.Object.
-func boolVal(b bool) vm.Object {
-	if b {
-		return vm.TrueValue
-	}
-	return vm.FalseValue
-}
+// ---------------------------------------------------------------------------
+// callFunc — invoke a rumo callback (compiled or builtin)
+// ---------------------------------------------------------------------------
 
-// callFunc calls a vm.Object function, handling CompiledFunction by creating
-// a shallow-cloned VM (same as the start builtin). For BuiltinFunction and
-// other callable objects it falls back to Object.Call().
 func callFunc(ctx context.Context, fn vm.Object, args ...vm.Object) (vm.Object, error) {
 	if cfn, ok := fn.(*vm.CompiledFunction); ok {
 		if vmVal := ctx.Value(vm.ContextKey("vm")); vmVal != nil {
@@ -51,732 +37,659 @@ func callFunc(ctx context.Context, fn vm.Object, args ...vm.Object) (vm.Object, 
 	return fn.Call(ctx, args...)
 }
 
-// flagPtr wraps a cli.Flag so it can be stored in an ImmutableMap.
-type flagPtr struct {
-	vm.ObjectImpl
-	f Flag
-}
+// ---------------------------------------------------------------------------
+// Config-map helpers
+// ---------------------------------------------------------------------------
 
-func (o *flagPtr) TypeName() string { return "cli-flag-ptr" }
-func (o *flagPtr) String() string   { return "<cli-flag-ptr>" }
-func (o *flagPtr) Copy() vm.Object  { return o }
-
-// commandPtr wraps a *Command so it can be stored in an ImmutableMap.
-type commandPtr struct {
-	vm.ObjectImpl
-	c *Command
-}
-
-func (o *commandPtr) TypeName() string { return "cli-command-ptr" }
-func (o *commandPtr) String() string   { return "<cli-command-ptr>" }
-func (o *commandPtr) Copy() vm.Object  { return o }
-
-// getMap extracts a map[string]vm.Object from a vm.Object (supports Map and ImmutableMap).
-func getMap(obj vm.Object) (map[string]vm.Object, bool) {
+func cfgMap(obj vm.Object) map[string]vm.Object {
 	switch m := obj.(type) {
 	case *vm.Map:
-		return m.Value, true
+		return m.Value
 	case *vm.ImmutableMap:
-		return m.Value, true
+		return m.Value
 	}
-	return nil, false
+	return nil
 }
 
-// getStringSlice converts a vm.Object (Array or ImmutableArray) to []string.
-func getStringSlice(obj vm.Object) ([]string, bool) {
-	var elems []vm.Object
-	switch a := obj.(type) {
-	case *vm.Array:
-		elems = a.Value
-	case *vm.ImmutableArray:
-		elems = a.Value
-	default:
-		return nil, false
-	}
-	out := make([]string, 0, len(elems))
-	for _, e := range elems {
-		s, ok := vm.ToString(e)
-		if !ok {
-			return nil, false
+func cfgStr(m map[string]vm.Object, key string) string {
+	if v, ok := m[key]; ok {
+		if s, ok := vm.ToString(v); ok {
+			return s
 		}
-		out = append(out, s)
 	}
-	return out, true
+	return ""
 }
 
-// mapStr returns a string from a map entry, or empty string if missing.
-func mapStr(m map[string]vm.Object, key string) string {
-	v, ok := m[key]
-	if !ok {
-		return ""
+func cfgBool(m map[string]vm.Object, key string) bool {
+	if v, ok := m[key]; ok {
+		return !v.IsFalsy()
 	}
-	s, _ := vm.ToString(v)
-	return s
+	return false
 }
 
-// mapBool returns a bool from a map entry.
-func mapBool(m map[string]vm.Object, key string) bool {
-	v, ok := m[key]
-	if !ok {
-		return false
+func cfgArray(m map[string]vm.Object, key string) []vm.Object {
+	if v, ok := m[key]; ok {
+		switch a := v.(type) {
+		case *vm.Array:
+			return a.Value
+		case *vm.ImmutableArray:
+			return a.Value
+		}
 	}
-	return !v.IsFalsy()
+	return nil
 }
 
-// mapStringSlice returns a []string from a map entry.
-func mapStringSlice(m map[string]vm.Object, key string) []string {
-	v, ok := m[key]
-	if !ok {
-		return nil
+func cfgStrArray(m map[string]vm.Object, key string) []string {
+	arr := cfgArray(m, key)
+	var result []string
+	for _, elem := range arr {
+		if s, ok := vm.ToString(elem); ok {
+			result = append(result, s)
+		}
 	}
-	ss, _ := getStringSlice(v)
-	return ss
+	return result
 }
 
-// mapInt returns an int from a map entry.
-func mapInt(m map[string]vm.Object, key string) (int, bool) {
-	v, ok := m[key]
-	if !ok {
-		return 0, false
+func cfgFunc(m map[string]vm.Object, key string) vm.Object {
+	if v, ok := m[key]; ok && v.CanCall() {
+		return v
 	}
-	return vm.ToInt(v)
+	return nil
 }
 
-// mapFloat returns a float64 from a map entry.
-func mapFloat(m map[string]vm.Object, key string) (float64, bool) {
-	v, ok := m[key]
-	if !ok {
-		return 0, false
+func cfgInt(m map[string]vm.Object, key string) (int, bool) {
+	if v, ok := m[key]; ok {
+		if i, ok := vm.ToInt(v); ok {
+			return i, true
+		}
 	}
-	return vm.ToFloat64(v)
+	return 0, false
+}
+
+func cfgFloat(m map[string]vm.Object, key string) (float64, bool) {
+	if v, ok := m[key]; ok {
+		if f, ok := vm.ToFloat64(v); ok {
+			return f, true
+		}
+	}
+	return 0, false
 }
 
 // ---------------------------------------------------------------------------
-// Flag builders
+// Flag descriptor helpers
 // ---------------------------------------------------------------------------
 
-func cliStringFlag(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if len(args) != 1 {
-		return nil, vm.ErrWrongNumArguments
+func makeFlagMap(flagType string, cfg map[string]vm.Object) *vm.ImmutableMap {
+	m := make(map[string]vm.Object, len(cfg)+1)
+	m["__flag_type"] = &vm.String{Value: flagType}
+	for k, v := range cfg {
+		m[k] = v
 	}
-	m, ok := getMap(args[0])
-	if !ok {
-		return nil, vm.ErrInvalidArgumentType{Name: "config", Expected: "map", Found: args[0].TypeName()}
-	}
-	f := &StringFlag{
-		Name:     mapStr(m, "name"),
-		Aliases:  mapStringSlice(m, "aliases"),
-		Usage:    mapStr(m, "usage"),
-		EnvVars:  mapStringSlice(m, "env_vars"),
-		Value:    mapStr(m, "value"),
-		Required: mapBool(m, "required"),
-		Hidden:   mapBool(m, "hidden"),
-	}
-	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"__flag": &flagPtr{f: f},
-	}}, nil
+	return &vm.ImmutableMap{Value: m}
 }
 
-func cliBoolFlag(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if len(args) != 1 {
-		return nil, vm.ErrWrongNumArguments
+// getShorthand returns the first single-character alias (for pflag shorthand).
+func getShorthand(aliases []string) string {
+	for _, a := range aliases {
+		if len(a) == 1 {
+			return a
+		}
 	}
-	m, ok := getMap(args[0])
-	if !ok {
-		return nil, vm.ErrInvalidArgumentType{Name: "config", Expected: "map", Found: args[0].TypeName()}
-	}
-	f := &BoolFlag{
-		Name:     mapStr(m, "name"),
-		Aliases:  mapStringSlice(m, "aliases"),
-		Usage:    mapStr(m, "usage"),
-		EnvVars:  mapStringSlice(m, "env_vars"),
-		Value:    mapBool(m, "value"),
-		Required: mapBool(m, "required"),
-		Hidden:   mapBool(m, "hidden"),
-	}
-	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"__flag": &flagPtr{f: f},
-	}}, nil
+	return ""
 }
 
-func cliIntFlag(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if len(args) != 1 {
-		return nil, vm.ErrWrongNumArguments
+// boolObj returns vm.TrueValue or vm.FalseValue.
+func boolObj(b bool) vm.Object {
+	if b {
+		return vm.TrueValue
 	}
-	m, ok := getMap(args[0])
-	if !ok {
-		return nil, vm.ErrInvalidArgumentType{Name: "config", Expected: "map", Found: args[0].TypeName()}
-	}
-	f := &IntFlag{
-		Name:     mapStr(m, "name"),
-		Aliases:  mapStringSlice(m, "aliases"),
-		Usage:    mapStr(m, "usage"),
-		EnvVars:  mapStringSlice(m, "env_vars"),
-		Required: mapBool(m, "required"),
-		Hidden:   mapBool(m, "hidden"),
-	}
-	if v, ok := mapInt(m, "value"); ok {
-		f.Value = v
-	}
-	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"__flag": &flagPtr{f: f},
-	}}, nil
-}
-
-func cliFloatFlag(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if len(args) != 1 {
-		return nil, vm.ErrWrongNumArguments
-	}
-	m, ok := getMap(args[0])
-	if !ok {
-		return nil, vm.ErrInvalidArgumentType{Name: "config", Expected: "map", Found: args[0].TypeName()}
-	}
-	f := &Float64Flag{
-		Name:     mapStr(m, "name"),
-		Aliases:  mapStringSlice(m, "aliases"),
-		Usage:    mapStr(m, "usage"),
-		EnvVars:  mapStringSlice(m, "env_vars"),
-		Required: mapBool(m, "required"),
-		Hidden:   mapBool(m, "hidden"),
-	}
-	if v, ok := mapFloat(m, "value"); ok {
-		f.Value = v
-	}
-	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"__flag": &flagPtr{f: f},
-	}}, nil
-}
-
-func cliStringSliceFlag(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if len(args) != 1 {
-		return nil, vm.ErrWrongNumArguments
-	}
-	m, ok := getMap(args[0])
-	if !ok {
-		return nil, vm.ErrInvalidArgumentType{Name: "config", Expected: "map", Found: args[0].TypeName()}
-	}
-	f := &StringSliceFlag{
-		Name:     mapStr(m, "name"),
-		Aliases:  mapStringSlice(m, "aliases"),
-		Usage:    mapStr(m, "usage"),
-		EnvVars:  mapStringSlice(m, "env_vars"),
-		Required: mapBool(m, "required"),
-		Hidden:   mapBool(m, "hidden"),
-	}
-	if defaults := mapStringSlice(m, "value"); len(defaults) > 0 {
-		f.Value = NewStringSlice(defaults...)
-	}
-	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"__flag": &flagPtr{f: f},
-	}}, nil
+	return vm.FalseValue
 }
 
 // ---------------------------------------------------------------------------
-// Flag extraction
-// ---------------------------------------------------------------------------
-
-// extractFlag retrieves a cli.Flag from an ImmutableMap produced by a flag builder.
-func extractFlag(obj vm.Object) (Flag, bool) {
-	m, ok := obj.(*vm.ImmutableMap)
-	if !ok {
-		return nil, false
-	}
-	fp, ok := m.Value["__flag"]
-	if !ok {
-		return nil, false
-	}
-	ptr, ok := fp.(*flagPtr)
-	if !ok {
-		return nil, false
-	}
-	return ptr.f, true
-}
-
-// extractFlags converts a vm.Array/ImmutableArray of flag maps into []Flag.
-func extractFlags(obj vm.Object) ([]Flag, error) {
-	var elems []vm.Object
-	switch a := obj.(type) {
-	case *vm.Array:
-		elems = a.Value
-	case *vm.ImmutableArray:
-		elems = a.Value
-	default:
-		return nil, fmt.Errorf("flags must be an array, got %s", obj.TypeName())
-	}
-	flags := make([]Flag, 0, len(elems))
-	for _, e := range elems {
-		f, ok := extractFlag(e)
-		if !ok {
-			return nil, fmt.Errorf("invalid flag entry: %s", e.TypeName())
-		}
-		flags = append(flags, f)
-	}
-	return flags, nil
-}
-
-// ---------------------------------------------------------------------------
-// Command builder
-// ---------------------------------------------------------------------------
-
-func cliCommand(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if len(args) != 1 {
-		return nil, vm.ErrWrongNumArguments
-	}
-	m, ok := getMap(args[0])
-	if !ok {
-		return nil, vm.ErrInvalidArgumentType{Name: "config", Expected: "map", Found: args[0].TypeName()}
-	}
-	cmd, err := buildCommand(ctx, m)
-	if err != nil {
-		return nil, err
-	}
-	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"__command": &commandPtr{c: cmd},
-	}}, nil
-}
-
-// buildCommand constructs a *Command from a config map.
-func buildCommand(ctx context.Context, m map[string]vm.Object) (*Command, error) {
-	cmd := &Command{
-		Name:                   mapStr(m, "name"),
-		Aliases:                mapStringSlice(m, "aliases"),
-		Usage:                  mapStr(m, "usage"),
-		UsageText:              mapStr(m, "usage_text"),
-		Description:            mapStr(m, "description"),
-		ArgsUsage:              mapStr(m, "args_usage"),
-		Category:               mapStr(m, "category"),
-		Hidden:                 mapBool(m, "hidden"),
-		HideHelp:               mapBool(m, "hide_help"),
-		HideHelpCommand:        mapBool(m, "hide_help_command"),
-		SkipFlagParsing:        mapBool(m, "skip_flag_parsing"),
-		UseShortOptionHandling: mapBool(m, "use_short_option_handling"),
-		Args:                   mapBool(m, "args"),
-	}
-
-	// Flags
-	if v, ok := m["flags"]; ok {
-		flags, err := extractFlags(v)
-		if err != nil {
-			return nil, err
-		}
-		cmd.Flags = flags
-	}
-
-	// Subcommands
-	if v, ok := m["commands"]; ok {
-		subs, err := extractCommands(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		cmd.Subcommands = subs
-	}
-
-	// Action callback
-	if v, ok := m["action"]; ok && v.CanCall() {
-		cb := v
-		cmd.Action = func(cCtx *Context) error {
-			ret, err := callFunc(ctx, cb, wrapContext(ctx, cCtx))
-			if err != nil {
-				return err
-			}
-			if ret != nil {
-				if e, ok := ret.(*vm.Error); ok {
-					return fmt.Errorf("%s", e.Value)
-				}
-			}
-			return nil
-		}
-	}
-
-	// Before callback
-	if v, ok := m["before"]; ok && v.CanCall() {
-		cb := v
-		cmd.Before = func(cCtx *Context) error {
-			ret, err := callFunc(ctx, cb, wrapContext(ctx, cCtx))
-			if err != nil {
-				return err
-			}
-			if ret != nil {
-				if e, ok := ret.(*vm.Error); ok {
-					return fmt.Errorf("%s", e.Value)
-				}
-			}
-			return nil
-		}
-	}
-
-	// After callback
-	if v, ok := m["after"]; ok && v.CanCall() {
-		cb := v
-		cmd.After = func(cCtx *Context) error {
-			ret, err := callFunc(ctx, cb, wrapContext(ctx, cCtx))
-			if err != nil {
-				return err
-			}
-			if ret != nil {
-				if e, ok := ret.(*vm.Error); ok {
-					return fmt.Errorf("%s", e.Value)
-				}
-			}
-			return nil
-		}
-	}
-
-	return cmd, nil
-}
-
-// extractCommands converts a vm.Array/ImmutableArray of command maps into []*Command.
-func extractCommands(ctx context.Context, obj vm.Object) ([]*Command, error) {
-	var elems []vm.Object
-	switch a := obj.(type) {
-	case *vm.Array:
-		elems = a.Value
-	case *vm.ImmutableArray:
-		elems = a.Value
-	default:
-		return nil, fmt.Errorf("commands must be an array, got %s", obj.TypeName())
-	}
-	cmds := make([]*Command, 0, len(elems))
-	for _, e := range elems {
-		// Try extracting a pre-built command (from cli.command())
-		if m, ok := e.(*vm.ImmutableMap); ok {
-			if cp, ok := m.Value["__command"]; ok {
-				if ptr, ok := cp.(*commandPtr); ok {
-					cmds = append(cmds, ptr.c)
-					continue
-				}
-			}
-		}
-		// Otherwise, treat as inline config map
-		em, ok := getMap(e)
-		if !ok {
-			return nil, fmt.Errorf("invalid command entry: %s", e.TypeName())
-		}
-		cmd, err := buildCommand(ctx, em)
-		if err != nil {
-			return nil, err
-		}
-		cmds = append(cmds, cmd)
-	}
-	return cmds, nil
-}
-
-// ---------------------------------------------------------------------------
-// App builder
+// Module entry points
 // ---------------------------------------------------------------------------
 
 func cliNew(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	m, ok := getMap(args[0])
-	if !ok {
-		return nil, vm.ErrInvalidArgumentType{Name: "config", Expected: "map", Found: args[0].TypeName()}
-	}
-
-	app := NewApp()
-
-	if v := mapStr(m, "name"); v != "" {
-		app.Name = v
-	}
-	if v := mapStr(m, "usage"); v != "" {
-		app.Usage = v
-	}
-	if v := mapStr(m, "usage_text"); v != "" {
-		app.UsageText = v
-	}
-	if v := mapStr(m, "version"); v != "" {
-		app.Version = v
-	}
-	if v := mapStr(m, "description"); v != "" {
-		app.Description = v
-	}
-	if v := mapStr(m, "args_usage"); v != "" {
-		app.ArgsUsage = v
-	}
-	if v := mapStr(m, "copyright"); v != "" {
-		app.Copyright = v
-	}
-	if v := mapStr(m, "default_command"); v != "" {
-		app.DefaultCommand = v
-	}
-	app.HideHelp = mapBool(m, "hide_help")
-	app.HideHelpCommand = mapBool(m, "hide_help_command")
-	app.HideVersion = mapBool(m, "hide_version")
-	app.EnableBashCompletion = mapBool(m, "enable_bash_completion")
-	app.UseShortOptionHandling = mapBool(m, "use_short_option_handling")
-	app.Suggest = mapBool(m, "suggest")
-	app.SkipFlagParsing = mapBool(m, "skip_flag_parsing")
-	app.Args = mapBool(m, "args")
-
-	// Flags
-	if v, ok := m["flags"]; ok {
-		flags, err := extractFlags(v)
-		if err != nil {
-			return nil, err
-		}
-		app.Flags = flags
-	}
-
-	// Commands
-	if v, ok := m["commands"]; ok {
-		cmds, err := extractCommands(ctx, v)
-		if err != nil {
-			return nil, err
-		}
-		app.Commands = cmds
-	}
-
-	// Authors
-	if v, ok := m["authors"]; ok {
-		authors, err := extractAuthors(v)
-		if err != nil {
-			return nil, err
-		}
-		app.Authors = authors
-	}
-
-	// Action callback
-	if v, ok := m["action"]; ok && v.CanCall() {
-		cb := v
-		app.Action = func(cCtx *Context) error {
-			ret, err := callFunc(ctx, cb, wrapContext(ctx, cCtx))
-			if err != nil {
-				return err
-			}
-			if ret != nil {
-				if e, ok := ret.(*vm.Error); ok {
-					return fmt.Errorf("%s", e.Value)
-				}
-			}
-			return nil
+	cfg := cfgMap(args[0])
+	if cfg == nil {
+		return nil, vm.ErrInvalidArgumentType{
+			Name:     "config",
+			Expected: "map",
+			Found:    args[0].TypeName(),
 		}
 	}
 
-	// Before callback
-	if v, ok := m["before"]; ok && v.CanCall() {
-		cb := v
-		app.Before = func(cCtx *Context) error {
-			ret, err := callFunc(ctx, cb, wrapContext(ctx, cCtx))
-			if err != nil {
-				return err
-			}
-			if ret != nil {
-				if e, ok := ret.(*vm.Error); ok {
-					return fmt.Errorf("%s", e.Value)
-				}
-			}
-			return nil
-		}
-	}
+	// Build the root command (persistent = true so root flags/hooks
+	// propagate to subcommands).
+	cmd := buildCommand(ctx, cfg, true)
+	cmd.SilenceUsage = true
+	cmd.SilenceErrors = true
 
-	// After callback
-	if v, ok := m["after"]; ok && v.CanCall() {
-		cb := v
-		app.After = func(cCtx *Context) error {
-			ret, err := callFunc(ctx, cb, wrapContext(ctx, cCtx))
-			if err != nil {
-				return err
-			}
-			if ret != nil {
-				if e, ok := ret.(*vm.Error); ok {
-					return fmt.Errorf("%s", e.Value)
-				}
-			}
-			return nil
-		}
-	}
+	hideVersion := cfgBool(cfg, "hide_version")
+	hideHelp := cfgBool(cfg, "hide_help")
+	hideHelpCommand := cfgBool(cfg, "hide_help_command")
 
-	// Wire VM stdout/stderr to the app if available
-	if vmVal := ctx.Value(vm.ContextKey("vm")); vmVal != nil {
-		if v, ok := vmVal.(*vm.VM); ok {
-			app.Writer = v.Out
-		}
-	}
-
-	return wrapApp(app, ctx), nil
-}
-
-// extractAuthors extracts []*Author from a vm array of maps.
-func extractAuthors(obj vm.Object) ([]*Author, error) {
-	var elems []vm.Object
-	switch a := obj.(type) {
-	case *vm.Array:
-		elems = a.Value
-	case *vm.ImmutableArray:
-		elems = a.Value
-	default:
-		return nil, fmt.Errorf("authors must be an array, got %s", obj.TypeName())
-	}
-	authors := make([]*Author, 0, len(elems))
-	for _, e := range elems {
-		m, ok := getMap(e)
-		if !ok {
-			return nil, fmt.Errorf("author entry must be a map, got %s", e.TypeName())
-		}
-		authors = append(authors, &Author{
-			Name:  mapStr(m, "name"),
-			Email: mapStr(m, "email"),
-		})
-	}
-	return authors, nil
-}
-
-// ---------------------------------------------------------------------------
-// App wrapper
-// ---------------------------------------------------------------------------
-
-func wrapApp(app *App, vmCtx context.Context) *vm.ImmutableMap {
 	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"run": fn("run", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			var arguments []string
-			switch len(args) {
-			case 0:
-				arguments = os.Args
-			case 1:
-				var elems []vm.Object
-				switch a := args[0].(type) {
-				case *vm.Array:
-					elems = a.Value
-				case *vm.ImmutableArray:
-					elems = a.Value
-				default:
-					return nil, vm.ErrInvalidArgumentType{Name: "args", Expected: "array", Found: args[0].TypeName()}
+		"run": &vm.BuiltinFunction{
+			Name: "run",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) > 1 {
+					return nil, vm.ErrWrongNumArguments
 				}
-				arguments = make([]string, 0, len(elems))
-				for _, e := range elems {
-					s, ok := vm.ToString(e)
-					if !ok {
-						return nil, vm.ErrInvalidArgumentType{Name: "args[]", Expected: "string", Found: e.TypeName()}
+
+				if len(fnArgs) == 1 {
+					var runArgs []string
+					switch a := fnArgs[0].(type) {
+					case *vm.Array:
+						for _, elem := range a.Value {
+							if s, ok := vm.ToString(elem); ok {
+								runArgs = append(runArgs, s)
+							}
+						}
+					case *vm.ImmutableArray:
+						for _, elem := range a.Value {
+							if s, ok := vm.ToString(elem); ok {
+								runArgs = append(runArgs, s)
+							}
+						}
+					default:
+						return nil, vm.ErrInvalidArgumentType{
+							Name:     "args",
+							Expected: "array",
+							Found:    fnArgs[0].TypeName(),
+						}
 					}
-					arguments = append(arguments, s)
+					// First element is the program name — skip it,
+					// mimicking os.Args[1:].
+					if len(runArgs) > 1 {
+						cmd.SetArgs(runArgs[1:])
+					} else {
+						cmd.SetArgs([]string{})
+					}
 				}
-			default:
-				return nil, vm.ErrWrongNumArguments
-			}
-			if err := app.RunContext(vmCtx, arguments); err != nil {
-				return module.WrapError(err), nil
-			}
-			return vm.UndefinedValue, nil
-		}),
-	}}
+				// If no args supplied, cobra defaults to os.Args[1:].
+
+				// Handle hide_version / hide_help before execution.
+				if hideVersion && cmd.Version != "" {
+					cmd.InitDefaultVersionFlag()
+					if f := cmd.Flags().Lookup("version"); f != nil {
+						f.Hidden = true
+					}
+				}
+				if hideHelp {
+					cmd.InitDefaultHelpFlag()
+					if f := cmd.Flags().Lookup("help"); f != nil {
+						f.Hidden = true
+					}
+				}
+				if hideHelpCommand {
+					cmd.SetHelpCommand(&Command{Hidden: true, Use: "no-help"})
+				}
+
+				if err := cmd.Execute(); err != nil {
+					return module.WrapError(err), nil
+				}
+				return vm.UndefinedValue, nil
+			},
+		},
+	}}, nil
+}
+
+func cliCommand(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	cfg := cfgMap(args[0])
+	if cfg == nil {
+		return nil, vm.ErrInvalidArgumentType{
+			Name:     "config",
+			Expected: "map",
+			Found:    args[0].TypeName(),
+		}
+	}
+	// Return a copy of the config — it will be consumed by buildCommand
+	// when the parent command processes its "commands" array.
+	m := make(map[string]vm.Object, len(cfg)+1)
+	for k, v := range cfg {
+		m[k] = v
+	}
+	m["__is_command"] = vm.TrueValue
+	return &vm.ImmutableMap{Value: m}, nil
+}
+
+func cliStringFlag(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	cfg := cfgMap(args[0])
+	if cfg == nil {
+		return nil, vm.ErrInvalidArgumentType{
+			Name:     "config",
+			Expected: "map",
+			Found:    args[0].TypeName(),
+		}
+	}
+	return makeFlagMap("string", cfg), nil
+}
+
+func cliBoolFlag(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	cfg := cfgMap(args[0])
+	if cfg == nil {
+		return nil, vm.ErrInvalidArgumentType{
+			Name:     "config",
+			Expected: "map",
+			Found:    args[0].TypeName(),
+		}
+	}
+	return makeFlagMap("bool", cfg), nil
+}
+
+func cliIntFlag(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	cfg := cfgMap(args[0])
+	if cfg == nil {
+		return nil, vm.ErrInvalidArgumentType{
+			Name:     "config",
+			Expected: "map",
+			Found:    args[0].TypeName(),
+		}
+	}
+	return makeFlagMap("int", cfg), nil
+}
+
+func cliFloatFlag(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	cfg := cfgMap(args[0])
+	if cfg == nil {
+		return nil, vm.ErrInvalidArgumentType{
+			Name:     "config",
+			Expected: "map",
+			Found:    args[0].TypeName(),
+		}
+	}
+	return makeFlagMap("float", cfg), nil
+}
+
+func cliStringSliceFlag(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	cfg := cfgMap(args[0])
+	if cfg == nil {
+		return nil, vm.ErrInvalidArgumentType{
+			Name:     "config",
+			Expected: "map",
+			Found:    args[0].TypeName(),
+		}
+	}
+	return makeFlagMap("string_slice", cfg), nil
 }
 
 // ---------------------------------------------------------------------------
-// Context wrapper
+// Command builder
 // ---------------------------------------------------------------------------
 
-func wrapContext(vmCtx context.Context, cCtx *Context) *vm.ImmutableMap {
+// buildCommand translates a rumo config map into a *Command.
+// If persistent is true the hooks and flags are registered as persistent
+// (i.e. inherited by subcommands) — used for the root app command.
+func buildCommand(ctx context.Context, cfg map[string]vm.Object, persistent bool) *Command {
+	cmd := &Command{}
+
+	// name / use
+	if name := cfgStr(cfg, "name"); name != "" {
+		cmd.Use = name
+	}
+	if usageText := cfgStr(cfg, "usage_text"); usageText != "" {
+		cmd.Use = usageText
+	}
+	if argsUsage := cfgStr(cfg, "args_usage"); argsUsage != "" && cmd.Use != "" {
+		cmd.Use = cmd.Use + " " + argsUsage
+	}
+
+	// descriptions
+	if usage := cfgStr(cfg, "usage"); usage != "" {
+		cmd.Short = usage
+	}
+	if desc := cfgStr(cfg, "description"); desc != "" {
+		cmd.Long = desc
+	}
+
+	// version
+	if version := cfgStr(cfg, "version"); version != "" {
+		cmd.Version = version
+	}
+
+	// aliases
+	if aliases := cfgStrArray(cfg, "aliases"); len(aliases) > 0 {
+		cmd.Aliases = aliases
+	}
+
+	// category → GroupID
+	if category := cfgStr(cfg, "category"); category != "" {
+		cmd.GroupID = category
+	}
+
+	// boolean options
+	if cfgBool(cfg, "hidden") {
+		cmd.Hidden = true
+	}
+	if cfgBool(cfg, "skip_flag_parsing") {
+		cmd.DisableFlagParsing = true
+	}
+
+	// --- flags ---
+	addFlags(cfg, cmd, persistent)
+
+	// --- action / before / after hooks ---
+	if actionFn := cfgFunc(cfg, "action"); actionFn != nil {
+		fn := actionFn
+		cmd.RunE = func(c *Command, a []string) error {
+			_, err := callFunc(ctx, fn, wrapContext(c, a))
+			return err
+		}
+	}
+
+	if beforeFn := cfgFunc(cfg, "before"); beforeFn != nil {
+		fn := beforeFn
+		if persistent {
+			cmd.PersistentPreRunE = func(c *Command, a []string) error {
+				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				return err
+			}
+		} else {
+			cmd.PreRunE = func(c *Command, a []string) error {
+				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				return err
+			}
+		}
+	}
+
+	if afterFn := cfgFunc(cfg, "after"); afterFn != nil {
+		fn := afterFn
+		if persistent {
+			cmd.PersistentPostRunE = func(c *Command, a []string) error {
+				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				return err
+			}
+		} else {
+			cmd.PostRunE = func(c *Command, a []string) error {
+				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				return err
+			}
+		}
+	}
+
+	// --- subcommands ---
+	for _, cmdObj := range cfgArray(cfg, "commands") {
+		subCfg := cfgMap(cmdObj)
+		if subCfg != nil {
+			subCmd := buildCommand(ctx, subCfg, false)
+			cmd.AddCommand(subCmd)
+		}
+	}
+
+	return cmd
+}
+
+// addFlags reads the "flags" array from cfg and registers each flag on cmd.
+func addFlags(cfg map[string]vm.Object, cmd *Command, persistent bool) {
+	for _, flagObj := range cfgArray(cfg, "flags") {
+		flagCfg := cfgMap(flagObj)
+		if flagCfg == nil {
+			continue
+		}
+
+		flagType := cfgStr(flagCfg, "__flag_type")
+		name := cfgStr(flagCfg, "name")
+		if name == "" {
+			continue
+		}
+
+		aliases := cfgStrArray(flagCfg, "aliases")
+		shorthand := getShorthand(aliases)
+		usage := cfgStr(flagCfg, "usage")
+		required := cfgBool(flagCfg, "required")
+		hidden := cfgBool(flagCfg, "hidden")
+
+		var flags *flag.FlagSet
+		if persistent {
+			flags = cmd.PersistentFlags()
+		} else {
+			flags = cmd.Flags()
+		}
+
+		switch flagType {
+		case "string":
+			defVal := cfgStr(flagCfg, "value")
+			flags.StringP(name, shorthand, defVal, usage)
+		case "bool":
+			defVal := cfgBool(flagCfg, "value")
+			flags.BoolP(name, shorthand, defVal, usage)
+		case "int":
+			defVal := 0
+			if v, ok := cfgInt(flagCfg, "value"); ok {
+				defVal = v
+			}
+			flags.IntP(name, shorthand, defVal, usage)
+		case "float":
+			defVal := 0.0
+			if v, ok := cfgFloat(flagCfg, "value"); ok {
+				defVal = v
+			}
+			flags.Float64P(name, shorthand, defVal, usage)
+		case "string_slice":
+			defVal := cfgStrArray(flagCfg, "value")
+			flags.StringArrayP(name, shorthand, defVal, usage)
+		default:
+			continue
+		}
+
+		if required {
+			_ = cmd.MarkFlagRequired(name)
+		}
+		if hidden {
+			_ = flags.MarkHidden(name)
+		}
+
+		// env_vars: set default from environment if the flag hasn't been
+		// explicitly provided on the command-line.
+		for _, envVar := range cfgStrArray(flagCfg, "env_vars") {
+			if val := os.Getenv(envVar); val != "" {
+				if f := flags.Lookup(name); f != nil {
+					_ = f.Value.Set(val)
+					f.DefValue = val
+				}
+				break
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Context wrapper — the object passed to action/before/after callbacks
+// ---------------------------------------------------------------------------
+
+func wrapContext(cmd *Command, args []string) *vm.ImmutableMap {
 	return &vm.ImmutableMap{Value: map[string]vm.Object{
-		"args": fn("args", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 0 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			cliArgs := cCtx.Args().Slice()
-			arr := &vm.Array{Value: make([]vm.Object, 0, len(cliArgs))}
-			for _, s := range cliArgs {
-				arr.Value = append(arr.Value, &vm.String{Value: s})
-			}
-			return arr, nil
-		}),
-		"narg": fn("narg", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 0 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			return &vm.Int{Value: int64(cCtx.NArg())}, nil
-		}),
-		"string": fn("string", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 1 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			name, ok := vm.ToString(args[0])
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{Name: "name", Expected: "string", Found: args[0].TypeName()}
-			}
-			return &vm.String{Value: cCtx.String(name)}, nil
-		}),
-		"bool": fn("bool", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 1 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			name, ok := vm.ToString(args[0])
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{Name: "name", Expected: "string", Found: args[0].TypeName()}
-			}
-			return boolVal(cCtx.Bool(name)), nil
-		}),
-		"int": fn("int", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 1 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			name, ok := vm.ToString(args[0])
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{Name: "name", Expected: "string", Found: args[0].TypeName()}
-			}
-			return &vm.Int{Value: int64(cCtx.Int(name))}, nil
-		}),
-		"float": fn("float", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 1 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			name, ok := vm.ToString(args[0])
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{Name: "name", Expected: "string", Found: args[0].TypeName()}
-			}
-			return &vm.Float{Value: cCtx.Float64(name)}, nil
-		}),
-		"string_slice": fn("string_slice", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 1 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			name, ok := vm.ToString(args[0])
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{Name: "name", Expected: "string", Found: args[0].TypeName()}
-			}
-			ss := cCtx.StringSlice(name)
-			arr := &vm.Array{Value: make([]vm.Object, 0, len(ss))}
-			for _, s := range ss {
-				arr.Value = append(arr.Value, &vm.String{Value: s})
-			}
-			return arr, nil
-		}),
-		"is_set": fn("is_set", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 1 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			name, ok := vm.ToString(args[0])
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{Name: "name", Expected: "string", Found: args[0].TypeName()}
-			}
-			return boolVal(cCtx.IsSet(name)), nil
-		}),
-		"count": fn("count", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 1 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			name, ok := vm.ToString(args[0])
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{Name: "name", Expected: "string", Found: args[0].TypeName()}
-			}
-			return &vm.Int{Value: int64(cCtx.Count(name))}, nil
-		}),
-		"num_flags": fn("num_flags", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 0 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			return &vm.Int{Value: int64(cCtx.NumFlags())}, nil
-		}),
-		"flag_names": fn("flag_names", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-			if len(args) != 0 {
-				return nil, vm.ErrWrongNumArguments
-			}
-			names := cCtx.FlagNames()
-			arr := &vm.Array{Value: make([]vm.Object, 0, len(names))}
-			for _, n := range names {
-				arr.Value = append(arr.Value, &vm.String{Value: n})
-			}
-			return arr, nil
-		}),
+		"args": &vm.BuiltinFunction{
+			Name: "args",
+			Value: func(_ context.Context, _ ...vm.Object) (vm.Object, error) {
+				arr := &vm.Array{}
+				for _, a := range args {
+					arr.Value = append(arr.Value, &vm.String{Value: a})
+				}
+				return arr, nil
+			},
+		},
+		"narg": &vm.BuiltinFunction{
+			Name: "narg",
+			Value: func(_ context.Context, _ ...vm.Object) (vm.Object, error) {
+				return &vm.Int{Value: int64(len(args))}, nil
+			},
+		},
+		"string": &vm.BuiltinFunction{
+			Name: "string",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) != 1 {
+					return nil, vm.ErrWrongNumArguments
+				}
+				name, ok := vm.ToString(fnArgs[0])
+				if !ok {
+					return nil, vm.ErrInvalidArgumentType{
+						Name: "name", Expected: "string", Found: fnArgs[0].TypeName(),
+					}
+				}
+				val, err := cmd.Flags().GetString(name)
+				if err != nil {
+					return &vm.String{Value: ""}, nil
+				}
+				return &vm.String{Value: val}, nil
+			},
+		},
+		"bool": &vm.BuiltinFunction{
+			Name: "bool",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) != 1 {
+					return nil, vm.ErrWrongNumArguments
+				}
+				name, ok := vm.ToString(fnArgs[0])
+				if !ok {
+					return nil, vm.ErrInvalidArgumentType{
+						Name: "name", Expected: "string", Found: fnArgs[0].TypeName(),
+					}
+				}
+				val, err := cmd.Flags().GetBool(name)
+				if err != nil {
+					return vm.FalseValue, nil
+				}
+				return boolObj(val), nil
+			},
+		},
+		"int": &vm.BuiltinFunction{
+			Name: "int",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) != 1 {
+					return nil, vm.ErrWrongNumArguments
+				}
+				name, ok := vm.ToString(fnArgs[0])
+				if !ok {
+					return nil, vm.ErrInvalidArgumentType{
+						Name: "name", Expected: "string", Found: fnArgs[0].TypeName(),
+					}
+				}
+				val, err := cmd.Flags().GetInt(name)
+				if err != nil {
+					return &vm.Int{Value: 0}, nil
+				}
+				return &vm.Int{Value: int64(val)}, nil
+			},
+		},
+		"float": &vm.BuiltinFunction{
+			Name: "float",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) != 1 {
+					return nil, vm.ErrWrongNumArguments
+				}
+				name, ok := vm.ToString(fnArgs[0])
+				if !ok {
+					return nil, vm.ErrInvalidArgumentType{
+						Name: "name", Expected: "string", Found: fnArgs[0].TypeName(),
+					}
+				}
+				val, err := cmd.Flags().GetFloat64(name)
+				if err != nil {
+					return &vm.Float{Value: 0}, nil
+				}
+				return &vm.Float{Value: val}, nil
+			},
+		},
+		"string_slice": &vm.BuiltinFunction{
+			Name: "string_slice",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) != 1 {
+					return nil, vm.ErrWrongNumArguments
+				}
+				name, ok := vm.ToString(fnArgs[0])
+				if !ok {
+					return nil, vm.ErrInvalidArgumentType{
+						Name: "name", Expected: "string", Found: fnArgs[0].TypeName(),
+					}
+				}
+				val, err := cmd.Flags().GetStringArray(name)
+				if err != nil {
+					return &vm.Array{}, nil
+				}
+				arr := &vm.Array{}
+				for _, s := range val {
+					arr.Value = append(arr.Value, &vm.String{Value: s})
+				}
+				return arr, nil
+			},
+		},
+		"is_set": &vm.BuiltinFunction{
+			Name: "is_set",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) != 1 {
+					return nil, vm.ErrWrongNumArguments
+				}
+				name, ok := vm.ToString(fnArgs[0])
+				if !ok {
+					return nil, vm.ErrInvalidArgumentType{
+						Name: "name", Expected: "string", Found: fnArgs[0].TypeName(),
+					}
+				}
+				f := cmd.Flags().Lookup(name)
+				return boolObj(f != nil && f.Changed), nil
+			},
+		},
+		"count": &vm.BuiltinFunction{
+			Name: "count",
+			Value: func(_ context.Context, fnArgs ...vm.Object) (vm.Object, error) {
+				if len(fnArgs) != 1 {
+					return nil, vm.ErrWrongNumArguments
+				}
+				name, ok := vm.ToString(fnArgs[0])
+				if !ok {
+					return nil, vm.ErrInvalidArgumentType{
+						Name: "name", Expected: "string", Found: fnArgs[0].TypeName(),
+					}
+				}
+				f := cmd.Flags().Lookup(name)
+				if f != nil && f.Changed {
+					return &vm.Int{Value: 1}, nil
+				}
+				return &vm.Int{Value: 0}, nil
+			},
+		},
+		"num_flags": &vm.BuiltinFunction{
+			Name: "num_flags",
+			Value: func(_ context.Context, _ ...vm.Object) (vm.Object, error) {
+				n := 0
+				cmd.Flags().Visit(func(_ *flag.Flag) { n++ })
+				return &vm.Int{Value: int64(n)}, nil
+			},
+		},
+		"flag_names": &vm.BuiltinFunction{
+			Name: "flag_names",
+			Value: func(_ context.Context, _ ...vm.Object) (vm.Object, error) {
+				arr := &vm.Array{}
+				cmd.Flags().VisitAll(func(f *flag.Flag) {
+					arr.Value = append(arr.Value, &vm.String{Value: f.Name})
+				})
+				return arr, nil
+			},
+		},
 	}}
 }
 

@@ -1,2 +1,2 @@
 - https://github.com/ergochat/readline/tree/16c2b715d64d44ca79cc211873c4492404cd0bd1
-- https://github.com/aperturerobotics/cli/tree/850a4b0a282633404d302d92fd70dd548156e811
+- https://github.com/spf13/cobra/blob/v1.10.2/go.mod

@@ -151,12 +151,12 @@ func (a *App) HandlePanic() {
 // Note that this also affects the default event handling of the application
 // itself: Such a handler can intercept the Ctrl-C event which closes the
 // application.
-func (a *App) SetInputCapture(capture func(event *tcell.EventKey) *tcell.EventKey) {
+func (a *App) SetInputCapture(capture func(event *tcell.EventKey) *tcell.EventKey) *App {
 	a.Lock()
 	defer a.Unlock()
 
 	a.inputCapture = capture
-
+	return a
 }
 
 // GetInputCapture returns the function installed with SetInputCapture() or nil
@@ -173,12 +173,12 @@ func (a *App) GetInputCapture() func(event *tcell.EventKey) *tcell.EventKey {
 // forwarded to the appropriate mouse event handler. This function can then
 // choose to forward that event (or a different one) by returning it or stop
 // the event processing by returning a nil mouse event.
-func (a *App) SetMouseCapture(capture func(event *tcell.EventMouse, action MouseAction) (*tcell.EventMouse, MouseAction)) {
+func (a *App) SetMouseCapture(capture func(event *tcell.EventMouse, action MouseAction) (*tcell.EventMouse, MouseAction)) *App {
 	a.Lock()
 	defer a.Unlock()
 
 	a.mouseCapture = capture
-
+	return a
 }
 
 // GetMouseCapture returns the function installed with SetMouseCapture() or nil
@@ -193,11 +193,12 @@ func (a *App) GetMouseCapture() func(event *tcell.EventMouse, action MouseAction
 // SetDoubleClickInterval sets the maximum time between clicks to register a
 // double click rather than a single click. A standard duration is provided as
 // StandardDoubleClick. No interval is set by default, disabling double clicks.
-func (a *App) SetDoubleClickInterval(interval time.Duration) {
+func (a *App) SetDoubleClickInterval(interval time.Duration) *App {
 	a.Lock()
 	defer a.Unlock()
 
 	a.doubleClickInterval = interval
+	return a
 }
 
 // SetScreen allows you to provide your own tcell.Screen object. For most

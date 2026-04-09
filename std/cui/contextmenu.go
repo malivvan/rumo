@@ -92,11 +92,12 @@ func (c *ContextMenu) ClearContextMenu() {
 // selects a context menu item. The function receives the item's index in the
 // menu (starting with 0), its text and its shortcut rune. SetSelectedFunc must
 // be called before the context menu is shown.
-func (c *ContextMenu) SetContextSelectedFunc(handler func(index int, text string, shortcut rune)) {
+func (c *ContextMenu) SetContextSelectedFunc(handler func(index int, text string, shortcut rune)) *ContextMenu {
 	c.l.Lock()
 	defer c.l.Unlock()
 
 	c.selected = handler
+	return c
 }
 
 // ShowContextMenu shows the context menu. Provide -1 for both to position on

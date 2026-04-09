@@ -114,9 +114,10 @@ func NewView(buf *Buffer) *View {
 }
 
 // SetRect sets a new position for the view.
-func (v *View) SetRect(x, y, width, height int) {
+func (v *View) SetRect(x, y, width, height int) cui.Widget {
 	v.Box.SetRect(x, y, width, height)
 	v.x, v.y, v.width, v.height = v.Box.GetInnerRect()
+	return v
 }
 
 // InputHandler returns a handler which received key events when this view has focus,

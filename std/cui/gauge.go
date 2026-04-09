@@ -95,26 +95,29 @@ func (g *PercentageModeGauge) GetRect() (int, int, int, int) {
 }
 
 // SetRect sets rect for this widget.
-func (g *PercentageModeGauge) SetRect(x, y, width, height int) {
+func (g *PercentageModeGauge) SetRect(x, y, width, height int) Widget {
 	g.Box.SetRect(x, y, width, height)
+	return g
 }
 
 // SetPgBgColor sets progress block background color.
-func (g *PercentageModeGauge) SetPgBgColor(color tcell.Color) {
+func (g *PercentageModeGauge) SetPgBgColor(color tcell.Color) *PercentageModeGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	g.pgBgColor = color
+	return g
 }
 
 // SetValue update the gauge progress.
-func (g *PercentageModeGauge) SetValue(value int) {
+func (g *PercentageModeGauge) SetValue(value int) *PercentageModeGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	if value <= g.maxValue {
 		g.value = value
 	}
+	return g
 }
 
 // GetValue returns current gauge value.
@@ -126,13 +129,14 @@ func (g *PercentageModeGauge) GetValue() int {
 }
 
 // SetMaxValue set maximum allows value for the gauge.
-func (g *PercentageModeGauge) SetMaxValue(value int) {
+func (g *PercentageModeGauge) SetMaxValue(value int) *PercentageModeGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	if value > 0 {
 		g.maxValue = value
 	}
+	return g
 }
 
 // GetMaxValue returns maximum allows value for the gauge.
@@ -207,19 +211,21 @@ func NewUtilModeGauge() *UtilisationGauge {
 }
 
 // SetLabel sets label for this widget.
-func (g *UtilisationGauge) SetLabel(label string) {
+func (g *UtilisationGauge) SetLabel(label string) *UtilisationGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	g.label = label
+	return g
 }
 
 // SetLabelColor sets label text color.
-func (g *UtilisationGauge) SetLabelColor(color tcell.Color) {
+func (g *UtilisationGauge) SetLabelColor(color tcell.Color) *UtilisationGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	g.labelColor = color
+	return g
 }
 
 // Focus is called when this widget receives focus.
@@ -237,18 +243,20 @@ func (g *UtilisationGauge) GetRect() (int, int, int, int) {
 }
 
 // SetRect sets rect for this widget.
-func (g *UtilisationGauge) SetRect(x, y, width, height int) {
+func (g *UtilisationGauge) SetRect(x, y, width, height int) Widget {
 	g.Box.SetRect(x, y, width, height)
+	return g
 }
 
 // SetValue update the gauge progress.
-func (g *UtilisationGauge) SetValue(value float64) {
+func (g *UtilisationGauge) SetValue(value float64) *UtilisationGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	if value <= float64(gaugeMaxPc) {
 		g.pc = value
 	}
+	return g
 }
 
 // GetValue returns current gauge value.
@@ -308,31 +316,34 @@ func (g *UtilisationGauge) Draw(screen tcell.Screen) {
 }
 
 // SetWarnPercentage sets warning percentage start range.
-func (g *UtilisationGauge) SetWarnPercentage(percentage float64) {
+func (g *UtilisationGauge) SetWarnPercentage(percentage float64) *UtilisationGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	if percentage > 0 && percentage < 100 {
 		g.warnPc = percentage
 	}
+	return g
 }
 
 // SetCritPercentage sets critical percentage start range.
-func (g *UtilisationGauge) SetCritPercentage(percentage float64) {
+func (g *UtilisationGauge) SetCritPercentage(percentage float64) *UtilisationGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	if percentage > 0 && percentage < 100 && percentage > g.warnPc {
 		g.critPc = percentage
 	}
+	return g
 }
 
 // SetEmptyColor sets empty gauge color.
-func (g *UtilisationGauge) SetEmptyColor(color tcell.Color) {
+func (g *UtilisationGauge) SetEmptyColor(color tcell.Color) *UtilisationGauge {
 	g.Lock()
 	defer g.Unlock()
 
 	g.emptyColor = color
+	return g
 }
 
 func getUtilisationGaugeBarColor(percentage, warnPc, critPc float64, okColor, warnColor, critColor tcell.Color) tcell.Color {

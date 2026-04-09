@@ -52,11 +52,12 @@ func NewButton(label string) *Button {
 }
 
 // SetLabel sets the button text.
-func (b *Button) SetLabel(label string) {
+func (b *Button) SetLabel(label string) *Button {
 	b.Lock()
 	defer b.Unlock()
 
 	b.label = []byte(label)
+	return b
 }
 
 // GetLabel returns the button text.
@@ -68,46 +69,51 @@ func (b *Button) GetLabel() string {
 }
 
 // SetLabelColor sets the color of the button text.
-func (b *Button) SetLabelColor(color tcell.Color) {
+func (b *Button) SetLabelColor(color tcell.Color) *Button {
 	b.Lock()
 	defer b.Unlock()
 
 	b.labelColor = color
+	return b
 }
 
 // SetLabelColorFocused sets the color of the button text when the button is
 // in focus.
-func (b *Button) SetLabelColorFocused(color tcell.Color) {
+func (b *Button) SetLabelColorFocused(color tcell.Color) *Button {
 	b.Lock()
 	defer b.Unlock()
 
 	b.labelColorFocused = color
 	b.Box.SetBorderColorFocused(color)
+	return b
 }
 
 // SetCursorRune sets the rune to show within the button when it is focused.
-func (b *Button) SetCursorRune(rune rune) {
+func (b *Button) SetCursorRune(rune rune) *Button {
 	b.Lock()
 	defer b.Unlock()
 
 	b.cursorRune = rune
+	return b
 }
 
 // SetBackgroundColorFocused sets the background color of the button text when
 // the button is in focus.
-func (b *Button) SetBackgroundColorFocused(color tcell.Color) {
+func (b *Button) SetBackgroundColorFocused(color tcell.Color) *Button {
 	b.Lock()
 	defer b.Unlock()
 
 	b.backgroundColorFocused = color
+	return b
 }
 
 // SetSelectedFunc sets a handler which is called when the button was selected.
-func (b *Button) SetSelectedFunc(handler func()) {
+func (b *Button) SetSelectedFunc(handler func()) *Button {
 	b.Lock()
 	defer b.Unlock()
 
 	b.selected = handler
+	return b
 }
 
 // SetBlurFunc sets a handler which is called when the user leaves the button.
@@ -117,11 +123,12 @@ func (b *Button) SetSelectedFunc(handler func()) {
 //   - KeyEscape: Leaving the button with no specific direction.
 //   - KeyTab: Move to the next field.
 //   - KeyBacktab: Move to the previous field.
-func (b *Button) SetBlurFunc(handler func(key tcell.Key)) {
+func (b *Button) SetBlurFunc(handler func(key tcell.Key)) *Button {
 	b.Lock()
 	defer b.Unlock()
 
 	b.blur = handler
+	return b
 }
 
 // Draw draws this widget onto the screen.

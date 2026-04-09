@@ -64,76 +64,92 @@ func NewModal() *Modal {
 }
 
 // SetBackgroundColor sets the color of the Modal Frame background.
-func (m *Modal) SetBackgroundColor(color tcell.Color) {
+func (m *Modal) SetBackgroundColor(color tcell.Color) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.Box.SetBackgroundColor(color)
 	m.form.SetBackgroundColor(color)
 	m.frame.SetBackgroundColor(color)
+
+	return m
 }
 
 // SetTextColor sets the color of the message text.
-func (m *Modal) SetTextColor(color tcell.Color) {
+func (m *Modal) SetTextColor(color tcell.Color) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.textColor = color
+
+	return m
 }
 
 // SetButtonBackgroundColor sets the background color of the buttons.
-func (m *Modal) SetButtonBackgroundColor(color tcell.Color) {
+func (m *Modal) SetButtonBackgroundColor(color tcell.Color) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.form.SetButtonBackgroundColor(color)
+
+	return m
 }
 
 // SetButtonTextColor sets the color of the button texts.
-func (m *Modal) SetButtonTextColor(color tcell.Color) {
+func (m *Modal) SetButtonTextColor(color tcell.Color) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.form.SetButtonTextColor(color)
+
+	return m
 }
 
 // SetButtonsAlign sets the horizontal alignment of the buttons. This must be
 // either AlignLeft, AlignCenter (the default), or AlignRight.
-func (m *Modal) SetButtonsAlign(align int) {
+func (m *Modal) SetButtonsAlign(align int) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.form.SetButtonsAlign(align)
+
+	return m
 }
 
 // SetDoneFunc sets a handler which is called when one of the buttons was
 // pressed. It receives the index of the button as well as its label text. The
 // handler is also called when the user presses the Escape key. The index will
 // then be negative and the label text an empty string.
-func (m *Modal) SetDoneFunc(handler func(buttonIndex int, buttonLabel string)) {
+func (m *Modal) SetDoneFunc(handler func(buttonIndex int, buttonLabel string)) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.done = handler
+
+	return m
 }
 
 // SetText sets the message text of the window. The text may contain line
 // breaks. Note that words are wrapped, too, based on the final size of the
 // window.
-func (m *Modal) SetText(text string) {
+func (m *Modal) SetText(text string) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.text = text
+
+	return m
 }
 
 // SetTextAlign sets the horizontal alignment of the text. This must be either
 // AlignLeft, AlignCenter (the default), or AlignRight.
-func (m *Modal) SetTextAlign(align int) {
+func (m *Modal) SetTextAlign(align int) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.textAlign = align
+
+	return m
 }
 
 // GetForm returns the Form embedded in the window. The returned Form may be
@@ -189,11 +205,13 @@ func (m *Modal) ClearButtons() {
 }
 
 // SetFocus shifts the focus to the button with the given index.
-func (m *Modal) SetFocus(index int) {
+func (m *Modal) SetFocus(index int) *Modal {
 	m.Lock()
 	defer m.Unlock()
 
 	m.form.SetFocus(index)
+
+	return m
 }
 
 // Focus is called when this widget receives focus.

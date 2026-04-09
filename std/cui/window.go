@@ -38,12 +38,12 @@ func NewWindow(widget Widget) *Window {
 
 // SetFullscreen sets the flag indicating whether or not the the window should
 // be drawn fullscreen.
-func (w *Window) SetFullscreen(fullscreen bool) {
+func (w *Window) SetFullscreen(fullscreen bool) *Window {
 	w.Lock()
 	defer w.Unlock()
 
 	if w.fullscreen == fullscreen {
-		return
+		return w
 	}
 
 	w.fullscreen = fullscreen
@@ -52,6 +52,7 @@ func (w *Window) SetFullscreen(fullscreen bool) {
 	} else {
 		w.SetRect(w.normalX, w.normalY, w.normalW, w.normalH)
 	}
+	return w
 }
 
 // Focus is called when this widget receives focus.

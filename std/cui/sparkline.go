@@ -75,8 +75,9 @@ func (sl *Sparkline) Draw(screen tcell.Screen) {
 }
 
 // SetRect sets rect for this widget.
-func (sl *Sparkline) SetRect(x, y, width, height int) {
+func (sl *Sparkline) SetRect(x, y, width, height int) Widget {
 	sl.Box.SetRect(x, y, width, height)
+	return sl
 }
 
 // GetRect return widget current rect.
@@ -90,33 +91,37 @@ func (sl *Sparkline) HasFocus() bool {
 }
 
 // SetData sets sparkline data.
-func (sl *Sparkline) SetData(data []float64) {
+func (sl *Sparkline) SetData(data []float64) *Sparkline {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
 	sl.data = data
+	return sl
 }
 
 // SetDataTitle sets sparkline data title.
-func (sl *Sparkline) SetDataTitle(title string) {
+func (sl *Sparkline) SetDataTitle(title string) *Sparkline {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
 	sl.dataTitle = title
+	return sl
 }
 
 // SetDataTitleColor sets sparkline data title color.
-func (sl *Sparkline) SetDataTitleColor(color tcell.Color) {
+func (sl *Sparkline) SetDataTitleColor(color tcell.Color) *Sparkline {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
 	sl.dataTitlecolor = color
+	return sl
 }
 
 // SetLineColor sets sparkline line color.
-func (sl *Sparkline) SetLineColor(color tcell.Color) {
+func (sl *Sparkline) SetLineColor(color tcell.Color) *Sparkline {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 
 	sl.lineColor = color
+	return sl
 }

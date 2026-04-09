@@ -1,260 +1,267 @@
 package cli_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/require"
 )
 
 // ---------------------------------------------------------------------------
-// Flag builder tests (via require.Module)
+// Flag descriptor tests (via require.Module().Call())
 // ---------------------------------------------------------------------------
 
-func TestStringFlag(t *testing.T) {
-	res := require.Module(t, "cli").Call("string_flag", require.MAP{
-		"name":    "config",
-		"aliases": require.ARR{"c"},
-		"usage":   "config file path",
-		"value":   "default.yaml",
+func TestCliStringFlag(t *testing.T) {
+	require.Module(t, "cli").Call("string_flag",
+		require.MAP{"name": "host", "value": "localhost"},
+	).Expect(require.IMAP{
+		"__flag_type": "string",
+		"name":        "host",
+		"value":       "localhost",
 	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
+}
 
-	// verify wrong arg count
+func TestCliBoolFlag(t *testing.T) {
+	require.Module(t, "cli").Call("bool_flag",
+		require.MAP{"name": "verbose"},
+	).Expect(require.IMAP{
+		"__flag_type": "bool",
+		"name":        "verbose",
+	})
+}
+
+func TestCliIntFlag(t *testing.T) {
+	require.Module(t, "cli").Call("int_flag",
+		require.MAP{"name": "port", "value": 8080},
+	).Expect(require.IMAP{
+		"__flag_type": "int",
+		"name":        "port",
+		"value":       8080,
+	})
+}
+
+func TestCliFloatFlag(t *testing.T) {
+	require.Module(t, "cli").Call("float_flag",
+		require.MAP{"name": "rate", "value": 0.5},
+	).Expect(require.IMAP{
+		"__flag_type": "float",
+		"name":        "rate",
+		"value":       0.5,
+	})
+}
+
+func TestCliStringSliceFlag(t *testing.T) {
+	require.Module(t, "cli").Call("string_slice_flag",
+		require.MAP{"name": "tag"},
+	).Expect(require.IMAP{
+		"__flag_type": "string_slice",
+		"name":        "tag",
+	})
+}
+
+func TestCliCommand(t *testing.T) {
+	require.Module(t, "cli").Call("command",
+		require.MAP{"name": "serve", "usage": "start server"},
+	).Expect(require.IMAP{
+		"__is_command": true,
+		"name":         "serve",
+		"usage":        "start server",
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Flag descriptor — wrong argument type / count
+// ---------------------------------------------------------------------------
+
+func TestCliFlagErrors(t *testing.T) {
 	require.Module(t, "cli").Call("string_flag").ExpectError()
-
-	// verify wrong arg type
 	require.Module(t, "cli").Call("string_flag", "not-a-map").ExpectError()
-}
-
-func TestBoolFlag(t *testing.T) {
-	res := require.Module(t, "cli").Call("bool_flag", require.MAP{
-		"name":    "verbose",
-		"aliases": require.ARR{"v"},
-		"usage":   "enable verbose output",
-	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
-
 	require.Module(t, "cli").Call("bool_flag").ExpectError()
-	require.Module(t, "cli").Call("bool_flag", 42).ExpectError()
-}
-
-func TestIntFlag(t *testing.T) {
-	res := require.Module(t, "cli").Call("int_flag", require.MAP{
-		"name":    "port",
-		"aliases": require.ARR{"p"},
-		"usage":   "port number",
-		"value":   8080,
-	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
-
 	require.Module(t, "cli").Call("int_flag").ExpectError()
-	require.Module(t, "cli").Call("int_flag", "bad").ExpectError()
-}
-
-func TestFloatFlag(t *testing.T) {
-	res := require.Module(t, "cli").Call("float_flag", require.MAP{
-		"name":  "rate",
-		"usage": "rate limit",
-		"value": 1.5,
-	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
-
 	require.Module(t, "cli").Call("float_flag").ExpectError()
-	require.Module(t, "cli").Call("float_flag", true).ExpectError()
-}
-
-func TestStringSliceFlag(t *testing.T) {
-	res := require.Module(t, "cli").Call("string_slice_flag", require.MAP{
-		"name":  "tags",
-		"usage": "tags to apply",
-		"value": require.ARR{"a", "b"},
-	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
-
 	require.Module(t, "cli").Call("string_slice_flag").ExpectError()
-	require.Module(t, "cli").Call("string_slice_flag", 99).ExpectError()
-}
-
-// ---------------------------------------------------------------------------
-// Command builder tests (via require.Module)
-// ---------------------------------------------------------------------------
-
-func TestCommand(t *testing.T) {
-	res := require.Module(t, "cli").Call("command", require.MAP{
-		"name":  "serve",
-		"usage": "start the server",
-	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
-
 	require.Module(t, "cli").Call("command").ExpectError()
-	require.Module(t, "cli").Call("command", "bad").ExpectError()
-}
-
-// ---------------------------------------------------------------------------
-// App builder tests (via require.Module, context.Background)
-// ---------------------------------------------------------------------------
-
-func TestNewMinimal(t *testing.T) {
-	res := require.Module(t, "cli").Call("new", require.MAP{
-		"name":  "testapp",
-		"usage": "a test app",
-	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
-
 	require.Module(t, "cli").Call("new").ExpectError()
-	require.Module(t, "cli").Call("new", "bad").ExpectError()
 }
 
 // ---------------------------------------------------------------------------
-// Integration tests (via require.Expect — runs full rumo scripts with VM)
+// Integration tests (via require.Expect — runs full VM)
 // ---------------------------------------------------------------------------
 
-func TestAppRunAction(t *testing.T) {
+func TestCliAppAction(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
 	action: func(ctx) {
-		result = "action_called"
+		out = "executed"
 	}
 })
-
 app.run(["test"])
-out := result
-`, "action_called")
+`, "executed")
 }
 
-func TestAppRunWithStringFlag(t *testing.T) {
+func TestCliAppStringFlag(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
 	flags: [
 		cli.string_flag({name: "name", aliases: ["n"], value: "world"})
 	],
 	action: func(ctx) {
-		result = ctx.string("name")
+		out = ctx.string("name")
 	}
 })
-
 app.run(["test", "--name", "rumo"])
-out := result
 `, "rumo")
 }
 
-func TestAppRunWithStringFlagDefault(t *testing.T) {
+func TestCliAppStringFlagDefault(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
 	flags: [
 		cli.string_flag({name: "name", value: "default_val"})
 	],
 	action: func(ctx) {
-		result = ctx.string("name")
+		out = ctx.string("name")
 	}
 })
-
 app.run(["test"])
-out := result
 `, "default_val")
 }
 
-func TestAppRunWithBoolFlag(t *testing.T) {
+func TestCliAppStringFlagShorthand(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := false
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
+	flags: [
+		cli.string_flag({name: "name", aliases: ["n"], value: "world"})
+	],
+	action: func(ctx) {
+		out = ctx.string("name")
+	}
+})
+app.run(["test", "-n", "short"])
+`, "short")
+}
+
+func TestCliAppBoolFlag(t *testing.T) {
+	require.Expect(t, `
+cli := import("cli")
+out := false
+app := cli.new({
+	name: "test",
 	flags: [
 		cli.bool_flag({name: "verbose", aliases: ["v"]})
 	],
 	action: func(ctx) {
-		result = ctx.bool("verbose")
+		out = ctx.bool("verbose")
 	}
 })
-
-app.run(["test", "--verbose"])
-out := result
+app.run(["test", "-v"])
 `, true)
 }
 
-func TestAppRunWithIntFlag(t *testing.T) {
+func TestCliAppBoolFlagDefault(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := 0
+out := true
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
 	flags: [
-		cli.int_flag({name: "port", aliases: ["p"], value: 3000})
+		cli.bool_flag({name: "verbose"})
 	],
 	action: func(ctx) {
-		result = ctx.int("port")
+		out = ctx.bool("verbose")
 	}
 })
+app.run(["test"])
+`, false)
+}
 
-app.run(["test", "-p", "8080"])
-out := result
+func TestCliAppIntFlag(t *testing.T) {
+	require.Expect(t, `
+cli := import("cli")
+out := 0
+app := cli.new({
+	name: "test",
+	flags: [
+		cli.int_flag({name: "port", aliases: ["p"], value: 8080})
+	],
+	action: func(ctx) {
+		out = ctx.int("port")
+	}
+})
+app.run(["test", "-p", "3000"])
+`, int64(3000))
+}
+
+func TestCliAppIntFlagDefault(t *testing.T) {
+	require.Expect(t, `
+cli := import("cli")
+out := 0
+app := cli.new({
+	name: "test",
+	flags: [
+		cli.int_flag({name: "port", value: 8080})
+	],
+	action: func(ctx) {
+		out = ctx.int("port")
+	}
+})
+app.run(["test"])
 `, int64(8080))
 }
 
-func TestAppRunWithFloatFlag(t *testing.T) {
+func TestCliAppFloatFlag(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := 0.0
+out := 0.0
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
 	flags: [
-		cli.float_flag({name: "rate", value: 1.0})
+		cli.float_flag({name: "rate", value: 0.5})
 	],
 	action: func(ctx) {
-		result = ctx.float("rate")
+		out = ctx.float("rate")
 	}
 })
-
-app.run(["test", "--rate", "2.5"])
-out := result
-`, 2.5)
+app.run(["test", "--rate", "0.85"])
+`, 0.85)
 }
 
-func TestAppRunWithCommand(t *testing.T) {
+func TestCliAppStringSliceFlag(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+fmt := import("fmt")
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
+	flags: [
+		cli.string_slice_flag({name: "tag", aliases: ["t"]})
+	],
+	action: func(ctx) {
+		tags := ctx.string_slice("tag")
+		out = fmt.sprintf("%v", tags)
+	}
+})
+app.run(["test", "-t", "alpha", "-t", "beta"])
+`, `["alpha", "beta"]`)
+}
+
+func TestCliAppSubcommand(t *testing.T) {
+	require.Expect(t, `
+cli := import("cli")
+out := ""
+app := cli.new({
+	name: "tool",
 	commands: [
 		cli.command({
 			name: "greet",
@@ -262,419 +269,238 @@ app := cli.new({
 				cli.string_flag({name: "name", value: "world"})
 			],
 			action: func(ctx) {
-				result = "hello " + ctx.string("name")
+				out = "hello " + ctx.string("name")
 			}
 		})
 	]
 })
-
-app.run(["test", "greet", "--name", "rumo"])
-out := result
+app.run(["tool", "greet", "--name", "rumo"])
 `, "hello rumo")
 }
 
-func TestAppRunWithInlineCommand(t *testing.T) {
+func TestCliAppSubcommandAlias(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+out := ""
 app := cli.new({
-	name: "test",
-	hide_help: true,
-	hide_version: true,
+	name: "tool",
 	commands: [
-		{
-			name: "ping",
+		cli.command({
+			name: "greet",
+			aliases: ["g"],
 			action: func(ctx) {
-				result = "pong"
+				out = "greeted"
 			}
-		}
+		})
 	]
 })
-
-app.run(["test", "ping"])
-out := result
-`, "pong")
+app.run(["tool", "g"])
+`, "greeted")
 }
 
-func TestContextArgs(t *testing.T) {
+func TestCliAppBeforeAfter(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-text := import("text")
-
-result := ""
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
-	args: true,
-	action: func(ctx) {
-		result = text.join(ctx.args(), ",")
-	}
-})
-
-app.run(["test", "foo", "bar", "baz"])
-out := result
-`, "foo,bar,baz")
-}
-
-func TestContextNArg(t *testing.T) {
-	require.Expect(t, `
-cli := import("cli")
-
-result := 0
-app := cli.new({
-	name: "test",
-	hide_help: true,
-	hide_version: true,
-	args: true,
-	action: func(ctx) {
-		result = ctx.narg()
-	}
-})
-
-app.run(["test", "a", "b"])
-out := result
-`, int64(2))
-}
-
-func TestContextIsSet(t *testing.T) {
-	require.Expect(t, `
-cli := import("cli")
-
-was_set := false
-app := cli.new({
-	name: "test",
-	hide_help: true,
-	hide_version: true,
-	flags: [
-		cli.string_flag({name: "foo"}),
-		cli.string_flag({name: "bar"})
-	],
-	action: func(ctx) {
-		was_set = ctx.is_set("foo")
-	}
-})
-
-app.run(["test", "--foo", "x"])
-out := was_set
-`, true)
-}
-
-func TestContextIsSetFalse(t *testing.T) {
-	require.Expect(t, `
-cli := import("cli")
-
-was_set := true
-app := cli.new({
-	name: "test",
-	hide_help: true,
-	hide_version: true,
-	flags: [
-		cli.string_flag({name: "foo"}),
-		cli.string_flag({name: "bar"})
-	],
-	action: func(ctx) {
-		was_set = ctx.is_set("bar")
-	}
-})
-
-app.run(["test", "--foo", "x"])
-out := was_set
-`, false)
-}
-
-func TestBeforeCallback(t *testing.T) {
-	require.Expect(t, `
-cli := import("cli")
-
-order := ""
-app := cli.new({
-	name: "test",
-	hide_help: true,
-	hide_version: true,
 	before: func(ctx) {
-		order = order + "before,"
+		out = out + "before:"
 	},
 	action: func(ctx) {
-		order = order + "action"
-	}
-})
-
-app.run(["test"])
-out := order
-`, "before,action")
-}
-
-func TestAfterCallback(t *testing.T) {
-	require.Expect(t, `
-cli := import("cli")
-
-order := ""
-app := cli.new({
-	name: "test",
-	hide_help: true,
-	hide_version: true,
-	action: func(ctx) {
-		order = order + "action,"
+		out = out + "action:"
 	},
 	after: func(ctx) {
-		order = order + "after"
+		out = out + "after"
 	}
 })
-
 app.run(["test"])
-out := order
-`, "action,after")
+`, "before:action:after")
 }
 
-func TestSubcommands(t *testing.T) {
+func TestCliAppBeforeWithSubcommand(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
+	before: func(ctx) {
+		out = out + "root-before:"
+	},
+	after: func(ctx) {
+		out = out + ":root-after"
+	},
 	commands: [
 		cli.command({
-			name: "parent",
-			commands: [
-				cli.command({
-					name: "child",
-					action: func(ctx) {
-						result = "child_action"
-					}
-				})
-			]
-		})
-	]
-})
-
-app.run(["test", "parent", "child"])
-out := result
-`, "child_action")
-}
-
-func TestCommandAliases(t *testing.T) {
-	require.Expect(t, `
-cli := import("cli")
-
-result := ""
-app := cli.new({
-	name: "test",
-	hide_help: true,
-	hide_version: true,
-	commands: [
-		cli.command({
-			name: "serve",
-			aliases: ["s"],
+			name: "sub",
 			action: func(ctx) {
-				result = "served"
+				out = out + "sub-action"
 			}
 		})
 	]
 })
-
-app.run(["test", "s"])
-out := result
-`, "served")
+app.run(["test", "sub"])
+`, "root-before:sub-action:root-after")
 }
 
-func TestFlagAlias(t *testing.T) {
+func TestCliContextArgs(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+fmt := import("fmt")
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
-	flags: [
-		cli.string_flag({name: "output", aliases: ["o"]})
-	],
 	action: func(ctx) {
-		result = ctx.string("output")
+		args := ctx.args()
+		out = fmt.sprintf("%d:%v", ctx.narg(), args)
 	}
 })
-
-app.run(["test", "-o", "file.txt"])
-out := result
-`, "file.txt")
+app.run(["test", "foo", "bar"])
+`, `2:["foo", "bar"]`)
 }
 
-func TestContextFlagNames(t *testing.T) {
+func TestCliContextIsSet(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-
-result := 0
+fmt := import("fmt")
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
 	flags: [
-		cli.string_flag({name: "aaa"}),
-		cli.int_flag({name: "bbb"})
+		cli.string_flag({name: "a", value: "default"}),
+		cli.string_flag({name: "b", value: "default"})
 	],
 	action: func(ctx) {
-		result = ctx.num_flags()
+		out = fmt.sprintf("%v:%v", ctx.is_set("a"), ctx.is_set("b"))
 	}
 })
+app.run(["test", "--a", "set"])
+`, "true:false")
+}
 
-app.run(["test", "--aaa", "x", "--bbb", "3"])
-out := result
+func TestCliContextNumFlags(t *testing.T) {
+	require.Expect(t, `
+cli := import("cli")
+out := 0
+app := cli.new({
+	name: "test",
+	flags: [
+		cli.string_flag({name: "a"}),
+		cli.string_flag({name: "b"}),
+		cli.string_flag({name: "c"})
+	],
+	action: func(ctx) {
+		out = ctx.num_flags()
+	}
+})
+app.run(["test", "--a", "1", "--c", "3"])
 `, int64(2))
 }
 
-// ---------------------------------------------------------------------------
-// Direct Go-level tests for internal helpers
-// ---------------------------------------------------------------------------
-
-func TestAppRunReturnsError(t *testing.T) {
-	// Calling run with a non-array argument should produce an error
-	appRes := require.Module(t, "cli").Call("new", require.MAP{
-		"name": "test",
-	})
-	require.NoError(t, appRes.E)
-
-	runRes := appRes.Call("run", "not-an-array")
-	require.Error(t, runRes.E)
-}
-
-func TestAppRunWrongArgCount(t *testing.T) {
-	appRes := require.Module(t, "cli").Call("new", require.MAP{
-		"name": "test",
-	})
-	require.NoError(t, appRes.E)
-
-	// run with too many args
-	runRes := appRes.Call("run", require.ARR{"a"}, require.ARR{"b"})
-	require.Error(t, runRes.E)
-}
-
-func TestNewWithAuthors(t *testing.T) {
-	res := require.Module(t, "cli").Call("new", require.MAP{
-		"name": "test",
-		"authors": require.ARR{
-			require.MAP{"name": "Alice", "email": "alice@example.com"},
-			require.MAP{"name": "Bob"},
-		},
-	})
-	require.NoError(t, res.E)
-	require.NotNil(t, res.O)
-}
-
-func TestNewWithInvalidFlags(t *testing.T) {
-	// flags must be an array — passing a string should error
-	res := require.Module(t, "cli").Call("new", require.MAP{
-		"name":  "test",
-		"flags": "bad",
-	})
-	require.Error(t, res.E)
-}
-
-func TestNewWithInvalidCommands(t *testing.T) {
-	// commands must be an array — passing a string should error
-	res := require.Module(t, "cli").Call("new", require.MAP{
-		"name":     "test",
-		"commands": "bad",
-	})
-	require.Error(t, res.E)
-}
-
-func TestNewWithInvalidAuthors(t *testing.T) {
-	// authors must be an array — passing a string should error
-	res := require.Module(t, "cli").Call("new", require.MAP{
-		"name":    "test",
-		"authors": "bad",
-	})
-	require.Error(t, res.E)
-}
-
-func TestCommandWithFlags(t *testing.T) {
-	// Build a flag, then a command containing it
-	flagRes := require.Module(t, "cli").Call("string_flag", require.MAP{
-		"name": "out",
-	})
-	require.NoError(t, flagRes.E)
-
-	cmdRes := require.Module(t, "cli").Call("command", require.MAP{
-		"name":  "build",
-		"flags": require.ARR{flagRes.O.(vm.Object)},
-	})
-	require.NoError(t, cmdRes.E)
-	require.NotNil(t, cmdRes.O)
-}
-
-func TestAppRunNoArgs(t *testing.T) {
-	// run() without arguments uses os.Args — just make sure it doesn't panic
-	// We can't easily test the full behavior here, but we can at least
-	// verify the function path by calling with an explicit empty program arg
-	appRes := require.Module(t, "cli").Call("new", require.MAP{
-		"name":         "test",
-		"hide_help":    true,
-		"hide_version": true,
-		"action": &vm.BuiltinFunction{
-			Name: "noop",
-			Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-				return vm.UndefinedValue, nil
-			},
-		},
-	})
-	require.NoError(t, appRes.E)
-
-	// Call run with a single-element array (just the program name)
-	runRes := appRes.Call("run", require.ARR{"test"})
-	require.NoError(t, runRes.E)
-}
-
-func TestStringSliceFlagInScript(t *testing.T) {
+func TestCliContextFlagNames(t *testing.T) {
 	require.Expect(t, `
 cli := import("cli")
-text := import("text")
-
-result := ""
+out := 0
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
 	flags: [
-		cli.string_slice_flag({name: "tag", aliases: ["t"]})
+		cli.string_flag({name: "alpha"}),
+		cli.int_flag({name: "beta"})
 	],
 	action: func(ctx) {
-		result = text.join(ctx.string_slice("tag"), ",")
+		names := ctx.flag_names()
+		// flag_names includes persistent flags (alpha, beta) plus auto-added help/version etc.
+		// Just check that our flags are present.
+		count := 0
+		for n in names {
+			if n == "alpha" || n == "beta" {
+				count = count + 1
+			}
+		}
+		out = count
 	}
 })
-
-app.run(["test", "--tag", "a", "--tag", "b"])
-out := result
-`, "a,b")
+app.run(["test"])
+`, int64(2))
 }
 
-func TestMultipleCommands(t *testing.T) {
+func TestCliAppPersistentFlags(t *testing.T) {
+	// Root-level flags should be accessible from subcommands.
 	require.Expect(t, `
 cli := import("cli")
-
-result := ""
+out := ""
 app := cli.new({
 	name: "test",
-	hide_help: true,
-	hide_version: true,
+	flags: [
+		cli.string_flag({name: "env", value: "prod"})
+	],
 	commands: [
 		cli.command({
-			name: "alpha",
-			action: func(ctx) { result = "alpha" }
-		}),
-		cli.command({
-			name: "beta",
-			action: func(ctx) { result = "beta" }
+			name: "deploy",
+			action: func(ctx) {
+				out = ctx.string("env")
+			}
 		})
 	]
 })
-
-app.run(["test", "beta"])
-out := result
-`, "beta")
+app.run(["test", "--env", "staging", "deploy"])
+`, "staging")
 }
 
+func TestCliAppMultipleSubcommands(t *testing.T) {
+	require.Expect(t, `
+cli := import("cli")
+out := ""
+app := cli.new({
+	name: "tool",
+	commands: [
+		cli.command({
+			name: "build",
+			action: func(ctx) { out = "built" }
+		}),
+		cli.command({
+			name: "test",
+			action: func(ctx) { out = "tested" }
+		}),
+		cli.command({
+			name: "deploy",
+			action: func(ctx) { out = "deployed" }
+		})
+	]
+})
+app.run(["tool", "deploy"])
+`, "deployed")
+}
+
+func TestCliAppNoArgs(t *testing.T) {
+	// When no args are given to run, cobra uses os.Args[1:].
+	// We pass an explicit empty-ish array so the root action fires.
+	require.Expect(t, `
+cli := import("cli")
+out := ""
+app := cli.new({
+	name: "test",
+	action: func(ctx) {
+		out = "root"
+	}
+})
+app.run(["test"])
+`, "root")
+}
+
+func TestCliAppHideVersion(t *testing.T) {
+	// Ensure hide_version doesn't break execution.
+	require.Expect(t, `
+cli := import("cli")
+out := ""
+app := cli.new({
+	name: "test",
+	version: "1.0.0",
+	hide_version: true,
+	action: func(ctx) {
+		out = "ok"
+	}
+})
+app.run(["test"])
+`, "ok")
+}

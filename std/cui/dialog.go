@@ -71,32 +71,36 @@ func NewMessageDialog(dtype int) *MessageDialog {
 }
 
 // SetType sets dialog type to info or error.
-func (d *MessageDialog) SetType(dtype int) {
+func (d *MessageDialog) SetType(dtype int) *MessageDialog {
 	if dtype >= 0 && dtype <= 1 {
 		d.messageType = dtype
 		d.setColor()
 	}
+	return d
 }
 
 // SetTitle sets dialog title.
-func (d *MessageDialog) SetTitle(title string) {
+func (d *MessageDialog) SetTitle(title string) *MessageDialog {
 	d.layout.SetTitle(title)
+	return d
 }
 
 // SetBackgroundColor sets dialog background color.
-func (d *MessageDialog) SetBackgroundColor(color tcell.Color) {
+func (d *MessageDialog) SetBackgroundColor(color tcell.Color) *MessageDialog {
 	d.Box.SetBackgroundColor(color)
 	d.bgColor = color
 	d.setColor()
+	return d
 }
 
 // SetMessage sets the dialog message to display.
-func (d *MessageDialog) SetMessage(message string) {
+func (d *MessageDialog) SetMessage(message string) *MessageDialog {
 	d.message = "\n" + message
 	d.textview.Clear()
 	d.textview.SetText(d.message)
 	d.textview.ScrollToBeginning()
 	d.setRect()
+	return d
 }
 
 // Focus is called when this widget receives focus.
@@ -110,17 +114,19 @@ func (d *MessageDialog) HasFocus() bool {
 }
 
 // SetRect sets rect for this widget.
-func (d *MessageDialog) SetRect(x, y, width, height int) {
+func (d *MessageDialog) SetRect(x, y, width, height int) Widget {
 	d.x = x
 	d.y = y
 	d.width = width
 	d.height = height
 	d.setRect()
+	return d
 }
 
 // SetTextColor sets dialog's message text color.
-func (d *MessageDialog) SetTextColor(color tcell.Color) {
+func (d *MessageDialog) SetTextColor(color tcell.Color) *MessageDialog {
 	d.textview.SetTextColor(color)
+	return d
 }
 
 // Draw draws this widget onto the screen.

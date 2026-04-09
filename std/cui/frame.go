@@ -81,11 +81,12 @@ func (f *Frame) Clear() {
 // SetBorders sets the width of the frame borders as well as "header" and
 // "footer", the vertical space between the header and footer text and the
 // contained widget (does not apply if there is no text).
-func (f *Frame) SetBorders(top, bottom, header, footer, left, right int) {
+func (f *Frame) SetBorders(top, bottom, header, footer, left, right int) *Frame {
 	f.Lock()
 	defer f.Unlock()
 
 	f.top, f.bottom, f.header, f.footer, f.left, f.right = top, bottom, header, footer, left, right
+	return f
 }
 
 // Draw draws this widget onto the screen.

@@ -105,11 +105,12 @@ func NewGrid() *Grid {
 //
 // The resulting widths would be: 30, 15, 15, 15, 20, 15, and 15 cells, a total
 // of 125 cells, 25 cells wider than the available grid width.
-func (g *Grid) SetColumns(columns ...int) {
+func (g *Grid) SetColumns(columns ...int) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
 	g.columns = columns
+	return g
 }
 
 // SetRows defines how the rows of the grid are distributed. These values behave
@@ -118,16 +119,17 @@ func (g *Grid) SetColumns(columns ...int) {
 //
 // The provided values correspond to row heights, the first value defining
 // the height of the topmost row.
-func (g *Grid) SetRows(rows ...int) {
+func (g *Grid) SetRows(rows ...int) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
 	g.rows = rows
+	return g
 }
 
 // SetSize is a shortcut for SetRows() and SetColumns() where all row and column
 // values are set to the given size values. See SetColumns() for details on sizes.
-func (g *Grid) SetSize(numRows, numColumns, rowSize, columnSize int) {
+func (g *Grid) SetSize(numRows, numColumns, rowSize, columnSize int) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
@@ -139,11 +141,12 @@ func (g *Grid) SetSize(numRows, numColumns, rowSize, columnSize int) {
 	for index := range g.columns {
 		g.columns[index] = columnSize
 	}
+	return g
 }
 
 // SetMinSize sets an absolute minimum width for rows and an absolute minimum
 // height for columns. Panics if negative values are provided.
-func (g *Grid) SetMinSize(row, column int) {
+func (g *Grid) SetMinSize(row, column int) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
@@ -151,12 +154,13 @@ func (g *Grid) SetMinSize(row, column int) {
 		panic("Invalid minimum row/column size")
 	}
 	g.minHeight, g.minWidth = row, column
+	return g
 }
 
 // SetGap sets the size of the gaps between neighboring widgets on the grid.
 // If borders are drawn (see SetBorders()), these values are ignored and a gap
 // of 1 is assumed. Panics if negative values are provided.
-func (g *Grid) SetGap(row, column int) {
+func (g *Grid) SetGap(row, column int) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
@@ -164,24 +168,27 @@ func (g *Grid) SetGap(row, column int) {
 		panic("Invalid gap size")
 	}
 	g.gapRows, g.gapColumns = row, column
+	return g
 }
 
 // SetBorders sets whether or not borders are drawn around grid items. Setting
 // this value to true will cause the gap values (see SetGap()) to be ignored and
 // automatically assumed to be 1 where the border graphics are drawn.
-func (g *Grid) SetBorders(borders bool) {
+func (g *Grid) SetBorders(borders bool) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
 	g.borders = borders
+	return g
 }
 
 // SetBordersColor sets the color of the item borders.
-func (g *Grid) SetBordersColor(color tcell.Color) {
+func (g *Grid) SetBordersColor(color tcell.Color) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
 	g.bordersColor = color
+	return g
 }
 
 // AddItem adds a widget and its position to the grid. The top-left corner
@@ -252,11 +259,12 @@ func (g *Grid) Clear() {
 // completely move off the screen, these values may be adjusted the next time
 // the grid is drawn. The actual position of the grid may also be adjusted such
 // that contained widgets that have focus remain visible.
-func (g *Grid) SetOffset(rows, columns int) {
+func (g *Grid) SetOffset(rows, columns int) *Grid {
 	g.Lock()
 	defer g.Unlock()
 
 	g.rowOffset, g.columnOffset = rows, columns
+	return g
 }
 
 // GetOffset returns the current row and column offset (see SetOffset() for

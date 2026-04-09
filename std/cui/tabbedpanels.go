@@ -71,8 +71,9 @@ func NewTabbedPanels() *TabbedPanels {
 
 // SetChangedFunc sets a handler which is called whenever a tab is added,
 // selected, reordered or removed.
-func (t *TabbedPanels) SetChangedFunc(handler func()) {
+func (t *TabbedPanels) SetChangedFunc(handler func()) *TabbedPanels {
 	t.panels.SetChangedFunc(handler)
+	return t
 }
 
 // AddTab adds a new tab. Tab names should consist only of letters, numbers
@@ -108,12 +109,12 @@ func (t *TabbedPanels) HasTab(name string) bool {
 }
 
 // SetCurrentTab sets the currently visible tab.
-func (t *TabbedPanels) SetCurrentTab(name string) {
+func (t *TabbedPanels) SetCurrentTab(name string) *TabbedPanels {
 	t.Lock()
 
 	if t.currentTab == name {
 		t.Unlock()
-		return
+		return t
 	}
 
 	t.currentTab = name
@@ -134,6 +135,7 @@ func (t *TabbedPanels) SetCurrentTab(name string) {
 		t.Switcher.Highlight(t.currentTab)
 	}
 	t.Switcher.ScrollToHighlight()
+	return t
 }
 
 // GetCurrentTab returns the currently visible tab.
@@ -144,81 +146,90 @@ func (t *TabbedPanels) GetCurrentTab() string {
 }
 
 // SetTabLabel sets the label of a tab.
-func (t *TabbedPanels) SetTabLabel(name, label string) {
+func (t *TabbedPanels) SetTabLabel(name, label string) *TabbedPanels {
 	t.Lock()
 	defer t.Unlock()
 
 	if t.tabLabels[name] == label {
-		return
+		return t
 	}
 
 	t.tabLabels[name] = label
 	t.updateTabLabels()
+	return t
 }
 
 // SetTabTextColor sets the color of the tab text.
-func (t *TabbedPanels) SetTabTextColor(color tcell.Color) {
+func (t *TabbedPanels) SetTabTextColor(color tcell.Color) *TabbedPanels {
 	t.Switcher.SetTextColor(color)
+	return t
 }
 
 // SetTabTextColorFocused sets the color of the tab text when the tab is in focus.
-func (t *TabbedPanels) SetTabTextColorFocused(color tcell.Color) {
+func (t *TabbedPanels) SetTabTextColorFocused(color tcell.Color) *TabbedPanels {
 	t.Switcher.SetHighlightForegroundColor(color)
+	return t
 }
 
 // SetTabBackgroundColor sets the background color of the tab.
-func (t *TabbedPanels) SetTabBackgroundColor(color tcell.Color) {
+func (t *TabbedPanels) SetTabBackgroundColor(color tcell.Color) *TabbedPanels {
 	t.Switcher.SetBackgroundColor(color)
+	return t
 }
 
 // SetTabBackgroundColorFocused sets the background color of the tab when the
 // tab is in focus.
-func (t *TabbedPanels) SetTabBackgroundColorFocused(color tcell.Color) {
+func (t *TabbedPanels) SetTabBackgroundColorFocused(color tcell.Color) *TabbedPanels {
 	t.Switcher.SetHighlightBackgroundColor(color)
+	return t
 }
 
 // SetTabSwitcherDivider sets the tab switcher divider text. Color tags are supported.
-func (t *TabbedPanels) SetTabSwitcherDivider(start, mid, end string) {
+func (t *TabbedPanels) SetTabSwitcherDivider(start, mid, end string) *TabbedPanels {
 	t.Lock()
 	defer t.Unlock()
 	t.dividerStart, t.dividerMid, t.dividerEnd = start, mid, end
+	return t
 }
 
 // SetTabSwitcherHeight sets the tab switcher height. This setting only applies
 // when rendering horizontally. A value of 0 (the default) indicates the height
 // should automatically adjust to fit all of the tab labels.
-func (t *TabbedPanels) SetTabSwitcherHeight(height int) {
+func (t *TabbedPanels) SetTabSwitcherHeight(height int) *TabbedPanels {
 	t.Lock()
 	defer t.Unlock()
 
 	t.switcherHeight = height
 	t.rebuild()
+	return t
 }
 
 // SetTabSwitcherVertical sets the orientation of the tab switcher.
-func (t *TabbedPanels) SetTabSwitcherVertical(vertical bool) {
+func (t *TabbedPanels) SetTabSwitcherVertical(vertical bool) *TabbedPanels {
 	t.Lock()
 	defer t.Unlock()
 
 	if t.switcherVertical == vertical {
-		return
+		return t
 	}
 
 	t.switcherVertical = vertical
 	t.rebuild()
+	return t
 }
 
 // SetTabSwitcherAfterContent sets whether the tab switcher is positioned after content.
-func (t *TabbedPanels) SetTabSwitcherAfterContent(after bool) {
+func (t *TabbedPanels) SetTabSwitcherAfterContent(after bool) *TabbedPanels {
 	t.Lock()
 	defer t.Unlock()
 
 	if t.switcherAfterContent == after {
-		return
+		return t
 	}
 
 	t.switcherAfterContent = after
 	t.rebuild()
+	return t
 }
 
 func (t *TabbedPanels) rebuild() {

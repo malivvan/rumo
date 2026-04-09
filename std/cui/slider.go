@@ -74,11 +74,12 @@ func NewSlider() *Slider {
 }
 
 // SetLabel sets the text to be displayed before the input area.
-func (s *Slider) SetLabel(label string) {
+func (s *Slider) SetLabel(label string) *Slider {
 	s.Lock()
 	defer s.Unlock()
 
 	s.label = []byte(label)
+	return s
 }
 
 // GetLabel returns the text to be displayed before the input area.
@@ -91,59 +92,66 @@ func (s *Slider) GetLabel() string {
 
 // SetLabelWidth sets the screen width of the label. A value of 0 will cause the
 // widget to use the width of the label string.
-func (s *Slider) SetLabelWidth(width int) {
+func (s *Slider) SetLabelWidth(width int) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.labelWidth = width
+	return s
 }
 
 // SetLabelColor sets the color of the label.
-func (s *Slider) SetLabelColor(color tcell.Color) {
+func (s *Slider) SetLabelColor(color tcell.Color) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.labelColor = color
+	return s
 }
 
 // SetLabelColorFocused sets the color of the label when focused.
-func (s *Slider) SetLabelColorFocused(color tcell.Color) {
+func (s *Slider) SetLabelColorFocused(color tcell.Color) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.labelColorFocused = color
+	return s
 }
 
 // SetFieldBackgroundColor sets the background color of the input area.
-func (s *Slider) SetFieldBackgroundColor(color tcell.Color) {
+func (s *Slider) SetFieldBackgroundColor(color tcell.Color) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.fieldBackgroundColor = color
+	return s
 }
 
 // SetFieldBackgroundColorFocused sets the background color of the input area when focused.
-func (s *Slider) SetFieldBackgroundColorFocused(color tcell.Color) {
+func (s *Slider) SetFieldBackgroundColorFocused(color tcell.Color) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.fieldBackgroundColorFocused = color
+	return s
 }
 
 // SetFieldTextColor sets the text color of the input area.
-func (s *Slider) SetFieldTextColor(color tcell.Color) {
+func (s *Slider) SetFieldTextColor(color tcell.Color) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.fieldTextColor = color
+	return s
 }
 
 // SetFieldTextColorFocused sets the text color of the input area when focused.
-func (s *Slider) SetFieldTextColorFocused(color tcell.Color) {
+func (s *Slider) SetFieldTextColorFocused(color tcell.Color) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.fieldTextColorFocused = color
+	return s
 }
 
 // GetFieldHeight returns the height of the field.
@@ -158,20 +166,22 @@ func (s *Slider) GetFieldWidth() int {
 
 // SetIncrement sets the amount the slider is incremented by when modified via
 // keyboard.
-func (s *Slider) SetIncrement(increment int) {
+func (s *Slider) SetIncrement(increment int) *Slider {
 	s.Lock()
 	defer s.Unlock()
 
 	s.increment = increment
+	return s
 }
 
 // SetChangedFunc sets a handler which is called when the value of this slider
 // was changed by the user. The handler function receives the new value.
-func (s *Slider) SetChangedFunc(handler func(value int)) {
+func (s *Slider) SetChangedFunc(handler func(value int)) *Slider {
 	s.Lock()
 	defer s.Unlock()
 
 	s.changed = handler
+	return s
 }
 
 // SetDoneFunc sets a handler which is called when the user is done using the
@@ -181,19 +191,27 @@ func (s *Slider) SetChangedFunc(handler func(value int)) {
 //   - KeyEscape: Abort text input.
 //   - KeyTab: Move to the next field.
 //   - KeyBacktab: Move to the previous field.
-func (s *Slider) SetDoneFunc(handler func(key tcell.Key)) {
+func (s *Slider) SetDoneFunc(handler func(key tcell.Key)) *Slider {
 	s.Lock()
 	defer s.Unlock()
 
 	s.done = handler
+	return s
 }
 
 // SetFinishedFunc sets a callback invoked when the user leaves this form item.
-func (s *Slider) SetFinishedFunc(handler func(key tcell.Key)) {
+func (s *Slider) SetFinishedFunc(handler func(key tcell.Key)) FormItem {
 	s.Lock()
 	defer s.Unlock()
 
 	s.finished = handler
+	return s
+}
+
+// SetBackgroundColor sets the background color of the slider.
+func (s *Slider) SetBackgroundColor(color tcell.Color) FormItem {
+	s.Box.SetBackgroundColor(color)
+	return s
 }
 
 // Draw draws this widget onto the screen.

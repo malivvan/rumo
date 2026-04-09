@@ -95,6 +95,26 @@ stdlib: ## Generates standard library
 clean: ## Clean build artifacts
 	@rm -rf ./build
 
+.PHONY: syntax/vscode
+syntax/vscode: ## Build the VSCode syntax highlighting extension
+	@echo "rumo_vscode.vsix"
+	@mkdir -p ./bin && rm -f ./bin/rumo_vscode.vsix vm/syntax/vscode/rumo-1.0.0.vsix
+	@cd vm/syntax/vscode && vsce package | tail -n +3 | head -n -1 && mv rumo-1.0.0.vsix ../../../bin/rumo_vscode.vsix
+
+.PHONY: syntax/vim
+syntax/vim: ## Build the Vim syntax highlighting extension
+	@echo "rumo_vim.zip"
+	@mkdir -p ./bin && rm -f ./bin/rumo_vim.zip
+	@cd vm/syntax/vim && zip -r ../../../bin/rumo_vim.zip . && echo
+
+.PHONY: syntax/nvim
+syntax/nvim: ## Build the Neovim syntax highlighting extension
+	@echo "rumo_nvim.zip"
+	@mkdir -p ./bin && rm -f ./bin/rumo_nvim.zip
+	@cd vm/syntax/nvim && zip -r ../../../bin/rumo_nvim.zip . && echo
+
+syntax: syntax/vscode syntax/vim syntax/nvim ## Build syntax highlighting extensions
+
 .PHONY: help
 help: ## Shows this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

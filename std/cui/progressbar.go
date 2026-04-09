@@ -51,51 +51,57 @@ func NewProgressBar() *ProgressBar {
 }
 
 // SetEmptyRune sets the rune used for the empty area of the progress bar.
-func (p *ProgressBar) SetEmptyRune(empty rune) {
+func (p *ProgressBar) SetEmptyRune(empty rune) *ProgressBar {
 	p.Lock()
 	defer p.Unlock()
 
 	p.emptyRune = empty
+	return p
 }
 
 // SetEmptyColor sets the color of the empty area of the progress bar.
-func (p *ProgressBar) SetEmptyColor(empty tcell.Color) {
+func (p *ProgressBar) SetEmptyColor(empty tcell.Color) *ProgressBar {
 	p.Lock()
 	defer p.Unlock()
 
 	p.emptyColor = empty
+	return p
 }
 
 // SetFilledRune sets the rune used for the filled area of the progress bar.
-func (p *ProgressBar) SetFilledRune(filled rune) {
+func (p *ProgressBar) SetFilledRune(filled rune) *ProgressBar {
 	p.Lock()
 	defer p.Unlock()
 
 	p.filledRune = filled
+	return p
 }
 
 // SetFilledColor sets the color of the filled area of the progress bar.
-func (p *ProgressBar) SetFilledColor(filled tcell.Color) {
+func (p *ProgressBar) SetFilledColor(filled tcell.Color) *ProgressBar {
 	p.Lock()
 	defer p.Unlock()
 
 	p.filledColor = filled
+	return p
 }
 
 // SetVertical sets the direction of the progress bar.
-func (p *ProgressBar) SetVertical(vertical bool) {
+func (p *ProgressBar) SetVertical(vertical bool) *ProgressBar {
 	p.Lock()
 	defer p.Unlock()
 
 	p.vertical = vertical
+	return p
 }
 
 // SetMax sets the progress required to fill the bar.
-func (p *ProgressBar) SetMax(max int) {
+func (p *ProgressBar) SetMax(max int) *ProgressBar {
 	p.Lock()
 	defer p.Unlock()
 
 	p.max = max
+	return p
 }
 
 // GetMax returns the progress required to fill the bar.
@@ -120,7 +126,7 @@ func (p *ProgressBar) AddProgress(progress int) {
 }
 
 // SetProgress sets the current progress.
-func (p *ProgressBar) SetProgress(progress int) {
+func (p *ProgressBar) SetProgress(progress int) *ProgressBar {
 	p.Lock()
 	defer p.Unlock()
 
@@ -130,6 +136,7 @@ func (p *ProgressBar) SetProgress(progress int) {
 	} else if p.progress > p.max {
 		p.progress = p.max
 	}
+	return p
 }
 
 // GetProgress gets the current progress.

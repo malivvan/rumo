@@ -45,11 +45,12 @@ func NewPanels() *Panels {
 
 // SetChangedFunc sets a handler which is called whenever the visibility or the
 // order of any visible panels changes. This can be used to redraw the panels.
-func (p *Panels) SetChangedFunc(handler func()) {
+func (p *Panels) SetChangedFunc(handler func()) *Panels {
 	p.Lock()
 	defer p.Unlock()
 
 	p.changed = handler
+	return p
 }
 
 // GetPanelCount returns the number of panels currently stored in this object.
@@ -203,7 +204,7 @@ func (p *Panels) HidePanel(name string) {
 
 // SetCurrentPanel sets a panel's visibility to "true" and all other panels'
 // visibility to "false".
-func (p *Panels) SetCurrentPanel(name string) {
+func (p *Panels) SetCurrentPanel(name string) *Panels {
 	hasFocus := p.HasFocus()
 
 	p.Lock()
@@ -226,6 +227,7 @@ func (p *Panels) SetCurrentPanel(name string) {
 		p.Focus(p.setFocus)
 		p.Lock()
 	}
+	return p
 }
 
 // SendToFront changes the order of the panels such that the panel with the given

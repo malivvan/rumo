@@ -161,7 +161,7 @@ func NewInputField() *InputField {
 }
 
 // SetText sets the current text of the input field.
-func (i *InputField) SetText(text string) {
+func (i *InputField) SetText(text string) *InputField {
 	i.Lock()
 
 	i.text = []byte(text)
@@ -172,6 +172,7 @@ func (i *InputField) SetText(text string) {
 	} else {
 		i.Unlock()
 	}
+	return i
 }
 
 // GetText returns the current text of the input field.
@@ -183,11 +184,12 @@ func (i *InputField) GetText() string {
 }
 
 // SetLabel sets the text to be displayed before the input area.
-func (i *InputField) SetLabel(label string) {
+func (i *InputField) SetLabel(label string) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.label = []byte(label)
+	return i
 }
 
 // GetLabel returns the text to be displayed before the input area.
@@ -200,163 +202,182 @@ func (i *InputField) GetLabel() string {
 
 // SetLabelWidth sets the screen width of the label. A value of 0 will cause the
 // widget to use the width of the label string.
-func (i *InputField) SetLabelWidth(width int) {
+func (i *InputField) SetLabelWidth(width int) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.labelWidth = width
+	return i
 }
 
 // SetPlaceholder sets the text to be displayed when the input text is empty.
-func (i *InputField) SetPlaceholder(text string) {
+func (i *InputField) SetPlaceholder(text string) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.placeholder = []byte(text)
+	return i
 }
 
 // SetLabelColor sets the color of the label.
-func (i *InputField) SetLabelColor(color tcell.Color) {
+func (i *InputField) SetLabelColor(color tcell.Color) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.labelColor = color
+	return i
 }
 
 // SetLabelColorFocused sets the color of the label when focused.
-func (i *InputField) SetLabelColorFocused(color tcell.Color) {
+func (i *InputField) SetLabelColorFocused(color tcell.Color) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.labelColorFocused = color
+	return i
 }
 
 // SetFieldBackgroundColor sets the background color of the input area.
-func (i *InputField) SetFieldBackgroundColor(color tcell.Color) {
+func (i *InputField) SetFieldBackgroundColor(color tcell.Color) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldBackgroundColor = color
+	return i
 }
 
 // SetFieldBackgroundColorFocused sets the background color of the input area
 // when focused.
-func (i *InputField) SetFieldBackgroundColorFocused(color tcell.Color) {
+func (i *InputField) SetFieldBackgroundColorFocused(color tcell.Color) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldBackgroundColorFocused = color
+	return i
 }
 
 // SetFieldTextColor sets the text color of the input area.
-func (i *InputField) SetFieldTextColor(color tcell.Color) {
+func (i *InputField) SetFieldTextColor(color tcell.Color) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldTextColor = color
+	return i
 }
 
 // SetFieldTextColorFocused sets the text color of the input area when focused.
-func (i *InputField) SetFieldTextColorFocused(color tcell.Color) {
+func (i *InputField) SetFieldTextColorFocused(color tcell.Color) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldTextColorFocused = color
+	return i
 }
 
 // SetPlaceholderTextColor sets the text color of placeholder text.
-func (i *InputField) SetPlaceholderTextColor(color tcell.Color) {
+func (i *InputField) SetPlaceholderTextColor(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.placeholderTextColor = color
+	return i
 }
 
 // SetPlaceholderTextColorFocused sets the text color of placeholder text when
 // focused.
-func (i *InputField) SetPlaceholderTextColorFocused(color tcell.Color) {
+func (i *InputField) SetPlaceholderTextColorFocused(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.placeholderTextColorFocused = color
+	return i
 }
 
 // SetAutocompleteListTextColor sets the text color of the ListItems.
-func (i *InputField) SetAutocompleteListTextColor(color tcell.Color) {
+func (i *InputField) SetAutocompleteListTextColor(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.autocompleteListTextColor = color
+	return i
 }
 
 // SetAutocompleteListBackgroundColor sets the background color of the
 // autocomplete list.
-func (i *InputField) SetAutocompleteListBackgroundColor(color tcell.Color) {
+func (i *InputField) SetAutocompleteListBackgroundColor(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.autocompleteListBackgroundColor = color
+	return i
 }
 
 // SetAutocompleteListSelectedTextColor sets the text color of the selected
 // ListItem.
-func (i *InputField) SetAutocompleteListSelectedTextColor(color tcell.Color) {
+func (i *InputField) SetAutocompleteListSelectedTextColor(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.autocompleteListSelectedTextColor = color
+	return i
 }
 
 // SetAutocompleteListSelectedBackgroundColor sets the background of the
 // selected ListItem.
-func (i *InputField) SetAutocompleteListSelectedBackgroundColor(color tcell.Color) {
+func (i *InputField) SetAutocompleteListSelectedBackgroundColor(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.autocompleteListSelectedBackgroundColor = color
+	return i
 }
 
 // SetAutocompleteSuggestionTextColor sets the text color of the autocomplete
 // suggestion in the input field.
-func (i *InputField) SetAutocompleteSuggestionTextColor(color tcell.Color) {
+func (i *InputField) SetAutocompleteSuggestionTextColor(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.autocompleteSuggestionTextColor = color
+	return i
 }
 
 // SetFieldNoteTextColor sets the text color of the note.
-func (i *InputField) SetFieldNoteTextColor(color tcell.Color) {
+func (i *InputField) SetFieldNoteTextColor(color tcell.Color) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldNoteTextColor = color
+	return i
 }
 
 // SetFieldNote sets the text to show below the input field, e.g. when the
 // input is invalid.
-func (i *InputField) SetFieldNote(note string) {
+func (i *InputField) SetFieldNote(note string) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldNote = []byte(note)
+	return i
 }
 
 // ResetFieldNote sets the note to an empty string.
-func (i *InputField) ResetFieldNote() {
+func (i *InputField) ResetFieldNote() *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldNote = nil
+	return i
 }
 
 // SetFieldWidth sets the screen width of the input area. A value of 0 means
 // extend as much as possible.
-func (i *InputField) SetFieldWidth(width int) {
+func (i *InputField) SetFieldWidth(width int) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.fieldWidth = width
+	return i
 }
 
 // GetFieldWidth returns this widget's field width.
@@ -386,20 +407,22 @@ func (i *InputField) GetCursorPosition() int {
 }
 
 // SetCursorPosition sets the cursor position.
-func (i *InputField) SetCursorPosition(cursorPos int) {
+func (i *InputField) SetCursorPosition(cursorPos int) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.cursorPos = cursorPos
+	return i
 }
 
 // SetMaskCharacter sets a character that masks user input on a screen. A value
 // of 0 disables masking.
-func (i *InputField) SetMaskCharacter(mask rune) {
+func (i *InputField) SetMaskCharacter(mask rune) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.maskCharacter = mask
+	return i
 }
 
 // SetAutocompleteFunc sets an autocomplete callback function which may return
@@ -408,12 +431,13 @@ func (i *InputField) SetMaskCharacter(mask rune) {
 // invoked in this function and whenever the current text changes or when
 // Autocomplete() is called. Entries are cleared when the user selects an entry
 // or presses Escape.
-func (i *InputField) SetAutocompleteFunc(callback func(currentText string) (entries []*ListItem)) {
+func (i *InputField) SetAutocompleteFunc(callback func(currentText string) (entries []*ListItem)) *InputField {
 	i.Lock()
 	i.autocomplete = callback
 	i.Unlock()
 
 	i.Autocomplete()
+	return i
 }
 
 // Autocomplete invokes the autocomplete callback (if there is one). If the
@@ -496,43 +520,47 @@ func (i *InputField) autocompleteChanged(_ int, item *ListItem) {
 //
 // This package defines a number of variables prefixed with InputField which may
 // be used for common input (e.g. numbers, maximum text length).
-func (i *InputField) SetAcceptanceFunc(handler func(textToCheck string, lastChar rune) bool) {
+func (i *InputField) SetAcceptanceFunc(handler func(textToCheck string, lastChar rune) bool) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.accept = handler
+	return i
 }
 
 // SetChangedFunc sets a handler which is called whenever the text of the input
 // field has changed. It receives the current text (after the change).
-func (i *InputField) SetChangedFunc(handler func(text string)) {
+func (i *InputField) SetChangedFunc(handler func(text string)) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.changed = handler
+	return i
 }
 
 // SetDoneFunc sets a handler which is called when the user is done entering
-// text. The callback function is provided with the key that was pressed, which
-// is one of the following:
-//
-//   - KeyEnter: Done entering text.
-//   - KeyEscape: Abort text input.
-//   - KeyTab: Move to the next field.
-//   - KeyBacktab: Move to the previous field.
-func (i *InputField) SetDoneFunc(handler func(key tcell.Key)) {
+// text.
+func (i *InputField) SetDoneFunc(handler func(key tcell.Key)) *InputField {
 	i.Lock()
 	defer i.Unlock()
 
 	i.done = handler
+	return i
 }
 
 // SetFinishedFunc sets a callback invoked when the user leaves this form item.
-func (i *InputField) SetFinishedFunc(handler func(key tcell.Key)) {
+func (i *InputField) SetFinishedFunc(handler func(key tcell.Key)) FormItem {
 	i.Lock()
 	defer i.Unlock()
 
 	i.finished = handler
+	return i
+}
+
+// SetBackgroundColor sets the background color of the input field.
+func (i *InputField) SetBackgroundColor(color tcell.Color) FormItem {
+	i.Box.SetBackgroundColor(color)
+	return i
 }
 
 // Draw draws this widget onto the screen.

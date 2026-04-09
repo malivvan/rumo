@@ -113,72 +113,85 @@ func (plot *Plot) Draw(screen tcell.Screen) {
 }
 
 // SetRect sets rect for this widget.
-func (plot *Plot) SetRect(x, y, width, height int) {
+func (plot *Plot) SetRect(x, y, width, height int) Widget {
 	plot.Box.SetRect(x, y, width, height)
+	return plot
 }
 
 // SetLineColor sets chart line color.
-func (plot *Plot) SetLineColor(color []tcell.Color) {
+func (plot *Plot) SetLineColor(color []tcell.Color) *Plot {
 	plot.lineColors = color
+	return plot
 }
 
 // SetYAxisLabelDataType sets Y axis label data type (integer or float).
-func (plot *Plot) SetYAxisLabelDataType(dataType PlotYAxisLabelDataType) {
+func (plot *Plot) SetYAxisLabelDataType(dataType PlotYAxisLabelDataType) *Plot {
 	plot.yAxisLabelDataType = dataType
+	return plot
 }
 
 // SetYAxisAutoScaleMin enables YAxis min value autoscale.
-func (plot *Plot) SetYAxisAutoScaleMin(autoScale bool) {
+func (plot *Plot) SetYAxisAutoScaleMin(autoScale bool) *Plot {
 	plot.yAxisAutoScaleMin = autoScale
+	return plot
 }
 
 // SetYAxisAutoScaleMax enables YAxix max value autoscale.
-func (plot *Plot) SetYAxisAutoScaleMax(autoScale bool) {
+func (plot *Plot) SetYAxisAutoScaleMax(autoScale bool) *Plot {
 	plot.yAxisAutoScaleMax = autoScale
+	return plot
 }
 
 // SetAxesColor sets axes x and y lines color.
-func (plot *Plot) SetAxesColor(color tcell.Color) {
+func (plot *Plot) SetAxesColor(color tcell.Color) *Plot {
 	plot.axesColor = color
+	return plot
 }
 
 // SetAxesLabelColor sets axes x and y label color.
-func (plot *Plot) SetAxesLabelColor(color tcell.Color) {
+func (plot *Plot) SetAxesLabelColor(color tcell.Color) *Plot {
 	plot.axesLabelColor = color
+	return plot
 }
 
 // SetDrawAxes set true in order to draw axes to screen.
-func (plot *Plot) SetDrawAxes(draw bool) {
+func (plot *Plot) SetDrawAxes(draw bool) *Plot {
 	plot.drawAxes = draw
+	return plot
 }
 
 // SetDrawXAxisLabel set true in order to draw x axis label to screen.
-func (plot *Plot) SetDrawXAxisLabel(draw bool) {
+func (plot *Plot) SetDrawXAxisLabel(draw bool) *Plot {
 	plot.drawXAxisLabel = draw
+	return plot
 }
 
 // SetXAxisLabelFunc sets x axis label function.
-func (plot *Plot) SetXAxisLabelFunc(f func(int) string) {
+func (plot *Plot) SetXAxisLabelFunc(f func(int) string) *Plot {
 	plot.xAxisLabelFunc = f
+	return plot
 }
 
 // SetDrawYAxisLabel set true in order to draw y axis label to screen.
-func (plot *Plot) SetDrawYAxisLabel(draw bool) {
+func (plot *Plot) SetDrawYAxisLabel(draw bool) *Plot {
 	plot.drawYAxisLabel = draw
+	return plot
 }
 
 // SetMarker sets marker type braille or dot mode.
-func (plot *Plot) SetMarker(marker Marker) {
+func (plot *Plot) SetMarker(marker Marker) *Plot {
 	plot.marker = marker
+	return plot
 }
 
 // SetPlotType sets plot type (linechart or scatter).
-func (plot *Plot) SetPlotType(ptype PlotType) {
+func (plot *Plot) SetPlotType(ptype PlotType) *Plot {
 	plot.ptype = ptype
+	return plot
 }
 
 // SetData sets plot data.
-func (plot *Plot) SetData(data [][]float64) {
+func (plot *Plot) SetData(data [][]float64) *Plot {
 	plot.mu.Lock()
 	defer plot.mu.Unlock()
 
@@ -192,27 +205,32 @@ func (plot *Plot) SetData(data [][]float64) {
 	if plot.yAxisAutoScaleMin {
 		plot.minVal = getMinFloat64From2dSlice(data)
 	}
+	return plot
 }
 
 // SetMaxVal sets plot maximum value.
-func (plot *Plot) SetMaxVal(maxVal float64) {
+func (plot *Plot) SetMaxVal(maxVal float64) *Plot {
 	plot.maxVal = maxVal
+	return plot
 }
 
 // SetMinVal sets plot minimum value.
-func (plot *Plot) SetMinVal(minVal float64) {
+func (plot *Plot) SetMinVal(minVal float64) *Plot {
 	plot.minVal = minVal
+	return plot
 }
 
 // SetYRange sets plot Y range.
-func (plot *Plot) SetYRange(minVal float64, maxVal float64) {
+func (plot *Plot) SetYRange(minVal float64, maxVal float64) *Plot {
 	plot.minVal = minVal
 	plot.maxVal = maxVal
+	return plot
 }
 
 // SetDotMarkerRune sets dot marker rune.
-func (plot *Plot) SetDotMarkerRune(r rune) {
+func (plot *Plot) SetDotMarkerRune(r rune) *Plot {
 	plot.dotMarkerRune = r
+	return plot
 }
 
 // GetPlotRect returns the rect for the inner part of the plot, ie not including axes.

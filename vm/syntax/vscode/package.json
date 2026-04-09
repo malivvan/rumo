@@ -1,0 +1,50 @@
+{
+    "name": "rumo",
+    "displayName": "rumo",
+    "description": "Rumo syntax highlighting",
+    "publisher": "malivvan",
+    "scripts": {
+        "xvscode:prepublish": "npm install -g @vscode/vsce"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/malivvan/rumo/vm/syntax/vscode"
+    },
+    "icon": "logo.png",
+    "version": "1.0.0",
+    "engines": {
+        "vscode": "^1.44.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "rumo",
+                "aliases": [
+                    "Rumo",
+                    "rumo"
+                ],
+                "extensions": [
+                    ".rumo"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "rumo",
+                "scopeName": "source.rumo",
+                "path": "./syntaxes/rumo.tmLanguage.json"
+            }
+        ]
+    },
+    "files": [
+        "syntaxes/rumo.tmLanguage.json",
+        "language-configuration.json",
+        "logo.png",
+        "LICENSE"
+    ],
+    "license": "MIT"
+}
