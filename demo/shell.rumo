@@ -1,0 +1,152 @@
+#!/usr/bin/env rumo
+// Demo: shell module — an interactive calculator REPL.
+//
+// Type mathematical expressions like "2 + 3" or "10 * 5".
+// Special commands:
+//   help    — show available operations
+//   history — show command history
+//   clear   — clear the screen
+//   quit    — exit the REPL
+
+shell := import("shell")
+fmt   := import("fmt")
+text  := import("text")
+
+sh := shell.new_from_config({
+    prompt:              "\033[36mcalc>\033[0m ",
+    history_file:        "/tmp/rumo_calc_history",
+    history_limit:       100,
+    interrupt_prompt:    "^C",
+    eof_prompt:          "exit",
+    history_search_fold: true
+})
+
+history := []
+
+fmt.println("=== rumo calculator REPL ===")
+fmt.println("Type 'help' for available commands, 'quit' to exit.")
+fmt.println("")
+
+// Simple tokenizer: split input into tokens, evaluate basic arithmetic.
+eval := func(input) {
+    input = text.trim_space(input)
+    if input == "" {
+        return ""
+    }
+
+    // Attempt to parse "number op number"
+    parts := text.fields(input)
+    if len(parts) != 3 {
+        return "error: expected format 'number op number' (e.g. 2 + 3)"
+    }
+
+    a_str := parts[0]
+    op := parts[1]
+    b_str := parts[2]
+
+    a_f := 0.0
+    b_f := 0.0
+
+    // Parse numbers manually via string-to-int conversion
+    // (rumo supports implicit conversions from string to number in some contexts)
+    a_i := int(a_str)
+    b_i := int(b_str)
+
+    if is_error(a_i) {
+        a_f = float(a_str)
+        if is_error(a_f) {
+            return "error: invalid number '" + a_str + "'"
+        }
+    } else {
+        a_f = float(a_i)
+    }
+
+    if is_error(b_i) {
+        b_f = float(b_str)
+        if is_error(b_f) {
+            return "error: invalid number '" + b_str + "'"
+        }
+    } else {
+        b_f = float(b_i)
+    }
+
+    if op == "+" {
+        return string(a_f + b_f)
+    } else if op == "-" {
+        return string(a_f - b_f)
+    } else if op == "*" {
+        return string(a_f * b_f)
+    } else if op == "/" {
+        if b_f == 0.0 {
+            return "error: division by zero"
+        }
+        return string(a_f / b_f)
+    } else if op == "%" {
+        return string(int(a_f) % int(b_f))
+    } else {
+        return "error: unknown operator '" + op + "' (supported: + - * / %)"
+    }
+}
+
+for {
+    line := sh.readline()
+
+    // EOF (Ctrl-D) → exit
+    if is_undefined(line) {
+        fmt.println("\nbye!")
+        break
+    }
+
+    // Interrupt (Ctrl-C) → returned as an error
+    if is_error(line) {
+        fmt.println("")
+        continue
+    }
+
+    trimmed := text.trim_space(line)
+    if trimmed == "" {
+        continue
+    }
+
+    // Built-in commands
+    if trimmed == "quit" || trimmed == "exit" {
+        fmt.println("bye!")
+        break
+    } else if trimmed == "help" {
+        fmt.println("Available operations:")
+        fmt.println("  number + number    addition")
+        fmt.println("  number - number    subtraction")
+        fmt.println("  number * number    multiplication")
+        fmt.println("  number / number    division")
+        fmt.println("  number % number    modulo")
+        fmt.println("")
+        fmt.println("Commands:")
+        fmt.println("  help       show this help")
+        fmt.println("  history    show command history")
+        fmt.println("  clear      clear screen")
+        fmt.println("  quit       exit the REPL")
+        continue
+    } else if trimmed == "history" {
+        if len(history) == 0 {
+            fmt.println("(no history)")
+        } else {
+            for i, h in history {
+                fmt.println("  " + string(i + 1) + ": " + h)
+            }
+        }
+        continue
+    } else if trimmed == "clear" {
+        sh.clear_screen()
+        continue
+    }
+
+    // Evaluate expression
+    history = append(history, trimmed)
+    result := eval(trimmed)
+    if result != "" {
+        fmt.println(result)
+    }
+}
+
+sh.close()
+
