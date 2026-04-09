@@ -2,6 +2,7 @@
 title: standard library
 ---
 
+- [`cli`](stdlib-cli.md): declarative CLI framework for building command-line applications
 - [`os`](stdlib-os.md): platform-independent interface to operating system functionality.
 - [`text`](stdlib-text.md): regular expressions, string conversion, and manipulation
 - [`math`](stdlib-math.md): mathematical constants and functions

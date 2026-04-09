@@ -2,6 +2,7 @@ package rumo
 
 import (
 	"github.com/malivvan/rumo/std/base64"
+	"github.com/malivvan/rumo/std/cli"
 	"github.com/malivvan/rumo/std/cui"
 	"github.com/malivvan/rumo/std/fmt"
 	"github.com/malivvan/rumo/std/hex"
@@ -18,6 +19,7 @@ import (
 // BuiltinModules are source type standard library modules.
 var BuiltinModules = map[string]*module.BuiltinModule{
 	"base64":   base64.Module,
+	"cli":   cli.Module,
 	"cui":   cui.Module,
 	"fmt":   fmt.Module,
 	"hex":   hex.Module,
