@@ -14,7 +14,7 @@ import (
 func TestRunREPLWritesEvaluationToProvidedWriter(t *testing.T) {
 	var out bytes.Buffer
 
-	rumo.RunREPL(context.Background(), strings.NewReader("1 + 1\n"), &out, ">> ")
+	rumo.RunREPL(context.Background(), strings.NewReader("1 + 1\n"), &out, ">> ", nil)
 
 	got := out.String()
 	if !strings.Contains(got, "2\n") {

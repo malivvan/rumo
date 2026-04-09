@@ -6,7 +6,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-var Module = module.NewBuiltin("base64").
+var Module = module.NewBuiltin().
 	Func("encode(b bytes) (s string)			returns the base64 encoding of src", base64.StdEncoding.EncodeToString).
 	Func("decode(s string) (b bytes)			returns the bytes represented by the base64 string s", base64.StdEncoding.DecodeString).
 	Func("raw_encode(b bytes) (s string)		returns the unpadded base64 encoding of src", base64.RawStdEncoding.EncodeToString).

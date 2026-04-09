@@ -68,20 +68,21 @@ import (
 		out.WriteString(fmt.Sprintf("	\"github.com/malivvan/rumo/std/%s\"\n", name))
 	}
 	out.WriteString(`	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/module"
 )
 `)
 	out.WriteString(`
 // BuiltinModules are source type standard library modules.
-var BuiltinModules = map[string]map[string]vm.Object{` + "\n")
+var BuiltinModules = map[string]*module.BuiltinModule{` + "\n")
 	for _, name := range builtins {
-		out.WriteString(fmt.Sprintf("	\"%s\":   %s.Module.Objects(),\n", name, name))
+		out.WriteString(fmt.Sprintf("	\"%s\":   %s.Module,\n", name, name))
 	}
 	out.WriteString("}\n")
 	out.WriteString(`
 // SourceModules are source type standard library modules.
-var SourceModules = map[string]string{` + "\n")
+var SourceModules = map[string]*module.SourceModule{` + "\n")
 	for modName, modSrc := range modules {
-		out.WriteString("\t\"" + modName + "\": `" + modSrc + "`,\n")
+		out.WriteString("\t\"" + modName + "\": module.NewSource(`" + modSrc + "`),\n")
 	}
 	out.WriteString("}\n")
 	out.WriteString(`
@@ -103,13 +104,27 @@ func GetModuleMap(names ...string) *vm.ModuleMap {
 	modules := vm.NewModuleMap()
 	for _, name := range names {
 		if mod := BuiltinModules[name]; mod != nil {
-			modules.AddBuiltinModule(name, mod)
+			modules.AddBuiltinModule(name, mod.Objects())
 		}
-		if mod := SourceModules[name]; mod != "" {
-			modules.AddSourceModule(name, []byte(mod))
+		if mod := SourceModules[name]; mod != nil {
+			modules.AddSourceModule(name, mod.Module())
 		}
 	}
 	return modules
+}
+
+// GetExportMap returns the export map of all modules for the given module names.
+func GetExportMap(names ...string) map[string]map[string]*module.Export {
+	exports := make(map[string]map[string]*module.Export)
+	for _, name := range names {
+		if mod := BuiltinModules[name]; mod != nil {
+			exports[name] = mod.Exports()
+		}
+		if mod := SourceModules[name]; mod != nil {
+			exports[name] = mod.Exports()
+		}
+	}
+	return exports
 }
 `)
 

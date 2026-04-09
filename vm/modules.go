@@ -70,6 +70,13 @@ func (m *ModuleMap) Copy() *ModuleMap {
 	return c
 }
 
+// Each iterates over all named modules and applies the given function to each of them.
+func (m *ModuleMap) Each(f func(name string, mod Importable)) {
+	for name, mod := range m.m {
+		f(name, mod)
+	}
+}
+
 // Len returns the number of named modules.
 func (m *ModuleMap) Len() int {
 	return len(m.m)

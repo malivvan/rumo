@@ -10,7 +10,7 @@ import (
 // -- Module registration (constructors) --------------------------------
 
 // Module provides a terminal-based UI toolkit built on top of tview.
-var Module = module.NewBuiltin("cui").
+var Module = module.NewBuiltin().
 	Func("new_app() (app *App)", func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 		if len(args) != 0 {
 			return nil, vm.ErrWrongNumArguments
@@ -1608,4 +1608,3 @@ func boolVal(b bool) vm.Object {
 	}
 	return vm.FalseValue
 }
-

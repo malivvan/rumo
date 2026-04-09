@@ -6,7 +6,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-var Module = module.NewBuiltin("math").
+var Module = module.NewBuiltin().
 	Const("e float", math.E).
 	Const("pi float", math.Pi).
 	Const("phi float", math.Phi).

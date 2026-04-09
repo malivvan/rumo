@@ -8,7 +8,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-var Module = module.NewBuiltin("fmt").
+var Module = module.NewBuiltin().
 	Func("print(...args)								prints the arguments to standard output", fmtPrint).
 	Func("printf(format string, ...args)				prints the formatted string to standard output", fmtPrintf).
 	Func("println(...args)								prints the arguments with a newline to standard output", fmtPrintln).

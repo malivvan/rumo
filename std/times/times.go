@@ -8,7 +8,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-var Module = module.NewBuiltin("times").
+var Module = module.NewBuiltin().
 	Const("format_ansic string", time.ANSIC).
 	Const("format_unix_date string", time.UnixDate).
 	Const("format_ruby_date string", time.RubyDate).

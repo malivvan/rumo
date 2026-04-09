@@ -12,25 +12,26 @@ import (
 	"github.com/malivvan/rumo/std/text"
 	"github.com/malivvan/rumo/std/times"
 	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/module"
 )
 
 // BuiltinModules are source type standard library modules.
-var BuiltinModules = map[string]map[string]vm.Object{
-	"base64":   base64.Module.Objects(),
-	"cui":   cui.Module.Objects(),
-	"fmt":   fmt.Module.Objects(),
-	"hex":   hex.Module.Objects(),
-	"json":   json.Module.Objects(),
-	"math":   math.Module.Objects(),
-	"rand":   rand.Module.Objects(),
-	"shell":   shell.Module.Objects(),
-	"text":   text.Module.Objects(),
-	"times":   times.Module.Objects(),
+var BuiltinModules = map[string]*module.BuiltinModule{
+	"base64":   base64.Module,
+	"cui":   cui.Module,
+	"fmt":   fmt.Module,
+	"hex":   hex.Module,
+	"json":   json.Module,
+	"math":   math.Module,
+	"rand":   rand.Module,
+	"shell":   shell.Module,
+	"text":   text.Module,
+	"times":   times.Module,
 }
 
 // SourceModules are source type standard library modules.
-var SourceModules = map[string]string{
-	"enum": `is_enumerable := func(x) {
+var SourceModules = map[string]*module.SourceModule{
+	"enum": module.NewSource(`is_enumerable := func(x) {
   return is_array(x) || is_map(x) || is_immutable_array(x) || is_immutable_map(x)
 }
 
@@ -39,6 +40,7 @@ is_array_like := func(x) {
 }
 
 export {
+  // all(x map, fn func(key, value) bool) (result bool)
   // all returns true if the given function 'fn' evaluates to a truthy value on
   // all of the items in 'x'. It returns undefined if 'x' is not enumerable.
   all: func(x, fn) {
@@ -50,6 +52,8 @@ export {
 
     return true
   },
+
+  // any(x map, fn func(key, value) bool) (result bool)
   // any returns true if the given function 'fn' evaluates to a truthy value on
   // any of the items in 'x'. It returns undefined if 'x' is not enumerable.
   any: func(x, fn) {
@@ -61,6 +65,8 @@ export {
 
     return false
   },
+
+  // chunk(x array, size int) (result array)
   // chunk returns an array of elements split into groups the length of size.
   // If 'x' can't be split evenly, the final chunk will be the remaining elements.
   // It returns undefined if 'x' is not array.
@@ -79,6 +85,8 @@ export {
 
     return res
   },
+
+  // at(x map, key string) (result any)
   // at returns an element at the given index (if 'x' is array) or
   // key (if 'x' is map). It returns undefined if 'x' is not enumerable.
   at: func(x, key) {
@@ -92,6 +100,8 @@ export {
 
     return x[key]
   },
+
+  // each(x map, fn func(key, value)) (result undefined)
   // each iterates over elements of 'x' and invokes 'fn' for each element. 'fn' is
   // invoked with two arguments: 'key' and 'value'. 'key' is an int index
   // if 'x' is array. 'key' is a string key if 'x' is map. It does not iterate
@@ -103,6 +113,8 @@ export {
       fn(k, v)
     }
   },
+
+  // filter(x map, fn func(key, value) bool) (result array)
   // filter iterates over elements of 'x', returning an array of all elements 'fn'
   // returns truthy for. 'fn' is invoked with two arguments: 'key' and 'value'.
   // 'key' is an int index if 'x' is array. 'key' is a string key if 'x' is map.
@@ -117,6 +129,8 @@ export {
 
     return dst
   },
+
+  // find(x map, fn func(key, value) bool) (result any)
   // find iterates over elements of 'x', returning value of the first element 'fn'
   // returns truthy for. 'fn' is invoked with two arguments: 'key' and 'value'.
   // 'key' is an int index if 'x' is array. 'key' is a string key if 'x' is map.
@@ -128,6 +142,8 @@ export {
       if fn(k, v) { return v }
     }
   },
+
+  // find_key(x map, fn func(key, value) bool) (result any)
   // find_key iterates over elements of 'x', returning key or index of the first
   // element 'fn' returns truthy for. 'fn' is invoked with two arguments: 'key'
   // and 'value'. 'key' is an int index if 'x' is array. 'key' is a string key if
@@ -139,6 +155,8 @@ export {
       if fn(k, v) { return k }
     }
   },
+
+  // map(x map, fn func(key, value) any) (result array)
   // map creates an array of values by running each element in 'x' through 'fn'.
   // 'fn' is invoked with two arguments: 'key' and 'value'. 'key' is an int index
   // if 'x' is array. 'key' is a string key if 'x' is map. It returns undefined
@@ -153,12 +171,16 @@ export {
 
     return dst
   },
+
+  // key(k, v) (result any)
   // key returns the first argument.
   key: func(k, _) { return k },
+
+  // value(k, v) (result any)
   // value returns the second argument.
   value: func(_, v) { return v }
 }
-`,
+`),
 }
 
 // AllModuleNames returns a list of all default module names.
@@ -179,11 +201,25 @@ func GetModuleMap(names ...string) *vm.ModuleMap {
 	modules := vm.NewModuleMap()
 	for _, name := range names {
 		if mod := BuiltinModules[name]; mod != nil {
-			modules.AddBuiltinModule(name, mod)
+			modules.AddBuiltinModule(name, mod.Objects())
 		}
-		if mod := SourceModules[name]; mod != "" {
-			modules.AddSourceModule(name, []byte(mod))
+		if mod := SourceModules[name]; mod != nil {
+			modules.AddSourceModule(name, mod.Module())
 		}
 	}
 	return modules
+}
+
+// GetExportMap returns the export map of all modules for the given module names.
+func GetExportMap(names ...string) map[string]map[string]*module.Export {
+	exports := make(map[string]map[string]*module.Export)
+	for _, name := range names {
+		if mod := BuiltinModules[name]; mod != nil {
+			exports[name] = mod.Exports()
+		}
+		if mod := SourceModules[name]; mod != nil {
+			exports[name] = mod.Exports()
+		}
+	}
+	return exports
 }

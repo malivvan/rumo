@@ -10,14 +10,8 @@ import (
 
 // BuiltinModule represents a standard library module.
 type BuiltinModule struct {
-	name   string
 	export map[string]*Export
 	object map[string]vm.Object
-}
-
-// Name returns the name of the module.
-func (m *BuiltinModule) Name() string {
-	return m.name
 }
 
 // Exports returns the export map of the module.
@@ -31,11 +25,8 @@ func (m *BuiltinModule) Objects() map[string]vm.Object {
 }
 
 // NewBuiltin creates a new BuiltinModule with the given name and registers it in the module map. It panics if the name is empty or already exists.
-func NewBuiltin(name string) *BuiltinModule {
-	if len(name) == 0 {
-		panic("module name cannot be empty")
-	}
-	m := &BuiltinModule{name: name, export: make(map[string]*Export), object: make(map[string]vm.Object)}
+func NewBuiltin() *BuiltinModule {
+	m := &BuiltinModule{export: make(map[string]*Export), object: make(map[string]vm.Object)}
 	return m
 }
 

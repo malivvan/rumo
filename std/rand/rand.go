@@ -8,7 +8,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-var Module = module.NewBuiltin("rand").
+var Module = module.NewBuiltin().
 	Func("int() (v int)", rand.Int63).
 	Func("float() (v float)", rand.Float64).
 	Func("intn(n int) (v int)", rand.Int63n).

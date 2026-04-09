@@ -1,15 +1,18 @@
 package rumo
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/malivvan/rumo/std/shell"
+	"github.com/malivvan/rumo/std/shell/term"
 	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/module"
 	"github.com/malivvan/rumo/vm/parser"
 )
 
@@ -36,6 +39,8 @@ func Commit() string {
 
 // Modules is a map of all standard library modules.
 var Modules = GetModuleMap(AllModuleNames()...)
+
+var Exports = GetExportMap(AllModuleNames()...)
 
 // CompileOnly compiles the source code and writes the compiled binary into
 // outputFile.
@@ -94,15 +99,118 @@ func RunCompiled(ctx context.Context, data []byte) (err error) {
 	return
 }
 
-// RunREPL starts REPL.
-func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string) {
-	stdin := bufio.NewScanner(in)
+// replCompleter implements shell.AutoCompleter for the REPL, providing
+// tab-completion for builtin functions, globally imported module names,
+// user-defined symbols, and module member access (e.g. fmt.println).
+type replCompleter struct {
+	exports     map[string]map[string]*module.Export
+	symbolTable *vm.SymbolTable
+}
+
+func (c *replCompleter) Do(line []rune, pos int) ([][]rune, int) {
+	// Walk backwards from cursor to find the current token.
+	start := pos
+	for start > 0 && (isIdentChar(line[start-1]) || line[start-1] == '.') {
+		start--
+	}
+	text := string(line[start:pos])
+
+	// Module member completion (e.g. "fmt.pr" → "intln", "intf", …).
+	if dotIdx := strings.LastIndex(text, "."); dotIdx >= 0 {
+		modName := text[:dotIdx]
+		memberPrefix := text[dotIdx+1:]
+		exports, ok := c.exports[modName]
+		if !ok {
+			return nil, 0
+		}
+		var candidates [][]rune
+		for name := range exports {
+			if strings.HasPrefix(name, memberPrefix) {
+				candidates = append(candidates, []rune(name[len(memberPrefix):]))
+			}
+		}
+		sort.Slice(candidates, func(i, j int) bool {
+			return string(candidates[i]) < string(candidates[j])
+		})
+		return candidates, len(memberPrefix)
+	}
+
+	// Top-level completion: symbol table contains builtins, globally imported
+	// module names, and any user-defined variables from earlier REPL lines.
+	prefix := text
+	seen := make(map[string]bool)
+	var candidates [][]rune
+	for _, name := range c.symbolTable.Names() {
+		if seen[name] || strings.HasPrefix(name, "__") {
+			continue
+		}
+		if strings.HasPrefix(name, prefix) {
+			seen[name] = true
+			candidates = append(candidates, []rune(name[len(prefix):]))
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return string(candidates[i]) < string(candidates[j])
+	})
+	return candidates, len(prefix)
+}
+
+func isIdentChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') || r == '_'
+}
+
+// RunREPL starts REPL. If modules is non-nil, each named module is imported
+// globally (available as a top-level variable without an explicit import call).
+func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, modules []string) {
+	// Determine if we're running in an interactive terminal
+	interactive := false
+	if fin, ok := in.(*os.File); ok {
+		if fout, ok := out.(*os.File); ok {
+			interactive = term.IsTerminal(int(fin.Fd())) && term.IsTerminal(int(fout.Fd()))
+		}
+	}
+
 	fileSet := parser.NewFileSet()
 	globals := make([]vm.Object, vm.GlobalsSize)
 	symbolTable := vm.NewSymbolTable()
 	for idx, fn := range vm.GetAllBuiltinFunctions() {
 		symbolTable.DefineBuiltin(idx, fn.Name)
 	}
+
+	// import modules globally
+	for _, name := range modules {
+		if mod, ok := BuiltinModules[name]; ok {
+			sym := symbolTable.Define(name)
+			globals[sym.Index] = (&vm.BuiltinModule{Attrs: mod.Objects()}).AsImmutableMap(name)
+		} else if _, ok := SourceModules[name]; ok {
+			s := NewScript([]byte(fmt.Sprintf(`__result__ := import("%s")`, name)))
+			s.SetImports(Modules)
+			p, err := s.RunContext(ctx)
+			if err == nil {
+				sym := symbolTable.Define(name)
+				globals[sym.Index] = p.Get("__result__").Object()
+			}
+		}
+	}
+
+	rl, err := shell.NewFromConfig(&shell.Config{
+		Prompt:          prompt,
+		Stdin:           in,
+		Stdout:          out,
+		Stderr:          out,
+		InterruptPrompt: "\n",
+		EOFPrompt:       "\n",
+		HistoryLimit:    1000,
+		Undo:            true,
+		FuncIsTerminal:  func() bool { return interactive },
+		AutoComplete:    &replCompleter{exports: Exports, symbolTable: symbolTable},
+	})
+	if err != nil {
+		_, _ = fmt.Fprintln(out, err.Error())
+		return
+	}
+	defer rl.Close()
 
 	// embed println function
 	symbol := symbolTable.Define("__repl_println__")
@@ -119,39 +227,43 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string) {
 				}
 			}
 			printArgs = append(printArgs, "\n")
-			_, _ = fmt.Fprint(out, printArgs...)
+			_, _ = fmt.Fprint(rl.Stdout(), printArgs...)
 			return
 		},
 	}
 
 	var constants []vm.Object
 	for {
-		_, _ = fmt.Fprint(out, prompt)
-		scanned := stdin.Scan()
-		if !scanned {
-			return
+		if !interactive {
+			_, _ = fmt.Fprint(out, prompt)
+		}
+		line, readErr := rl.ReadLine()
+		if readErr != nil {
+			if readErr == shell.ErrInterrupt {
+				continue
+			}
+			return // io.EOF or other error, exit REPL
 		}
 
-		line := stdin.Text()
 		srcFile := fileSet.AddFile("repl", -1, len(line))
 		p := parser.NewParser(srcFile, []byte(line), nil)
 		file, err := p.ParseFile()
 		if err != nil {
-			_, _ = fmt.Fprintln(out, err.Error())
+			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
 			continue
 		}
 
 		file = addPrints(file)
 		c := vm.NewCompiler(srcFile, symbolTable, constants, Modules, nil)
 		if err := c.Compile(file); err != nil {
-			_, _ = fmt.Fprintln(out, err.Error())
+			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
 			continue
 		}
 
 		bytecode := c.Bytecode()
 		machine := vm.NewVM(ctx, bytecode, globals, -1)
 		if err := machine.Run(); err != nil {
-			_, _ = fmt.Fprintln(out, err.Error())
+			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
 			continue
 		}
 		constants = bytecode.Constants

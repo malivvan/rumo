@@ -9,7 +9,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-var Module = module.NewBuiltin("json").
+var Module = module.NewBuiltin().
 	Func("decode(data bytes|string) (v any)											decodes JSON-encoded data and returns the resulting value", jsonDecode).
 	Func("encode(v any) (data bytes)												returns the JSON encoding of v", jsonEncode).
 	Func("indent(data bytes|string, prefix string, indent string) (result bytes)	returns an indented form of the JSON-encoded data", jsonIndent).

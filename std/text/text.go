@@ -12,7 +12,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-var Module = module.NewBuiltin("text").
+var Module = module.NewBuiltin().
 	Func("re_match(pattern string, text string) (matched bool, err error)												returns whether the text matches the regular expression pattern", textREMatch).
 	Func("re_find(pattern string, text string, count int) (matches [[{text string, begin int, end int}]], err error)	returns the matches of the regular expression pattern in the text. If count is not provided, it returns the first match.", textREFind).
 	Func("re_replace(pattern string, text string, repl string) (result string, err error)								returns a copy of the text with all matches of the regular expression pattern replaced by the replacement string repl", textREReplace).
