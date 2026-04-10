@@ -2,10 +2,33 @@ package cui
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
 )
+
+// CallbackErrorHandler is called when a rumo callback invoked from a tview
+// event handler returns an error. If nil, errors are silently discarded
+// (pre-fix behaviour). Set a handler to observe/log callback failures.
+var CallbackErrorHandler func(error) = func(err error) {
+	fmt.Fprintf(os.Stderr, "cui: callback error: %v\n", err)
+}
+
+// safeCallFunc wraps vm.CallFunc with two safety checks:
+//  1. It skips the call if ctx is already cancelled (Issue #20 — stale context).
+//  2. It reports non-nil errors to CallbackErrorHandler (Issue #21 — silent discard).
+func safeCallFunc(ctx context.Context, fn vm.Object, args ...vm.Object) (vm.Object, error) {
+	if ctx.Err() != nil {
+		return vm.UndefinedValue, ctx.Err()
+	}
+	result, err := vm.CallFunc(ctx, fn, args...)
+	if err != nil && CallbackErrorHandler != nil {
+		CallbackErrorHandler(err)
+	}
+	return result, err
+}
 
 
 // -- Module registration (constructors) --------------------------------
@@ -203,7 +226,7 @@ func wrapApp(a *App) *vm.ImmutableMap {
 				return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "callable", Found: args[0].TypeName()}
 			}
 			a.QueueUpdate(func() {
-				vm.CallFunc(ctx, args[0])
+				safeCallFunc(ctx, args[0])
 			})
 			return vm.UndefinedValue, nil
 		}),
@@ -215,7 +238,7 @@ func wrapApp(a *App) *vm.ImmutableMap {
 				return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "callable", Found: args[0].TypeName()}
 			}
 			a.QueueUpdateDraw(func() {
-				vm.CallFunc(ctx, args[0])
+				safeCallFunc(ctx, args[0])
 			})
 			return vm.UndefinedValue, nil
 		}),
@@ -436,7 +459,7 @@ func wrapButton(b *Button) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		b.SetSelectedFunc(func() {
-			vm.CallFunc(ctx, cb)
+			safeCallFunc(ctx, cb)
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -494,7 +517,7 @@ func wrapCheckBox(c *CheckBox) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		c.SetChangedFunc(func(checked bool) {
-			vm.CallFunc(ctx, cb, boolVal(checked))
+			safeCallFunc(ctx, cb, boolVal(checked))
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -567,7 +590,7 @@ func wrapInputField(i *InputField) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		i.SetChangedFunc(func(text string) {
-			vm.CallFunc(ctx, cb, &vm.String{Value: text})
+			safeCallFunc(ctx, cb, &vm.String{Value: text})
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -599,7 +622,7 @@ func wrapList(l *List) *vm.ImmutableMap {
 		if len(args) >= 3 && args[2].CanCall() {
 			cb := args[2]
 			item.SetSelectedFunc(func() {
-				vm.CallFunc(ctx, cb)
+				safeCallFunc(ctx, cb)
 			})
 		}
 		l.AddItem(item)
@@ -646,7 +669,7 @@ func wrapList(l *List) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		l.SetSelectedFunc(func(index int, item *ListItem) {
-			vm.CallFunc(ctx, cb, &vm.Int{Value: int64(index)}, &vm.String{Value: item.GetMainText()})
+			safeCallFunc(ctx, cb, &vm.Int{Value: int64(index)}, &vm.String{Value: item.GetMainText()})
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -659,7 +682,7 @@ func wrapList(l *List) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		l.SetChangedFunc(func(index int, item *ListItem) {
-			vm.CallFunc(ctx, cb, &vm.Int{Value: int64(index)}, &vm.String{Value: item.GetMainText()})
+			safeCallFunc(ctx, cb, &vm.Int{Value: int64(index)}, &vm.String{Value: item.GetMainText()})
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -790,7 +813,7 @@ func wrapTable(t *Table) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		t.SetSelectedFunc(func(row, column int) {
-			vm.CallFunc(ctx, cb, &vm.Int{Value: int64(row)}, &vm.Int{Value: int64(column)})
+			safeCallFunc(ctx, cb, &vm.Int{Value: int64(row)}, &vm.Int{Value: int64(column)})
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -803,7 +826,7 @@ func wrapTable(t *Table) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		t.SetSelectionChangedFunc(func(row, column int) {
-			vm.CallFunc(ctx, cb, &vm.Int{Value: int64(row)}, &vm.Int{Value: int64(column)})
+			safeCallFunc(ctx, cb, &vm.Int{Value: int64(row)}, &vm.Int{Value: int64(column)})
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -992,7 +1015,7 @@ func wrapForm(f *Form) *vm.ImmutableMap {
 		if len(args) >= 4 && args[3].CanCall() {
 			cb := args[3]
 			changedFn = func(text string) {
-				vm.CallFunc(ctx, cb, &vm.String{Value: text})
+				safeCallFunc(ctx, cb, &vm.String{Value: text})
 			}
 		}
 		f.AddInputField(label, value, fieldWidth, nil, changedFn)
@@ -1020,7 +1043,7 @@ func wrapForm(f *Form) *vm.ImmutableMap {
 		if len(args) >= 4 && args[3].CanCall() {
 			cb := args[3]
 			changedFn = func(text string) {
-				vm.CallFunc(ctx, cb, &vm.String{Value: text})
+				safeCallFunc(ctx, cb, &vm.String{Value: text})
 			}
 		}
 		f.AddPasswordField(label, value, fieldWidth, '*', changedFn)
@@ -1043,7 +1066,7 @@ func wrapForm(f *Form) *vm.ImmutableMap {
 		if len(args) >= 4 && args[3].CanCall() {
 			cb := args[3]
 			changedFn = func(checked bool) {
-				vm.CallFunc(ctx, cb, boolVal(checked))
+				safeCallFunc(ctx, cb, boolVal(checked))
 			}
 		}
 		f.AddCheckBox(label, message, checked, changedFn)
@@ -1061,7 +1084,7 @@ func wrapForm(f *Form) *vm.ImmutableMap {
 		if len(args) >= 2 && args[1].CanCall() {
 			cb := args[1]
 			handler = func() {
-				vm.CallFunc(ctx, cb)
+				safeCallFunc(ctx, cb)
 			}
 		}
 		f.AddButton(label, handler)
@@ -1091,7 +1114,7 @@ func wrapForm(f *Form) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		f.SetCancelFunc(func() {
-			vm.CallFunc(ctx, cb)
+			safeCallFunc(ctx, cb)
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -1143,7 +1166,7 @@ func wrapModal(mod *Modal) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		mod.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			vm.CallFunc(ctx, cb, &vm.Int{Value: int64(buttonIndex)}, &vm.String{Value: buttonLabel})
+			safeCallFunc(ctx, cb, &vm.Int{Value: int64(buttonIndex)}, &vm.String{Value: buttonLabel})
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -1305,7 +1328,7 @@ func wrapTreeView(tv *TreeView) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		tv.SetSelectedFunc(func(node *TreeNode) {
-			vm.CallFunc(ctx, cb, wrapTreeNode(node))
+			safeCallFunc(ctx, cb, wrapTreeNode(node))
 		})
 		return vm.UndefinedValue, nil
 	})
@@ -1318,7 +1341,7 @@ func wrapTreeView(tv *TreeView) *vm.ImmutableMap {
 		}
 		cb := args[0]
 		tv.SetChangedFunc(func(node *TreeNode) {
-			vm.CallFunc(ctx, cb, wrapTreeNode(node))
+			safeCallFunc(ctx, cb, wrapTreeNode(node))
 		})
 		return vm.UndefinedValue, nil
 	})

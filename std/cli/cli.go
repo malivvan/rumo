@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"os"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
@@ -19,7 +18,6 @@ func init() {
 		Func("float_flag(config map) (flag map)							creates a float flag configuration", cliFloatFlag).
 		Func("string_slice_flag(config map) (flag map)					creates a string slice flag configuration", cliStringSliceFlag)
 }
-
 
 // ---------------------------------------------------------------------------
 // Config-map helpers
@@ -489,7 +487,7 @@ func addFlags(cfg map[string]vm.Object, cmd *Command, persistent bool) {
 		// env_vars: set default from environment if the flag hasn't been
 		// explicitly provided on the command-line.
 		for _, envVar := range cfgStrArray(flagCfg, "env_vars") {
-			if val := os.Getenv(envVar); val != "" {
+			if val := EnvLookupFunc(envVar); val != "" {
 				if f := flags.Lookup(name); f != nil {
 					_ = f.Value.Set(val)
 					f.DefValue = val
@@ -676,4 +674,3 @@ func wrapContext(cmd *Command, args []string) *vm.ImmutableMap {
 		},
 	}}
 }
-

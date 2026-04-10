@@ -954,7 +954,7 @@ func CompDebug(msg string, printToStdErr bool) {
 
 	// Such logs are only printed when the user has set the environment
 	// variable BASH_COMP_DEBUG_FILE to the path of some file to be used.
-	if path := os.Getenv("BASH_COMP_DEBUG_FILE"); path != "" {
+	if path := EnvLookupFunc("BASH_COMP_DEBUG_FILE"); path != "" {
 		f, err := os.OpenFile(path,
 			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err == nil {
@@ -965,7 +965,7 @@ func CompDebug(msg string, printToStdErr bool) {
 
 	if printToStdErr {
 		// Must print to stderr for this not to be read by the completion script.
-		fmt.Fprint(os.Stderr, msg)
+		fmt.Fprint(safeStderr(), msg)
 	}
 }
 
@@ -1012,9 +1012,9 @@ func configEnvVar(name, suffix string) string {
 // If the value is empty or not set, the value of the environment variable
 // CLI_<SUFFIX> is returned instead.
 func getEnvConfig(cmd *Command, suffix string) string {
-	v := os.Getenv(configEnvVar(cmd.Root().Name(), suffix))
+	v := EnvLookupFunc(configEnvVar(cmd.Root().Name(), suffix))
 	if v == "" {
-		v = os.Getenv(configEnvVar(configEnvVarGlobalPrefix, suffix))
+		v = EnvLookupFunc(configEnvVar(configEnvVarGlobalPrefix, suffix))
 	}
 	return v
 }

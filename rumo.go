@@ -101,22 +101,24 @@ func CompileOnly(data []byte, inputFile, outputFile string) (err error) {
 }
 
 // CompileAndRun compiles the source code and executes it.
-func CompileAndRun(ctx context.Context, data []byte, inputFile string) (err error) {
+func CompileAndRun(ctx context.Context, data []byte, inputFile string, args []string) (err error) {
 	p, err := compileSrc(data, inputFile)
 	if err != nil {
 		return
 	}
+	p.SetArgs(args)
 	err = p.RunContext(ctx)
 	return
 }
 
 // RunCompiled reads the compiled binary from file and executes it.
-func RunCompiled(ctx context.Context, data []byte) (err error) {
+func RunCompiled(ctx context.Context, data []byte, args []string) (err error) {
 	p := &Program{}
 	err = p.Unmarshal(data)
 	if err != nil {
 		return
 	}
+	p.SetArgs(args)
 	err = p.RunContext(ctx)
 	return
 }
@@ -256,6 +258,9 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 
 	var constants []vm.Object
 	for {
+		if ctx.Err() != nil {
+			return
+		}
 		if !interactive {
 			_, _ = fmt.Fprint(out, prompt)
 		}

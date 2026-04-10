@@ -22,8 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -391,22 +389,22 @@ func (c *Command) SetGlobalNormalizationFunc(n func(f *flag.FlagSet, name string
 
 // OutOrStdout returns output to stdout.
 func (c *Command) OutOrStdout() io.Writer {
-	return c.getOut(os.Stdout)
+	return c.getOut(safeStdout())
 }
 
 // OutOrStderr returns output to stderr
 func (c *Command) OutOrStderr() io.Writer {
-	return c.getOut(os.Stderr)
+	return c.getOut(safeStderr())
 }
 
 // ErrOrStderr returns output to stderr
 func (c *Command) ErrOrStderr() io.Writer {
-	return c.getErr(os.Stderr)
+	return c.getErr(safeStderr())
 }
 
 // InOrStdin returns input to stdin
 func (c *Command) InOrStdin() io.Reader {
-	return c.getIn(os.Stdin)
+	return c.getIn(safeStdin())
 }
 
 func (c *Command) getOut(def io.Writer) io.Writer {
@@ -1045,13 +1043,21 @@ func (c *Command) execute(a []string) (err error) {
 }
 
 func (c *Command) preRun() {
-	for _, x := range initializers {
+	globalMu.RLock()
+	fns := make([]func(), len(initializers))
+	copy(fns, initializers)
+	globalMu.RUnlock()
+	for _, x := range fns {
 		x()
 	}
 }
 
 func (c *Command) postRun() {
-	for _, x := range finalizers {
+	globalMu.RLock()
+	fns := make([]func(), len(finalizers))
+	copy(fns, finalizers)
+	globalMu.RUnlock()
+	for _, x := range fns {
 		x()
 	}
 }
@@ -1101,9 +1107,14 @@ func (c *Command) ExecuteC() (cmd *Command, err error) {
 
 	args := c.args
 
-	// Workaround FAIL with "go test -v" or "cli.test -test.v", see #155
-	if c.args == nil && filepath.Base(os.Args[0]) != "cli.test" {
-		args = os.Args[1:]
+	// Fall back to OsArgs if no args were explicitly set via SetArgs.
+	if c.args == nil {
+		osArgs := OsArgs()
+		if len(osArgs) > 1 {
+			args = osArgs[1:]
+		} else {
+			args = []string{}
+		}
 	}
 
 	// initialize the __complete command to be used for shell completion

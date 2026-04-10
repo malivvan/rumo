@@ -12,6 +12,7 @@ import (
 	"hash/crc64"
 	"path/filepath"
 	"sync"
+	"unsafe"
 
 	"github.com/malivvan/rumo/vm/parser"
 )
@@ -222,7 +223,15 @@ type Program struct {
 	bytecode      *vm.Bytecode
 	globals       []vm.Object
 	maxAllocs     int64
+	args          []string
 	lock          sync.RWMutex
+}
+
+// SetArgs sets the argument list that will be visible to the script via args().
+func (p *Program) SetArgs(args []string) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.args = args
 }
 
 // Bytecode returns the compiled bytecode of the Program.
@@ -333,9 +342,13 @@ func (p *Program) Run() error {
 	copy(globals, p.globals)
 	bytecode := p.bytecode
 	maxAllocs := p.maxAllocs
+	args := p.args
 	p.lock.RUnlock()
 
 	v := vm.NewVM(context.Background(), bytecode, globals, maxAllocs)
+	if args != nil {
+		v.Args = args
+	}
 	err := v.Run()
 
 	// Write back modified globals under a brief write lock.
@@ -354,9 +367,13 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 	copy(globals, p.globals)
 	bytecode := p.bytecode
 	maxAllocs := p.maxAllocs
+	args := p.args
 	p.lock.RUnlock()
 
 	v := vm.NewVM(ctx, bytecode, globals, maxAllocs)
+	if args != nil {
+		v.Args = args
+	}
 	ch := make(chan error, 1)
 	go func() {
 		ch <- v.Run()
@@ -474,8 +491,16 @@ func (p *Program) Set(name string, value interface{}) error {
 
 // Equals compares two Program objects for equality.
 func (p *Program) Equals(other *Program) bool {
-	p.lock.RLock()
-	defer p.lock.RUnlock()
+	// Acquire locks in a consistent order (by pointer address) to avoid
+	// deadlock when two goroutines call a.Equals(b) and b.Equals(a).
+	first, second := &p.lock, &other.lock
+	if uintptr(unsafe.Pointer(first)) > uintptr(unsafe.Pointer(second)) {
+		first, second = second, first
+	}
+	first.RLock()
+	defer first.RUnlock()
+	second.RLock()
+	defer second.RUnlock()
 
 	if len(p.globalIndices) != len(other.globalIndices) {
 		return false

@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 	"unicode"
@@ -32,6 +33,9 @@ import (
 )
 
 var Module *module.BuiltinModule
+
+// globalMu protects all mutable package-level state (Issue #19).
+var globalMu sync.RWMutex
 
 var templateFuncs = template.FuncMap{
 	"trim":                    strings.TrimSpace,
@@ -53,21 +57,147 @@ const (
 	defaultTraverseRunHooks = false
 )
 
+// enablePrefixMatching is the internal state; access via Get/SetEnablePrefixMatching.
+var enablePrefixMatching = defaultPrefixMatching
+
+// enableCommandSorting is the internal state; access via Get/SetEnableCommandSorting.
+var enableCommandSorting = defaultCommandSorting
+
+// enableCaseInsensitive is the internal state; access via Get/SetEnableCaseInsensitive.
+var enableCaseInsensitive = defaultCaseInsensitive
+
+// enableTraverseRunHooks is the internal state; access via Get/SetEnableTraverseRunHooks.
+var enableTraverseRunHooks = defaultTraverseRunHooks
+
 // EnablePrefixMatching allows setting automatic prefix matching. Automatic prefix matching can be a dangerous thing
 // to automatically enable in CLI tools.
 // Set this to true to enable it.
+// Deprecated: Use SetEnablePrefixMatching/GetEnablePrefixMatching for thread-safe access.
 var EnablePrefixMatching = defaultPrefixMatching
 
 // EnableCommandSorting controls sorting of the slice of commands, which is turned on by default.
 // To disable sorting, set it to false.
+// Deprecated: Use SetEnableCommandSorting/GetEnableCommandSorting for thread-safe access.
 var EnableCommandSorting = defaultCommandSorting
 
 // EnableCaseInsensitive allows case-insensitive commands names. (case sensitive by default)
+// Deprecated: Use SetEnableCaseInsensitive/GetEnableCaseInsensitive for thread-safe access.
 var EnableCaseInsensitive = defaultCaseInsensitive
 
 // EnableTraverseRunHooks executes persistent pre-run and post-run hooks from all parents.
 // By default this is disabled, which means only the first run hook to be found is executed.
+// Deprecated: Use SetEnableTraverseRunHooks/GetEnableTraverseRunHooks for thread-safe access.
 var EnableTraverseRunHooks = defaultTraverseRunHooks
+
+// SetEnablePrefixMatching sets the EnablePrefixMatching flag in a thread-safe manner.
+func SetEnablePrefixMatching(v bool) {
+	globalMu.Lock()
+	EnablePrefixMatching = v
+	enablePrefixMatching = v
+	globalMu.Unlock()
+}
+
+// GetEnablePrefixMatching returns the EnablePrefixMatching flag in a thread-safe manner.
+func GetEnablePrefixMatching() bool {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+	return enablePrefixMatching
+}
+
+// SetEnableCommandSorting sets the EnableCommandSorting flag in a thread-safe manner.
+func SetEnableCommandSorting(v bool) {
+	globalMu.Lock()
+	EnableCommandSorting = v
+	enableCommandSorting = v
+	globalMu.Unlock()
+}
+
+// GetEnableCommandSorting returns the EnableCommandSorting flag in a thread-safe manner.
+func GetEnableCommandSorting() bool {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+	return enableCommandSorting
+}
+
+// SetEnableCaseInsensitive sets the EnableCaseInsensitive flag in a thread-safe manner.
+func SetEnableCaseInsensitive(v bool) {
+	globalMu.Lock()
+	EnableCaseInsensitive = v
+	enableCaseInsensitive = v
+	globalMu.Unlock()
+}
+
+// GetEnableCaseInsensitive returns the EnableCaseInsensitive flag in a thread-safe manner.
+func GetEnableCaseInsensitive() bool {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+	return enableCaseInsensitive
+}
+
+// SetEnableTraverseRunHooks sets the EnableTraverseRunHooks flag in a thread-safe manner.
+func SetEnableTraverseRunHooks(v bool) {
+	globalMu.Lock()
+	EnableTraverseRunHooks = v
+	enableTraverseRunHooks = v
+	globalMu.Unlock()
+}
+
+// GetEnableTraverseRunHooks returns the EnableTraverseRunHooks flag in a thread-safe manner.
+func GetEnableTraverseRunHooks() bool {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+	return enableTraverseRunHooks
+}
+
+// OsArgs returns the command-line arguments. Defaults to os.Args.
+// Override for environments where os.Args is unavailable (WASI/JS).
+var OsArgs = func() []string { return os.Args }
+
+// EnvLookupFunc returns the value of an environment variable.
+// Defaults to os.Getenv. Override for environments where env vars
+// are unavailable (WASI/JS).
+var EnvLookupFunc = os.Getenv
+
+// DefaultStdout is the default writer for standard output.
+// Defaults to os.Stdout. Override for environments with nil/closed stdio.
+var DefaultStdout io.Writer = os.Stdout
+
+// DefaultStderr is the default writer for standard error.
+// Defaults to os.Stderr. Override for environments with nil/closed stdio.
+var DefaultStderr io.Writer = os.Stderr
+
+// DefaultStdin is the default reader for standard input.
+// Defaults to os.Stdin. Override for environments with nil/closed stdio.
+var DefaultStdin io.Reader = os.Stdin
+
+// ExitFunc is called by CheckErr to terminate the process.
+// Defaults to os.Exit. Override to prevent process termination in
+// embedded/VM environments.
+var ExitFunc = os.Exit
+
+// safeStdout returns DefaultStdout or io.Discard if nil.
+func safeStdout() io.Writer {
+	if DefaultStdout != nil {
+		return DefaultStdout
+	}
+	return io.Discard
+}
+
+// safeStderr returns DefaultStderr or io.Discard if nil.
+func safeStderr() io.Writer {
+	if DefaultStderr != nil {
+		return DefaultStderr
+	}
+	return io.Discard
+}
+
+// safeStdin returns DefaultStdin or an empty reader if nil.
+func safeStdin() io.Reader {
+	if DefaultStdin != nil {
+		return DefaultStdin
+	}
+	return strings.NewReader("")
+}
 
 // MousetrapHelpText enables an information splash screen on Windows
 // if the CLI is started from explorer.exe.
@@ -87,27 +217,35 @@ var MousetrapDisplayDuration = 5 * time.Second
 // AddTemplateFunc adds a template function that's available to Usage and Help
 // template generation.
 func AddTemplateFunc(name string, tmplFunc interface{}) {
+	globalMu.Lock()
 	templateFuncs[name] = tmplFunc
+	globalMu.Unlock()
 }
 
 // AddTemplateFuncs adds multiple template functions that are available to Usage and
 // Help template generation.
 func AddTemplateFuncs(tmplFuncs template.FuncMap) {
+	globalMu.Lock()
 	for k, v := range tmplFuncs {
 		templateFuncs[k] = v
 	}
+	globalMu.Unlock()
 }
 
 // OnInitialize sets the passed functions to be run when each command's
 // Execute method is called.
 func OnInitialize(y ...func()) {
+	globalMu.Lock()
 	initializers = append(initializers, y...)
+	globalMu.Unlock()
 }
 
 // OnFinalize sets the passed functions to be run when each command's
 // Execute method is terminated.
 func OnFinalize(y ...func()) {
+	globalMu.Lock()
 	finalizers = append(finalizers, y...)
+	globalMu.Unlock()
 }
 
 // FIXME Gt is unused by cli and should be removed in a version 2. It exists only for compatibility with users of cli.
@@ -185,7 +323,9 @@ func tmpl(text string) *tmplFunc {
 		tmpl: text,
 		fn: func(w io.Writer, data interface{}) error {
 			t := template.New("top")
+			globalMu.RLock()
 			t.Funcs(templateFuncs)
+			globalMu.RUnlock()
 			template.Must(t.Parse(text))
 			return t.Execute(w, data)
 		},
@@ -238,8 +378,8 @@ func stringInSlice(a string, list []string) bool {
 // CheckErr prints the msg with the prefix 'Error:' and exits with error code 1. If the msg is nil, it does nothing.
 func CheckErr(msg interface{}) {
 	if msg != nil {
-		fmt.Fprintln(os.Stderr, "Error:", msg)
-		os.Exit(1)
+		fmt.Fprintln(safeStderr(), "Error:", msg)
+		ExitFunc(1)
 	}
 }
 

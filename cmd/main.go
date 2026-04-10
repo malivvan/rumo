@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/malivvan/rumo"
@@ -37,11 +38,12 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		_, _ = fmt.Fprintln(out, rumo.Version())
 		return 0
 	case "run":
-		if len(args) != 2 {
-			_, _ = fmt.Fprintln(errOut, "usage: rumo run <input_file>")
+		if len(args) < 2 {
+			_, _ = fmt.Fprintln(errOut, "usage: rumo run <input_file> [-- args...]")
 			return 1
 		}
-		return runFile(ctx, args[1], errOut)
+		file, scriptArgs := splitArgs(args[1:])
+		return runFile(ctx, file, scriptArgs, errOut)
 	case "build":
 		switch len(args) {
 		case 2:
@@ -59,7 +61,8 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 		}
 		return buildFile(args[2], args[1], out, errOut)
 	default:
-		return runFile(ctx, args[0], errOut)
+		file, scriptArgs := splitArgs(args)
+		return runFile(ctx, file, scriptArgs, errOut)
 	}
 }
 
@@ -67,31 +70,48 @@ func usage(out io.Writer) {
 	_, _ = fmt.Fprintf(out, "usage: %s [run <file> | build <file> [output] | -o <output> <file> | version]\n", os.Args[0])
 }
 
-func runFile(ctx context.Context, inputFile string, errOut io.Writer) int {
+func runFile(ctx context.Context, inputFile string, scriptArgs []string, errOut io.Writer) int {
 	data, err := os.ReadFile(inputFile)
 	if err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error reading input file %s: %s\n", inputFile, err.Error())
 		return 1
 	}
 
+	// Build the args list: [scriptName, scriptArgs...]
+	args := append([]string{inputFile}, scriptArgs...)
+
 	if bytes.HasPrefix(data, []byte(rumo.Magic)) {
-		if err := rumo.RunCompiled(ctx, data); err != nil {
+		if err := rumo.RunCompiled(ctx, data, args); err != nil {
 			_, _ = fmt.Fprintf(errOut, "Error running %s: %s\n", inputFile, err.Error())
 			return 1
 		}
 		return 0
 	}
 
-	if err := rumo.CompileAndRun(ctx, data, inputFile); err != nil {
-		_, _ = fmt.Fprintf(errOut, "Error compiling %s: %s\n", inputFile, err.Error())
+	if err := rumo.CompileAndRun(ctx, data, inputFile, args); err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error: %s: %s\n", inputFile, err.Error())
 		return 1
 	}
 	return 0
 }
 
+// splitArgs separates [file, ...rest] into (file, scriptArgs). If "--" is present,
+// everything after it becomes scriptArgs. Otherwise all remaining args after the
+// file are treated as script args.
+func splitArgs(args []string) (file string, scriptArgs []string) {
+	file = args[0]
+	rest := args[1:]
+	for i, a := range rest {
+		if a == "--" {
+			return file, rest[i+1:]
+		}
+	}
+	return file, rest
+}
+
 func buildFile(inputFile, outputFile string, out, errOut io.Writer) int {
 	if outputFile == "" {
-		outputFile = filepath.Base(inputFile) + ".out"
+		outputFile = basename(inputFile) + ".out"
 	}
 
 	data, err := os.ReadFile(inputFile)
@@ -108,3 +128,13 @@ func buildFile(inputFile, outputFile string, out, errOut io.Writer) int {
 	_, _ = fmt.Fprintf(out, "Compiled %s to %s\n", inputFile, outputFile)
 	return 0
 }
+
+func basename(s string) string {
+	s = filepath.Base(s)
+	n := strings.LastIndexByte(s, '.')
+	if n > 0 {
+		return s[:n]
+	}
+	return s
+}
+

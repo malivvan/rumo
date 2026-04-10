@@ -2129,7 +2129,7 @@ func TestWrongGroupForCompletion(t *testing.T) {
 func TestSetOutput(t *testing.T) {
 	c := &Command{}
 	c.SetOutput(nil)
-	if out := c.OutOrStdout(); out != os.Stdout {
+	if out := c.OutOrStdout(); out != DefaultStdout {
 		t.Errorf("Expected setting output to nil to revert back to stdout")
 	}
 }
@@ -2137,7 +2137,7 @@ func TestSetOutput(t *testing.T) {
 func TestSetOut(t *testing.T) {
 	c := &Command{}
 	c.SetOut(nil)
-	if out := c.OutOrStdout(); out != os.Stdout {
+	if out := c.OutOrStdout(); out != DefaultStdout {
 		t.Errorf("Expected setting output to nil to revert back to stdout")
 	}
 }
@@ -2145,7 +2145,7 @@ func TestSetOut(t *testing.T) {
 func TestSetErr(t *testing.T) {
 	c := &Command{}
 	c.SetErr(nil)
-	if out := c.ErrOrStderr(); out != os.Stderr {
+	if out := c.ErrOrStderr(); out != DefaultStderr {
 		t.Errorf("Expected setting error to nil to revert back to stderr")
 	}
 }
@@ -2153,7 +2153,7 @@ func TestSetErr(t *testing.T) {
 func TestSetIn(t *testing.T) {
 	c := &Command{}
 	c.SetIn(nil)
-	if out := c.InOrStdin(); out != os.Stdin {
+	if out := c.InOrStdin(); out != DefaultStdin {
 		t.Errorf("Expected setting input to nil to revert back to stdin")
 	}
 }

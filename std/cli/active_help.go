@@ -16,7 +16,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 )
 
 const (
@@ -45,9 +44,9 @@ func AppendActiveHelp(compArray []Completion, activeHelpStr string) []Completion
 // It will always return "0" if the global environment variable CLI_ACTIVE_HELP
 // is set to "0".
 func GetActiveHelpConfig(cmd *Command) string {
-	activeHelpCfg := os.Getenv(activeHelpGlobalEnvVar)
+	activeHelpCfg := EnvLookupFunc(activeHelpGlobalEnvVar)
 	if activeHelpCfg != activeHelpGlobalDisable {
-		activeHelpCfg = os.Getenv(activeHelpEnvVar(cmd.Root().Name()))
+		activeHelpCfg = EnvLookupFunc(activeHelpEnvVar(cmd.Root().Name()))
 	}
 	return activeHelpCfg
 }
