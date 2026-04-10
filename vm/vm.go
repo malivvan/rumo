@@ -116,14 +116,20 @@ var emptyEntry = &CompiledFunction{
 	Instructions: MakeInstruction(parser.OpSuspend),
 }
 
-// ShallowClone creates a shallow copy of the current VM, with separate stack and frame.
-// The copy shares the underlying globals, constants with the original.
+// ShallowClone creates a shallow copy of the current VM, with separate stack,
+// frame and globals. The copy shares constants with the original but gets its
+// own snapshot of globals so that concurrent OpSetGlobal/OpGetGlobal operations
+// in parent and child do not race on the same slice.
 // ShallowClone is typically followed by RunCompiled to run user supplied compiled function.
 func (v *VM) ShallowClone() *VM {
+	// Copy globals to eliminate data race between parent and child VMs.
+	globals := make([]Object, len(v.globals))
+	copy(globals, v.globals)
+
 	vClone := &VM{
 		constants:   v.constants,
 		sp:          0,
-		globals:     v.globals,
+		globals:     globals,
 		fileSet:     v.fileSet,
 		frames:      make([]*frame, 0, initialFrames),
 		framesIndex: 1,
