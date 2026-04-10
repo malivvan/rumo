@@ -112,3 +112,45 @@ func TestSGR_RapidBlinkOff(t *testing.T) {
 	vt.sgr([]int{26})
 	assert.Equal(t, tcell.StyleDefault, vt.cursor.attrs)
 }
+
+// VTE-F21: SGR 53 (overlined) and SGR 55 (not overlined) are not handled.
+// Some modern TUI frameworks use overline for UI elements. Since tcell's Style
+// does not have a native Overline attribute, we track it as a per-cursor flag
+// and store it in the cell.
+func TestSGR_Overline(t *testing.T) {
+	vt := New()
+	vt.Resize(4, 1)
+	vt.mode = 0
+
+	// SGR 53 should enable overline
+	vt.sgr([]int{53})
+	assert.True(t, vt.cursor.overline)
+
+	// Print a character with overline
+	vt.print('A')
+	assert.True(t, vt.activeScreen[0][0].overline)
+
+	// SGR 55 should disable overline
+	vt.sgr([]int{55})
+	assert.False(t, vt.cursor.overline)
+
+	// Print another character without overline
+	vt.print('B')
+	assert.False(t, vt.activeScreen[0][1].overline)
+
+	// First character should still have overline
+	assert.True(t, vt.activeScreen[0][0].overline)
+}
+
+// VTE-F21 regression: SGR 0 (reset) should clear overline.
+func TestSGR_ResetClearsOverline(t *testing.T) {
+	vt := New()
+	vt.Resize(4, 1)
+	vt.mode = 0
+
+	vt.sgr([]int{53})
+	assert.True(t, vt.cursor.overline)
+
+	vt.sgr([]int{0})
+	assert.False(t, vt.cursor.overline)
+}

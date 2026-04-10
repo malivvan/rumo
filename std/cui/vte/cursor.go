@@ -5,8 +5,10 @@ import (
 )
 
 type cursor struct {
-	attrs tcell.Style
-	style tcell.CursorStyle
+	attrs     tcell.Style
+	style     tcell.CursorStyle
+	protected bool // DECSCA protection attribute
+	overline  bool // SGR 53 overline attribute
 
 	// position
 	row row    // 0-indexed

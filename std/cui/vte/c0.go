@@ -1,7 +1,12 @@
 package vte
 
+import "io"
+
 func (vt *VT) c0(r rune) {
 	switch r {
+	case 0x05:
+		// ENQ — Answerback. Respond with an empty string.
+		io.WriteString(vt.pty, "")
 	case 0x07:
 		vt.postEvent(EventBell{
 			EventTerminal: newEventTerminal(vt),

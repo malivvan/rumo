@@ -163,20 +163,26 @@ func (vt *VT) StartWithPty(p io.ReadWriteCloser) error {
 	go func() {
 		defer vt.recover()
 		for {
-			select {
-			case ev := <-vt.events:
-				vt.eventHandler(ev)
-			default:
-				seq := vt.parser.Next()
-				switch seq := seq.(type) {
-				case EOF:
-					vt.eventHandler(&EventClosed{
-						EventTerminal: newEventTerminal(vt),
-					})
-					return
+			// Drain all pending events before parsing the next
+			// sequence to avoid oscillation (VTE-F14).
+			for {
+				select {
+				case ev := <-vt.events:
+					vt.eventHandler(ev)
 				default:
-					vt.update(seq)
+					goto parse
 				}
+			}
+		parse:
+			seq := vt.parser.Next()
+			switch seq := seq.(type) {
+			case EOF:
+				vt.eventHandler(&EventClosed{
+					EventTerminal: newEventTerminal(vt),
+				})
+				return
+			default:
+				vt.update(seq)
 			}
 		}
 	}()
@@ -231,20 +237,26 @@ func (vt *VT) Start(cmd *exec.Cmd) error {
 	go func() {
 		defer vt.recover()
 		for {
-			select {
-			case ev := <-vt.events:
-				vt.eventHandler(ev)
-			default:
-				seq := vt.parser.Next()
-				switch seq := seq.(type) {
-				case EOF:
-					vt.eventHandler(&EventClosed{
-						EventTerminal: newEventTerminal(vt),
-					})
-					return
+			// Drain all pending events before parsing the next
+			// sequence to avoid oscillation (VTE-F14).
+			for {
+				select {
+				case ev := <-vt.events:
+					vt.eventHandler(ev)
 				default:
-					vt.update(seq)
+					goto parse
 				}
+			}
+		parse:
+			seq := vt.parser.Next()
+			switch seq := seq.(type) {
+			case EOF:
+				vt.eventHandler(&EventClosed{
+					EventTerminal: newEventTerminal(vt),
+				})
+				return
+			default:
+				vt.update(seq)
 			}
 		}
 	}()
@@ -342,9 +354,9 @@ func (vt *VT) Resize(w int, h int) {
 	vt.lastCol = false
 	vt.activeScreen = vt.primaryScreen
 
-	// transfer primary to new, skipping the last row
+	// transfer primary to new, including the cursor row
 	for row := 0; row < len(primary); row += 1 {
-		if row == int(last) {
+		if row > int(last) {
 			break
 		}
 		wrapped := false
@@ -396,6 +408,7 @@ func (vt *VT) print(r rune) {
 	// If we are single-shifted, move the previous charset into the current
 	if vt.charsets.singleShift {
 		vt.charsets.selected = vt.charsets.saved
+		vt.charsets.singleShift = false
 	}
 
 	if vt.cursor.col == vt.margin.right && vt.lastCol {
@@ -430,9 +443,11 @@ func (vt *VT) print(r rune) {
 		return
 	}
 	cell := cell{
-		content: r,
-		width:   w,
-		attrs:   vt.cursor.attrs,
+		content:   r,
+		width:     w,
+		attrs:     vt.cursor.attrs,
+		protected: vt.cursor.protected,
+		overline:  vt.cursor.overline,
 	}
 
 	vt.activeScreen[rw][col] = cell
@@ -520,7 +535,12 @@ func (vt *VT) Detach() {
 }
 
 func (vt *VT) postEvent(ev tcell.Event) {
-	vt.events <- ev
+	select {
+	case vt.events <- ev:
+	default:
+		// Drop the event if the channel is full to prevent deadlock,
+		// particularly in the panic recovery path (VTE-F13).
+	}
 }
 
 func (vt *VT) SetSurface(srf Surface) {
@@ -540,7 +560,12 @@ func (vt *VT) Draw() {
 		for col := 0; col < vt.width(); {
 			cell := vt.activeScreen[row][col]
 			w := cell.width
-			vt.surface.SetContent(col, row, cell.content, cell.combining, cell.attrs)
+			style := cell.attrs
+			// DECSCNM: when reverse video mode is active, invert all cells
+			if vt.mode&decscnm != 0 {
+				style = style.Reverse(true)
+			}
+			vt.surface.SetContent(col, row, cell.content, cell.combining, style)
 			if w == 0 {
 				w = 1
 			}
@@ -578,6 +603,15 @@ func (vt *VT) HandleEvent(e tcell.Event) bool {
 	case *tcell.EventMouse:
 		str := vt.handleMouse(e)
 		io.WriteString(vt.pty, str)
+	case *tcell.EventFocus:
+		if vt.mode&focusEvents != 0 {
+			if e.Focused {
+				io.WriteString(vt.pty, "\x1b[I")
+			} else {
+				io.WriteString(vt.pty, "\x1b[O")
+			}
+			return true
+		}
 	}
 	return false
 }

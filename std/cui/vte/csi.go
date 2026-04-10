@@ -123,7 +123,7 @@ func (vt *VT) csi(csi string, params []int) {
 		// Send DEC device status report.
 		switch ps(params) {
 		case 5:
-			io.WriteString(vt.pty, "\x1B[?13n")
+			io.WriteString(vt.pty, "\x1B[?0n")
 		case 6:
 			row, col := vt.reportedCursor()
 			resp := fmt.Sprintf("\x1B[?%d;%dR", row+1, col+1)
@@ -137,6 +137,18 @@ func (vt *VT) csi(csi string, params []int) {
 		vt.decrc()
 	case " q":
 		vt.cursor.style = tcell.CursorStyle(ps(params))
+	case "\"q":
+		// DECSCA — Select Character Protection Attribute
+		switch ps(params) {
+		case 1:
+			vt.cursor.protected = true
+		default:
+			// Ps=0 or Ps=2: deselect protection
+			vt.cursor.protected = false
+		}
+	case "t":
+		// XTWINOPS — Window Manipulation
+		vt.xtwinops(params)
 	}
 }
 
@@ -170,16 +182,13 @@ func (vt *VT) ich(ps int) {
 	row := vt.cursor.row
 	line := vt.activeScreen[row]
 	for i := vt.margin.right; i > col; i -= 1 {
-		if col+i > column(vt.width()-1) {
-			break
-		}
-		if (i - column(ps)) < 0 {
+		if (i - column(ps)) < col {
 			continue
 		}
 		line[i] = line[i-column(ps)]
 	}
 	for i := 0; i < ps; i += 1 {
-		if int(col)+i >= (vt.width() - 1) {
+		if int(col)+i >= vt.width() {
 			break
 		}
 		line[col+column(i)] = cell{
@@ -213,9 +222,13 @@ func (vt *VT) cud(ps int) {
 	if ps == 0 {
 		ps = 1
 	}
+	clamp := row(vt.height() - 1)
+	if vt.cursor.row <= vt.margin.bottom {
+		clamp = vt.margin.bottom
+	}
 	vt.cursor.row += row(ps)
-	if vt.cursor.row > vt.margin.bottom {
-		vt.cursor.row = vt.margin.bottom
+	if vt.cursor.row > clamp {
+		vt.cursor.row = clamp
 	}
 }
 
@@ -226,9 +239,13 @@ func (vt *VT) cuf(ps int) {
 	if ps == 0 {
 		ps = 1
 	}
+	clamp := column(vt.width() - 1)
+	if vt.cursor.col <= vt.margin.right {
+		clamp = vt.margin.right
+	}
 	vt.cursor.col += column(ps)
-	if vt.cursor.col > vt.margin.right {
-		vt.cursor.col = vt.margin.right
+	if vt.cursor.col > clamp {
+		vt.cursor.col = clamp
 	}
 }
 
@@ -239,33 +256,40 @@ func (vt *VT) cub(ps int) {
 	if ps == 0 {
 		ps = 1
 	}
+	clamp := column(0)
+	if vt.cursor.col >= vt.margin.left {
+		clamp = vt.margin.left
+	}
 	vt.cursor.col -= column(ps)
-	if vt.cursor.col < vt.margin.left {
-		vt.cursor.col = vt.margin.left
+	if vt.cursor.col < clamp {
+		vt.cursor.col = clamp
 	}
 }
 
 // Cursor Next Line (CNL) CSI Ps E
-// Move cursor to left margin Ps lines down, scrolling if necessary
+// Move cursor to left margin Ps lines down, stopping at bottom margin without scrolling
 func (vt *VT) cnl(ps int) {
 	vt.lastCol = false
 	if ps == 0 {
 		ps = 1
 	}
-	for i := 0; i < ps; i += 1 {
-		vt.nel()
+	vt.cursor.row += row(ps)
+	if vt.cursor.row > vt.margin.bottom {
+		vt.cursor.row = vt.margin.bottom
 	}
+	vt.cursor.col = vt.margin.left
 }
 
 // Cursor Preceding Line (CPL) CSI Ps F
-// Move cursor to left margin Ps lines up, scrolling if necessary
+// Move cursor to left margin Ps lines up, stopping at top margin without scrolling
 func (vt *VT) cpl(ps int) {
 	vt.lastCol = false
 	if ps == 0 {
 		ps = 1
 	}
-	for i := 0; i < ps; i += 1 {
-		vt.ri()
+	vt.cursor.row -= row(ps)
+	if vt.cursor.row < vt.margin.top {
+		vt.cursor.row = vt.margin.top
 	}
 	vt.cursor.col = vt.margin.left
 }
@@ -379,6 +403,16 @@ func (vt *VT) ed(ps int) {
 	// Erases the complete display. All lines are erased and changed to
 	// single-width. The cursor does not move.
 	case 2:
+		vt.lastCol = false
+		for r := row(0); r < row(vt.height()); r += 1 {
+			for col := column(0); col < column(vt.width()); col += 1 {
+				vt.activeScreen[r][col].erase(vt.cursor.attrs)
+			}
+		}
+
+	// Erase scrollback buffer (xterm extension). Since this VT has no
+	// scrollback buffer, this is equivalent to ED 2.
+	case 3:
 		vt.lastCol = false
 		for r := row(0); r < row(vt.height()); r += 1 {
 			for col := column(0); col < column(vt.width()); col += 1 {
@@ -755,3 +789,26 @@ func (vt *VT) decsel(ps int) {
 		}
 	}
 }
+
+// xtwinops handles CSI Ps t — Window Manipulation (XTWINOPS).
+func (vt *VT) xtwinops(params []int) {
+	if len(params) == 0 {
+		return
+	}
+	switch params[0] {
+	case 14:
+		// Report window size in pixels. We don't have actual pixel info, so
+		// approximate using a default cell size of 8×16.
+		resp := fmt.Sprintf("\x1B[4;%d;%dt", vt.height()*16, vt.width()*8)
+		io.WriteString(vt.pty, resp)
+	case 18:
+		// Report terminal size in characters.
+		resp := fmt.Sprintf("\x1B[8;%d;%dt", vt.height(), vt.width())
+		io.WriteString(vt.pty, resp)
+	case 22:
+		// Save title — ignored (no title support)
+	case 23:
+		// Restore title — ignored (no title support)
+	}
+}
+

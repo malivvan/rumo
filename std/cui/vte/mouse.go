@@ -8,6 +8,26 @@ import (
 )
 
 func (vt *VT) handleMouse(ev *tcell.EventMouse) string {
+	// X10 mouse mode — report button presses only (not releases or motion)
+	if vt.mode&mouseX10 != 0 {
+		if ev.Buttons() == tcell.ButtonNone {
+			return ""
+		}
+		var b int
+		if ev.Buttons()&tcell.Button1 != 0 {
+			b = 0
+		} else if ev.Buttons()&tcell.Button3 != 0 {
+			b = 1
+		} else if ev.Buttons()&tcell.Button2 != 0 {
+			b = 2
+		} else {
+			return ""
+		}
+		col, row := ev.Position()
+		b += 32
+		return fmt.Sprintf("\x1b[M%c%c%c", b, 32+col+1, 32+row+1)
+	}
+
 	if vt.mode&mouseButtons == 0 && vt.mode&mouseDrag == 0 && vt.mode&mouseMotion == 0 && vt.mode&mouseSGR == 0 {
 		if vt.mode&altScroll != 0 && vt.mode&smcup != 0 {
 			// Translate wheel motion into arrows up and down
@@ -106,5 +126,9 @@ func (vt *VT) handleMouse(ev *tcell.EventMouse) string {
 	b += 32
 
 	vt.mouseBtn = ev.Buttons()
+	if vt.mode&mouseUTF8 != 0 {
+		// UTF-8 mouse encoding: encode coordinates as UTF-8 characters
+		return fmt.Sprintf("\x1b[M%c%c%c", rune(b), rune(encodedCol), rune(encodedRow))
+	}
 	return fmt.Sprintf("\x1b[M%c%c%c", b, encodedCol, encodedRow)
 }

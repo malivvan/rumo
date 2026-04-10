@@ -227,15 +227,15 @@ type terminfo struct {
 	KeyShfPgUp              string // shift-kpp
 	KeyShfPgDn              string // shift-knp
 	KeyCtrlUp               string // ctrl-up
-	KeyCtrlDown             string // ctrl-left
+	KeyCtrlDown             string // ctrl-down
 	KeyCtrlRight            string // ctrl-right
 	KeyCtrlLeft             string // ctrl-left
 	KeyMetaUp               string // meta-up
-	KeyMetaDown             string // meta-left
+	KeyMetaDown             string // meta-down
 	KeyMetaRight            string // meta-right
 	KeyMetaLeft             string // meta-left
 	KeyAltUp                string // alt-up
-	KeyAltDown              string // alt-left
+	KeyAltDown              string // alt-down
 	KeyAltRight             string // alt-right
 	KeyAltLeft              string // alt-left
 	KeyCtrlHome             string

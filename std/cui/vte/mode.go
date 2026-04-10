@@ -55,6 +55,16 @@ const (
 	mouseSGR
 	// Alternate scroll
 	altScroll
+	// Focus event reporting (DECSET 1004)
+	focusEvents
+	// Synchronized output (DECSET 2026)
+	syncOutput
+	// Reverse video (DECSCNM, DECSET 5)
+	decscnm
+	// X10 mouse compatibility (DECSET 9)
+	mouseX10
+	// UTF-8 mouse encoding (DECSET 1005)
+	mouseUTF8
 )
 
 func (vt *VT) enterAltScreen(saveCursor bool) {
@@ -123,7 +133,7 @@ func (vt *VT) decset(params []int) {
 		case 4:
 			vt.mode |= decsclm
 		case 5:
-			// DECSCNM (Reverse Video) - recognized but not yet implemented
+			vt.mode |= decscnm
 		case 6:
 			vt.mode |= decom
 			vt.homeCursor()
@@ -132,6 +142,8 @@ func (vt *VT) decset(params []int) {
 			vt.lastCol = false
 		case 8:
 			vt.mode |= decarm
+		case 9:
+			vt.mode |= mouseX10
 		case 25:
 			vt.mode |= dectcem
 		case 47, 1047:
@@ -144,6 +156,10 @@ func (vt *VT) decset(params []int) {
 			vt.mode |= mouseDrag
 		case 1003:
 			vt.mode |= mouseMotion
+		case 1004:
+			vt.mode |= focusEvents
+		case 1005:
+			vt.mode |= mouseUTF8
 		case 1006:
 			vt.mode |= mouseSGR
 		case 1007:
@@ -152,6 +168,8 @@ func (vt *VT) decset(params []int) {
 			vt.enterAltScreen(true)
 		case 2004:
 			vt.mode |= paste
+		case 2026:
+			vt.mode |= syncOutput
 		}
 	}
 }
@@ -168,7 +186,7 @@ func (vt *VT) decrst(params []int) {
 		case 4:
 			vt.mode &^= decsclm
 		case 5:
-			// DECSCNM (Reverse Video) - recognized but not yet implemented
+			vt.mode &^= decscnm
 		case 6:
 			vt.mode &^= decom
 			vt.homeCursor()
@@ -177,6 +195,8 @@ func (vt *VT) decrst(params []int) {
 			vt.lastCol = false
 		case 8:
 			vt.mode &^= decarm
+		case 9:
+			vt.mode &^= mouseX10
 		case 25:
 			vt.mode &^= dectcem
 		case 47, 1047:
@@ -189,6 +209,10 @@ func (vt *VT) decrst(params []int) {
 			vt.mode &^= mouseDrag
 		case 1003:
 			vt.mode &^= mouseMotion
+		case 1004:
+			vt.mode &^= focusEvents
+		case 1005:
+			vt.mode &^= mouseUTF8
 		case 1006:
 			vt.mode &^= mouseSGR
 		case 1007:
@@ -197,6 +221,8 @@ func (vt *VT) decrst(params []int) {
 			vt.exitAltScreen(true)
 		case 2004:
 			vt.mode &^= paste
+		case 2026:
+			vt.mode &^= syncOutput
 		}
 	}
 }

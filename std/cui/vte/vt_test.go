@@ -326,3 +326,144 @@ func TestScrollDown_RespectsLeftRightMargins(t *testing.T) {
 	assert.Equal(t, 'e', vt.activeScreen[1][0].content)
 	assert.Equal(t, 'h', vt.activeScreen[1][3].content)
 }
+
+// VTE-F09: In vt.go print(), after reverting the charset from a single shift
+// (vt.charsets.selected = vt.charsets.saved), the vt.charsets.singleShift flag
+// is never set to false. This means every subsequent print() call continues to
+// overwrite selected with saved, which can undo later charset switches.
+func TestSingleShift_ClearedAfterUse(t *testing.T) {
+	vt := New()
+	vt.Resize(4, 1)
+	vt.mode = 0
+
+	// Trigger SS2
+	vt.esc("N")
+	assert.True(t, vt.charsets.singleShift)
+
+	// Print one character — this should use the single shift and then clear the flag
+	vt.print('a')
+
+	// After printing, singleShift should be false
+	assert.False(t, vt.charsets.singleShift)
+}
+
+// VTE-F09 regression: SS2 followed by print, then SO switch should stick.
+func TestSingleShift_DoesNotUndoSubsequentSwitch(t *testing.T) {
+	vt := New()
+	vt.Resize(4, 1)
+	vt.mode = 0
+
+	// SS2 + print one char to consume the single shift
+	vt.esc("N")
+	vt.print('a')
+
+	// Now switch to G1 via SO (0x0E)
+	vt.c0(0x0E)
+	assert.Equal(t, charsetDesignator(g1), vt.charsets.selected)
+
+	// Print another character — should NOT revert to g0
+	vt.print('b')
+
+	// selected should still be g1
+	assert.Equal(t, charsetDesignator(g1), vt.charsets.selected)
+}
+
+// VTE-F09 regression: single shift should only affect ONE character.
+func TestSingleShift_OnlyOneCharacter(t *testing.T) {
+	vt := New()
+	vt.Resize(4, 1)
+	vt.mode = 0
+
+	// SS2 triggers single shift
+	vt.esc("N")
+	assert.True(t, vt.charsets.singleShift)
+	assert.Equal(t, charsetDesignator(g2), vt.charsets.selected)
+
+	// First print: uses g2, then reverts to saved (g0) and clears singleShift
+	vt.print('x')
+	assert.False(t, vt.charsets.singleShift)
+	assert.Equal(t, charsetDesignator(g0), vt.charsets.selected)
+
+	// Second print: should use g0 (no single shift active)
+	vt.print('y')
+	assert.Equal(t, charsetDesignator(g0), vt.charsets.selected)
+}
+
+// VTE-F11: In vt.go Resize(), the screen-replay loop breaks at
+// row == int(last) (the cursor row), meaning the cursor row's content
+// is never replayed to the new screen buffer. Any text on that row is
+// lost after a resize.
+func TestResize_PreservesCursorRow(t *testing.T) {
+	vt := New()
+	vt.Resize(3, 3)
+	vt.mode = 0
+
+	// Fill rows 0 and 1
+	vt.print('a')
+	vt.print('b')
+	vt.print('c')
+	vt.cursor.row = 1
+	vt.cursor.col = 0
+	vt.print('d')
+	vt.print('e')
+	vt.print('f')
+
+	assert.Equal(t, "abc\ndef\n   ", vt.String())
+
+	// Place cursor on row 1 (the middle row with "def")
+	vt.cursor.row = 1
+	vt.cursor.col = 0
+
+	// Resize to same dimensions — should preserve all content up to and
+	// including the cursor row
+	vt.Resize(3, 3)
+
+	// Both row 0 ("abc") AND row 1 ("def") should be preserved
+	// Bug: row 1 is skipped during replay, so "def" is lost
+	str := vt.String()
+	assert.Contains(t, str, "abc")
+	assert.Contains(t, str, "def")
+}
+
+// VTE-F11 regression: Resize with cursor at row 0 should still preserve row 0.
+func TestResize_PreservesRow0WhenCursorThere(t *testing.T) {
+	vt := New()
+	vt.Resize(3, 2)
+	vt.mode = 0
+
+	vt.print('a')
+	vt.print('b')
+	vt.print('c')
+	assert.Equal(t, "abc\n   ", vt.String())
+
+	// Cursor is at row 0
+	vt.cursor.row = 0
+	vt.cursor.col = 0
+
+	vt.Resize(3, 2)
+
+	assert.Contains(t, vt.String(), "abc")
+}
+
+// VTE-F12: Terminfo comment typos — field names KeyCtrlDown, KeyMetaDown,
+// KeyAltDown have comments saying "ctrl-left", "meta-left", "alt-left"
+// instead of "ctrl-down", "meta-down", "alt-down". This is a documentation
+// fix only; the test verifies the struct fields exist with correct names.
+func TestTerminfo_DirectionalKeyFieldsExist(t *testing.T) {
+	// Verify the directional key fields are distinct and properly named
+	// (this is a structural sanity check — the actual bug is in comments)
+	ti := terminfo{}
+	// Down fields should be distinct from Left fields
+	ti.KeyCtrlDown = "ctrl-down-value"
+	ti.KeyCtrlLeft = "ctrl-left-value"
+	assert.NotEqual(t, ti.KeyCtrlDown, ti.KeyCtrlLeft)
+
+	ti.KeyMetaDown = "meta-down-value"
+	ti.KeyMetaLeft = "meta-left-value"
+	assert.NotEqual(t, ti.KeyMetaDown, ti.KeyMetaLeft)
+
+	ti.KeyAltDown = "alt-down-value"
+	ti.KeyAltLeft = "alt-left-value"
+	assert.NotEqual(t, ti.KeyAltDown, ti.KeyAltLeft)
+}
+

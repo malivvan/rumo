@@ -10,6 +10,7 @@ func (vt *VT) sgr(params []int) {
 		switch params[i] {
 		case 0:
 			vt.cursor.attrs = tcell.StyleDefault
+			vt.cursor.overline = false
 		case 1:
 			vt.cursor.attrs = vt.cursor.attrs.Bold(true)
 		case 2:
@@ -114,6 +115,10 @@ func (vt *VT) sgr(params []int) {
 			vt.cursor.attrs = vt.cursor.attrs.Background(color)
 		case 49:
 			vt.cursor.attrs = vt.cursor.attrs.Background(tcell.ColorDefault)
+		case 53:
+			vt.cursor.overline = true
+		case 55:
+			vt.cursor.overline = false
 		case 90, 91, 92, 93, 94, 95, 96, 97:
 			color := tcell.PaletteColor(params[i] - 90 + 8)
 			vt.cursor.attrs = vt.cursor.attrs.Foreground(color)

@@ -17,15 +17,23 @@ func (vt *VT) esc(esc string) {
 	case "M":
 		vt.ri()
 	case "N":
+		vt.charsets.saved = vt.charsets.selected
 		vt.charsets.singleShift = true
 		vt.charsets.selected = g2
 	case "O":
+		vt.charsets.saved = vt.charsets.selected
 		vt.charsets.singleShift = true
 		vt.charsets.selected = g3
 	case "=":
 		// DECKPAM
 	case ">":
 		// DECKPNM
+	case "6":
+		// DECBI — Back Index
+		vt.decbi()
+	case "9":
+		// DECFI — Forward Index
+		vt.decfi()
 	case "c":
 		vt.ris()
 	case "(0":
@@ -189,6 +197,40 @@ func (vt *VT) decrc() {
 		vt.mode |= decom
 	case false:
 		vt.mode &^= decom
+	}
+}
+
+// Back Index (DECBI) ESC-6
+// If the cursor is at the left margin, scroll the content within the margins
+// to the right by one column. Otherwise, move the cursor left one column.
+func (vt *VT) decbi() {
+	if vt.cursor.col == vt.margin.left {
+		// Scroll right: shift columns right within margins, blank the left margin column
+		for r := vt.margin.top; r <= vt.margin.bottom; r++ {
+			for c := vt.margin.right; c > vt.margin.left; c-- {
+				vt.activeScreen[r][c] = vt.activeScreen[r][c-1]
+			}
+			vt.activeScreen[r][vt.margin.left].erase(vt.cursor.attrs)
+		}
+	} else if vt.cursor.col > 0 {
+		vt.cursor.col--
+	}
+}
+
+// Forward Index (DECFI) ESC-9
+// If the cursor is at the right margin, scroll the content within the margins
+// to the left by one column. Otherwise, move the cursor right one column.
+func (vt *VT) decfi() {
+	if vt.cursor.col == vt.margin.right {
+		// Scroll left: shift columns left within margins, blank the right margin column
+		for r := vt.margin.top; r <= vt.margin.bottom; r++ {
+			for c := vt.margin.left; c < vt.margin.right; c++ {
+				vt.activeScreen[r][c] = vt.activeScreen[r][c+1]
+			}
+			vt.activeScreen[r][vt.margin.right].erase(vt.cursor.attrs)
+		}
+	} else if vt.cursor.col < column(vt.width()-1) {
+		vt.cursor.col++
 	}
 }
 
