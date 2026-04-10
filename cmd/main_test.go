@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -85,13 +87,21 @@ func TestRunShortInputDoesNotPanic(t *testing.T) {
 func TestSignalCausesGracefulShutdown(t *testing.T) {
 	// When running as a subprocess, act as the CLI and run a script.
 	if scriptFile := os.Getenv("RUMO_SIGNAL_TEST_SCRIPT"); scriptFile != "" {
-		code := execute([]string{scriptFile}, os.Stdin, os.Stdout, os.Stderr)
+		// Set up signal handling BEFORE calling run() so the handler
+		// is guaranteed to be in place when the parent sends the signal.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		code := run(ctx, []string{scriptFile}, os.Stdin, os.Stdout, os.Stderr)
 		os.Exit(code)
 	}
 
 	tempDir := t.TempDir()
 	inputFile := filepath.Join(tempDir, "loop.rumo")
-	if err := os.WriteFile(inputFile, []byte("for { }"), 0o644); err != nil {
+	// The script prints "started" from inside the VM before entering the
+	// infinite loop. The parent waits for this line on stdout, which proves
+	// the VM is past its internal abort-flag reset and is actively running.
+	src := `fmt := import("fmt"); fmt.println("started"); for { }`
+	if err := os.WriteFile(inputFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
 
@@ -102,12 +112,30 @@ func TestSignalCausesGracefulShutdown(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start subprocess: %v", err)
 	}
 
-	// Give the subprocess time to start the script.
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the "started" line from inside the VM — this guarantees the
+	// signal handler is registered AND the VM loop is actively running.
+	ready := make(chan struct{})
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		if scanner.Scan() { // reads "started"
+			close(ready)
+		}
+	}()
+	select {
+	case <-ready:
+	case <-time.After(10 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("subprocess did not signal readiness within 10s")
+	}
 
 	// Send SIGINT (Ctrl-C).
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
@@ -176,13 +204,20 @@ func TestRunRespectsContextCancellation(t *testing.T) {
 // TestSignalCausesGracefulShutdown — both signals must be handled.
 func TestSIGTERMCausesGracefulShutdown(t *testing.T) {
 	if scriptFile := os.Getenv("RUMO_SIGTERM_TEST_SCRIPT"); scriptFile != "" {
-		code := execute([]string{scriptFile}, os.Stdin, os.Stdout, os.Stderr)
+		// Set up signal handling BEFORE calling run() so the handler
+		// is guaranteed to be in place when the parent sends the signal.
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		code := run(ctx, []string{scriptFile}, os.Stdin, os.Stdout, os.Stderr)
 		os.Exit(code)
 	}
 
 	tempDir := t.TempDir()
 	inputFile := filepath.Join(tempDir, "loop.rumo")
-	if err := os.WriteFile(inputFile, []byte("for { }"), 0o644); err != nil {
+	// The script prints "started" from inside the VM before entering the
+	// infinite loop — see TestSignalCausesGracefulShutdown for rationale.
+	src := `fmt := import("fmt"); fmt.println("started"); for { }`
+	if err := os.WriteFile(inputFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
 
@@ -191,11 +226,30 @@ func TestSIGTERMCausesGracefulShutdown(t *testing.T) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("stdout pipe: %v", err)
+	}
+
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start subprocess: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the "started" line from inside the VM — this guarantees the
+	// signal handler is registered AND the VM loop is actively running.
+	ready := make(chan struct{})
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		if scanner.Scan() { // reads "started"
+			close(ready)
+		}
+	}()
+	select {
+	case <-ready:
+	case <-time.After(10 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("subprocess did not signal readiness within 10s")
+	}
 
 	// Send SIGTERM instead of SIGINT.
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
