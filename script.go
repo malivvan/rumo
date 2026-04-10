@@ -327,19 +327,36 @@ func (p *Program) Marshal() ([]byte, error) {
 
 // Run executes the compiled script in the virtual machine.
 func (p *Program) Run() error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	// Snapshot program state under a brief read lock.
+	p.lock.RLock()
+	globals := make([]vm.Object, len(p.globals))
+	copy(globals, p.globals)
+	bytecode := p.bytecode
+	maxAllocs := p.maxAllocs
+	p.lock.RUnlock()
 
-	v := vm.NewVM(context.Background(), p.bytecode, p.globals, p.maxAllocs)
-	return v.Run()
+	v := vm.NewVM(context.Background(), bytecode, globals, maxAllocs)
+	err := v.Run()
+
+	// Write back modified globals under a brief write lock.
+	p.lock.Lock()
+	copy(p.globals, globals)
+	p.lock.Unlock()
+
+	return err
 }
 
 // RunContext is like Run but includes a context.
 func (p *Program) RunContext(ctx context.Context) (err error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	// Snapshot program state under a brief read lock.
+	p.lock.RLock()
+	globals := make([]vm.Object, len(p.globals))
+	copy(globals, p.globals)
+	bytecode := p.bytecode
+	maxAllocs := p.maxAllocs
+	p.lock.RUnlock()
 
-	v := vm.NewVM(ctx, p.bytecode, p.globals, p.maxAllocs)
+	v := vm.NewVM(ctx, bytecode, globals, maxAllocs)
 	ch := make(chan error, 1)
 	go func() {
 		ch <- v.Run()
@@ -352,14 +369,20 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 		err = ctx.Err()
 	case err = <-ch:
 	}
+
+	// Write back modified globals under a brief write lock.
+	p.lock.Lock()
+	copy(p.globals, globals)
+	p.lock.Unlock()
+
 	return
 }
 
 // Clone creates a new copy of Compiled. Cloned copies are safe for concurrent
 // use by multiple goroutines.
 func (p *Program) Clone() *Program {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	p.lock.RLock()
+	defer p.lock.RUnlock()
 
 	clone := &Program{
 		globalIndices: p.globalIndices,
@@ -367,10 +390,11 @@ func (p *Program) Clone() *Program {
 		globals:       make([]vm.Object, len(p.globals)),
 		maxAllocs:     p.maxAllocs,
 	}
-	// copy global objects
+	// deep-copy global objects so mutations in the clone do not affect
+	// the original (or vice versa). (Issue #10)
 	for idx, g := range p.globals {
 		if g != nil {
-			clone.globals[idx] = g
+			clone.globals[idx] = g.Copy()
 		}
 	}
 	return clone

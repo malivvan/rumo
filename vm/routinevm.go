@@ -82,7 +82,7 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		callCtx, gvm.cancelFn = context.WithCancel(ctx)
 	}
 
-	if err := vm.addChild(gvm.VM); err != nil {
+	if err := vm.addChild(gvm.VM, gvm.cancelFn); err != nil {
 		return nil, err
 	}
 	go func() {
@@ -104,7 +104,7 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 			gvm.mu.Unlock()
 			atomic.StoreInt64(&gvm.done, 1)
 			close(gvm.doneChan)
-			vm.delChild(gvm.VM)
+			vm.delChild(gvm.VM, gvm.cancelFn)
 			gvm.mu.Lock()
 			gvm.VM = nil
 			gvm.mu.Unlock()

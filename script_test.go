@@ -593,3 +593,142 @@ func programGetAll(t *testing.T, p *rumo.Program, expected M) {
 func programIsDefined(t *testing.T, p *rumo.Program, name string, expected bool) {
 	require.Equal(t, expected, p.IsDefined(name))
 }
+
+// Issue #9: Program.Run()/RunContext() hold write lock during execution
+//
+// The Program write lock is held for the entire script lifetime, making
+// Get()/Set()/IsDefined()/GetAll() block until the script finishes.
+// For long-running scripts this is effectively a deadlock.
+//
+// The fix makes Run()/RunContext() snapshot globals under a brief read lock,
+// execute on the local copy, then write back results under a brief write lock.
+
+func TestIssue9_GetDuringRun(t *testing.T) {
+	// Compile a script that loops until the context is cancelled.
+	src := `for true { x += 1 }`
+	script := rumo.NewScript([]byte(src))
+	_ = script.Add("x", 0)
+	program, err := script.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Start RunContext in background.
+	done := make(chan error, 1)
+	go func() {
+		done <- program.RunContext(ctx)
+	}()
+
+	// Give the VM a moment to start running.
+	time.Sleep(50 * time.Millisecond)
+
+	// Attempt Get() — this must NOT block for the entire script duration.
+	getCh := make(chan *rumo.Variable, 1)
+	go func() {
+		getCh <- program.Get("x")
+	}()
+
+	select {
+	case v := <-getCh:
+		// Get() returned — the lock is not held during execution.
+		_ = v // value may be the pre-run snapshot; that's acceptable.
+	case <-time.After(1 * time.Second):
+		cancel() // unblock the script
+		<-done
+		t.Fatal("Issue #9: Get() blocked for >1s — write lock held during execution")
+	}
+
+	cancel()
+	<-done
+}
+
+func TestIssue9_SetDuringRun(t *testing.T) {
+	src := `for true { x += 1 }`
+	script := rumo.NewScript([]byte(src))
+	_ = script.Add("x", 0)
+	program, err := script.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- program.RunContext(ctx)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Attempt Set() — must NOT block for the full execution.
+	setCh := make(chan error, 1)
+	go func() {
+		setCh <- program.Set("x", 42)
+	}()
+
+	select {
+	case err := <-setCh:
+		if err != nil {
+			t.Fatalf("Issue #9: Set() returned error: %v", err)
+		}
+	case <-time.After(1 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("Issue #9: Set() blocked for >1s — write lock held during execution")
+	}
+
+	cancel()
+	<-done
+}
+
+// Issue #10: Program.Clone() shares mutable globals and constants
+//
+// Clone() copies object pointers, not objects. Shared *vm.Map/*vm.Array
+// globals race under concurrent execution.
+//
+// The fix makes Clone() call .Copy() on each non-nil global.
+
+func TestIssue10_CloneDeepCopiesGlobals(t *testing.T) {
+	src := `m["key"] = "modified"`
+	script := rumo.NewScript([]byte(src))
+
+	original := map[string]interface{}{
+		"key": "original",
+	}
+	_ = script.Add("m", original)
+
+	program, err := script.Compile()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	clone := program.Clone()
+
+	// Run the clone — it modifies m["key"].
+	if err := clone.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The original program's global must be unaffected.
+	v := program.Get("m")
+	obj := v.Object()
+	m, ok := obj.(*vm.Map)
+	if !ok {
+		t.Fatalf("Issue #10: expected *vm.Map, got %T", obj)
+	}
+	val, ok := m.Value["key"]
+	if !ok {
+		t.Fatal("Issue #10: key 'key' missing from original map")
+	}
+	s, ok := val.(*vm.String)
+	if !ok {
+		t.Fatalf("Issue #10: expected *vm.String, got %T", val)
+	}
+	if s.Value != "original" {
+		t.Fatalf("Issue #10: Clone() shares mutable globals — original map was mutated to %q", s.Value)
+	}
+}

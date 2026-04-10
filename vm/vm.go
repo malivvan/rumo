@@ -33,8 +33,9 @@ type frame struct {
 type vmChildCtl struct {
 	sync.WaitGroup
 	sync.Mutex
-	vmMap  map[*VM]struct{}
-	errors []error
+	vmMap     map[*VM]struct{}
+	cancelFns []context.CancelFunc // cancel functions for non-compiled children (Issue #8)
+	errors    []error
 }
 
 // VM is a virtual machine that executes the bytecode compiled by Compiler.
@@ -240,10 +241,15 @@ func (v *VM) Abort() {
 	for cvm := range v.childCtl.vmMap {
 		cvm.Abort()
 	}
+	// Cancel non-compiled children that are tracked by cancel function
+	// but not present in vmMap. (Issue #8)
+	for _, cancel := range v.childCtl.cancelFns {
+		cancel()
+	}
 	v.childCtl.Unlock()
 }
 
-func (v *VM) addChild(cvm *VM) error {
+func (v *VM) addChild(cvm *VM, cancelFns ...context.CancelFunc) error {
 	v.childCtl.Lock()
 	defer v.childCtl.Unlock()
 	if atomic.LoadInt64(&v.aborting) != 0 {
@@ -253,15 +259,28 @@ func (v *VM) addChild(cvm *VM) error {
 	if cvm != nil {
 		v.childCtl.vmMap[cvm] = struct{}{}
 	}
+	for _, cancel := range cancelFns {
+		if cancel != nil {
+			v.childCtl.cancelFns = append(v.childCtl.cancelFns, cancel)
+		}
+	}
 	return nil
 }
 
-func (v *VM) delChild(cvm *VM) {
+func (v *VM) delChild(cvm *VM, cancelFns ...context.CancelFunc) {
+	v.childCtl.Lock()
 	if cvm != nil {
-		v.childCtl.Lock()
 		delete(v.childCtl.vmMap, cvm)
-		v.childCtl.Unlock()
 	}
+	// Call cancel functions to release context resources immediately.
+	// They remain in the cancelFns slice but are idempotent — Abort()
+	// calling them again is harmless. (Issue #8)
+	for _, cancel := range cancelFns {
+		if cancel != nil {
+			cancel()
+		}
+	}
+	v.childCtl.Unlock()
 	v.childCtl.Done()
 }
 

@@ -9,7 +9,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/creack/pty"
 	"github.com/gdamore/tcell/v3"
@@ -73,7 +72,6 @@ type margin struct {
 	left   column
 	right  column
 }
-
 
 func (vt *VT) homeCursor() {
 	vt.lastCol = false
@@ -178,11 +176,7 @@ func (vt *VT) Start(cmd *exec.Cmd) error {
 	vt.pty, err = pty.StartWithAttrs(
 		cmd,
 		&winsize,
-		&syscall.SysProcAttr{
-			Setsid:  true,
-			Setctty: true,
-			Ctty:    1,
-		})
+		&syscallProcAttr)
 	if err != nil {
 		return err
 	}
