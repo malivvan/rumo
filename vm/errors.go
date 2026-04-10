@@ -55,6 +55,12 @@ var (
 
 	// ErrVMAborted is an error to denote the VM was forcibly terminated without proper exit.
 	ErrVMAborted = errors.New("virtual machine aborted")
+
+	// ErrChannelAlreadyClosed is returned when close() is called on an already-closed channel.
+	ErrChannelAlreadyClosed = errors.New("channel already closed")
+
+	// ErrSendOnClosedChannel is returned when send() is called on a closed channel.
+	ErrSendOnClosedChannel = errors.New("send on closed channel")
 )
 
 // ErrInvalidArgumentType represents an invalid argument value type error.

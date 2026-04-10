@@ -599,3 +599,151 @@ out = [w1.result(), w2.result(), w3.result()]
 	}
 }
 
+
+// Issue #6: Channel close() panics are unrecoverable
+//
+// Double-close or send-on-closed-channel `panic`s the goroutine. The
+// objchan.close() method calls Go's close() on the underlying channel
+// without any guard — a second close panics. Similarly, objchan.send()
+// sends on the channel without checking if it's been closed — panicing
+// the goroutine. In both cases the panic is either unrecoverable or
+// produces a confusing "Runtime Panic" message instead of a clean
+// runtime error. Additionally, the builtinStart defer's `callers == nil`
+// check re-panics with "callers not saved" for compiled callables
+// because callers is only set on the non-compiled path.
+//
+// The fix wraps close() with a closed-state guard (sync.Once or
+// recover), wraps send() to recover from send-on-closed panics, and
+// removes the re-panic in builtinStart's defer.
+
+// TestIssue6_DoubleCloseChannel verifies that closing a channel twice
+// returns an error instead of panicking the process.
+func TestIssue6_DoubleCloseChannel(t *testing.T) {
+	expectError(t, `
+ch := chan()
+ch.close()
+ch.close()
+`, nil, "channel already closed")
+}
+
+// TestIssue6_SendOnClosedChannel verifies that sending on a closed
+// channel returns an error instead of panicking the process.
+func TestIssue6_SendOnClosedChannel(t *testing.T) {
+	expectError(t, `
+ch := chan()
+ch.close()
+ch.send(42)
+`, nil, "send on closed channel")
+}
+
+// TestIssue6_DoubleCloseInRoutine verifies that double-close inside a
+// started routine does not crash the process. The child error propagates
+// to the parent as a clean runtime error (not a panic).
+func TestIssue6_DoubleCloseInRoutine(t *testing.T) {
+	expectError(t, `
+ch := chan()
+r := start(func() {
+	ch.close()
+	ch.close()
+})
+r.wait()
+`, nil, "channel already closed")
+}
+
+// TestIssue6_SendOnClosedInRoutine verifies that send-on-closed inside
+// a started routine does not crash the process. The child error
+// propagates cleanly (not as an unrecoverable panic).
+func TestIssue6_SendOnClosedInRoutine(t *testing.T) {
+	expectError(t, `
+ch := chan()
+ch.close()
+r := start(func() {
+	ch.send(42)
+})
+r.wait()
+`, nil, "send on closed channel")
+}
+
+// TestIssue6_DoubleCloseResultIsError verifies that the error from
+// double-close is surfaced as an error object through result().
+func TestIssue6_DoubleCloseResultIsError(t *testing.T) {
+	// Using expectError because the child error also propagates to
+	// the parent. The important thing is the error message is clean
+	// ("channel already closed") and not an unrecovered Go panic.
+	expectError(t, `
+ch := chan()
+r := start(func() {
+	ch.close()
+	ch.close()
+	return "ok"
+})
+v := r.result()
+`, nil, "channel already closed")
+}
+
+// TestIssue6_SendOnClosedResultIsError verifies that the error from
+// send-on-closed is surfaced as an error object through result().
+func TestIssue6_SendOnClosedResultIsError(t *testing.T) {
+	expectError(t, `
+ch := chan()
+ch.close()
+r := start(func() {
+	ch.send(1)
+	return "ok"
+})
+v := r.result()
+`, nil, "send on closed channel")
+}
+
+// TestIssue6_CloseAndRecvReturnsNil verifies that recv on a closed
+// channel returns undefined (not an error), which is the documented
+// behavior.
+func TestIssue6_CloseAndRecvReturnsNil(t *testing.T) {
+	expectRun(t, `
+ch := chan()
+ch.close()
+v := ch.recv()
+out = is_undefined(v)
+`, nil, true)
+}
+
+// TestIssue6_BufferedDoubleClose verifies that double-close on a
+// buffered channel also returns an error.
+func TestIssue6_BufferedDoubleClose(t *testing.T) {
+	expectError(t, `
+ch := chan(5)
+ch.close()
+ch.close()
+`, nil, "channel already closed")
+}
+
+// TestIssue6_BufferedSendOnClosed verifies that send on a closed
+// buffered channel returns an error.
+func TestIssue6_BufferedSendOnClosed(t *testing.T) {
+	expectError(t, `
+ch := chan(5)
+ch.close()
+ch.send(1)
+`, nil, "send on closed channel")
+}
+
+// TestIssue6_ConcurrentCloseStress runs many iterations of concurrent
+// close to ensure no panics under stress. One of the two routines will
+// always get the "already closed" error — the test verifies this is a
+// clean error, not an unrecoverable panic.
+func TestIssue6_ConcurrentCloseStress(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		expectError(t, `
+ch := chan()
+r1 := start(func() {
+	ch.close()
+})
+r2 := start(func() {
+	ch.close()
+})
+r1.wait()
+r2.wait()
+`, nil, "channel already closed")
+	}
+}
+

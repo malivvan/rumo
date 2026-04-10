@@ -84,10 +84,11 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		var err error
 		defer func() {
 			if perr := recover(); perr != nil {
-				if callers == nil {
-					panic("callers not saved")
+				if callers != nil {
+					err = fmt.Errorf("\nRuntime Panic: %v%s\n%s", perr, vm.callStack(callers), debug.Stack())
+				} else {
+					err = fmt.Errorf("\nRuntime Panic: %v\n%s", perr, debug.Stack())
 				}
-				err = fmt.Errorf("\nRuntime Panic: %v%s\n%s", perr, vm.callStack(callers), debug.Stack())
 			}
 			if err != nil {
 				vm.addError(err)
@@ -252,7 +253,14 @@ func isolateClosureFreeRec(fn *CompiledFunction, seen map[*ObjectPtr]*ObjectPtr)
 	}
 }
 
-type objchan chan Object
+// objchan wraps a Go channel with close-state tracking so that
+// double-close and send-on-closed return clean errors instead of
+// panicking the goroutine.
+type objchan struct {
+	ch     chan Object
+	closed sync.Once
+	done   int64 // 1 after close
+}
 
 // Makes a channel to send/receive object
 // Returns a chan object that has send, recv, close methods.
@@ -274,39 +282,50 @@ func builtinChan(ctx context.Context, args ...Object) (Object, error) {
 		return nil, ErrWrongNumArguments
 	}
 
-	oc := make(objchan, size)
+	oc := &objchan{ch: make(chan Object, size)}
 	obj := map[string]Object{
 		"send":  &BuiltinFunction{Value: oc.send},
 		"recv":  &BuiltinFunction{Value: oc.recv},
-		"close": &BuiltinFunction{Value: oc.close},
+		"close": &BuiltinFunction{Value: oc.closeChan},
 	}
 	return &Map{Value: obj}, nil
 }
 
 // Sends an obj to the channel, will block if channel is full and the VM has not been aborted.
-// Sends to a closed channel causes panic.
-func (oc objchan) send(ctx context.Context, args ...Object) (Object, error) {
+// Returns an error if the channel has been closed.
+func (oc *objchan) send(ctx context.Context, args ...Object) (ret Object, err error) {
 	if len(args) != 1 {
 		return nil, ErrWrongNumArguments
 	}
+	if atomic.LoadInt64(&oc.done) == 1 {
+		return nil, ErrSendOnClosedChannel
+	}
+	// Even with the atomic check above there is a tiny window where
+	// close() can race between the check and the actual send. Recover
+	// from the resulting panic to avoid crashing the goroutine.
+	defer func() {
+		if r := recover(); r != nil {
+			ret, err = nil, ErrSendOnClosedChannel
+		}
+	}()
 	select {
 	case <-ctx.Done():
 		return nil, ErrVMAborted
-	case oc <- args[0]:
+	case oc.ch <- args[0]:
 	}
 	return nil, nil
 }
 
 // Receives an obj from the channel, will block if channel is empty and the VM has not been aborted.
 // Receives from a closed channel returns undefined value.
-func (oc objchan) recv(ctx context.Context, args ...Object) (Object, error) {
+func (oc *objchan) recv(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 0 {
 		return nil, ErrWrongNumArguments
 	}
 	select {
 	case <-ctx.Done():
 		return nil, ErrVMAborted
-	case obj, ok := <-oc:
+	case obj, ok := <-oc.ch:
 		if ok {
 			return obj, nil
 		}
@@ -314,11 +333,19 @@ func (oc objchan) recv(ctx context.Context, args ...Object) (Object, error) {
 	return nil, nil
 }
 
-// Closes the channel.
-func (oc objchan) close(ctx context.Context, args ...Object) (Object, error) {
+// Closes the channel. Returns an error if the channel has already been closed.
+func (oc *objchan) closeChan(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 0 {
 		return nil, ErrWrongNumArguments
 	}
-	close(oc)
+	alreadyClosed := true
+	oc.closed.Do(func() {
+		alreadyClosed = false
+		atomic.StoreInt64(&oc.done, 1)
+		close(oc.ch)
+	})
+	if alreadyClosed {
+		return nil, ErrChannelAlreadyClosed
+	}
 	return nil, nil
 }
