@@ -276,7 +276,7 @@ func (p *Program) Unmarshal(b []byte) (err error) {
 	}
 
 	p.bytecode = &vm.Bytecode{}
-	err = p.bytecode.Unmarshal(body[n:], Modules)
+	err = p.bytecode.Unmarshal(body[n:], Modules())
 	if err != nil {
 		return err
 	}

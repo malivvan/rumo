@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/malivvan/rumo/std/shell"
 	"github.com/malivvan/rumo/std/shell/term"
@@ -37,10 +38,31 @@ func Commit() string {
 	return commit
 }
 
-// Modules is a map of all standard library modules.
-var Modules = GetModuleMap(AllModuleNames()...)
+// Modules returns the lazily-initialized module map containing all standard
+// library modules. The map is computed on first call and cached for subsequent
+// calls. (Issue #11: avoids eager init that forces all stdlib into every binary.)
+func Modules() *vm.ModuleMap {
+	modulesOnce.Do(func() {
+		modulesCache = GetModuleMap(AllModuleNames()...)
+	})
+	return modulesCache
+}
 
-var Exports = GetExportMap(AllModuleNames()...)
+// Exports returns the lazily-initialized export map of all standard library
+// modules. The map is computed on first call and cached for subsequent calls.
+func Exports() map[string]map[string]*module.Export {
+	exportsOnce.Do(func() {
+		exportsCache = GetExportMap(AllModuleNames()...)
+	})
+	return exportsCache
+}
+
+var (
+	modulesOnce  sync.Once
+	modulesCache *vm.ModuleMap
+	exportsOnce  sync.Once
+	exportsCache map[string]map[string]*module.Export
+)
 
 // CompileOnly compiles the source code and writes the compiled binary into
 // outputFile.
@@ -185,7 +207,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 			globals[sym.Index] = (&vm.BuiltinModule{Attrs: mod.Objects()}).AsImmutableMap(name)
 		} else if _, ok := SourceModules[name]; ok {
 			s := NewScript([]byte(fmt.Sprintf(`__result__ := import("%s")`, name)))
-			s.SetImports(Modules)
+			s.SetImports(Modules())
 			p, err := s.RunContext(ctx)
 			if err == nil {
 				sym := symbolTable.Define(name)
@@ -204,7 +226,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		HistoryLimit:    1000,
 		Undo:            true,
 		FuncIsTerminal:  func() bool { return interactive },
-		AutoComplete:    &replCompleter{exports: Exports, symbolTable: symbolTable},
+		AutoComplete:    &replCompleter{exports: Exports(), symbolTable: symbolTable},
 	})
 	if err != nil {
 		_, _ = fmt.Fprintln(out, err.Error())
@@ -254,7 +276,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		}
 
 		file = addPrints(file)
-		c := vm.NewCompiler(srcFile, symbolTable, constants, Modules, nil)
+		c := vm.NewCompiler(srcFile, symbolTable, constants, Modules(), nil)
 		if err := c.Compile(file); err != nil {
 			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
 			continue
@@ -273,7 +295,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 func compileSrc(src []byte, inputFile string) (*Program, error) {
 	s := NewScript(src)
 	s.SetName(inputFile)
-	s.SetImports(Modules)
+	s.SetImports(Modules())
 	s.EnableFileImport(true)
 	if err := s.SetImportDir(filepath.Dir(inputFile)); err != nil {
 		return nil, fmt.Errorf("error setting import dir: %w", err)

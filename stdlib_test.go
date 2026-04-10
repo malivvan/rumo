@@ -1,6 +1,7 @@
 package rumo_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/malivvan/rumo"
@@ -64,6 +65,65 @@ func TestAllModuleNames(t *testing.T) {
 //`, []byte("foo bar\n"))
 //
 //}
+
+// Issue #11: Eager init of Modules/Exports forces all stdlib into every binary.
+// Package-level `var Modules = GetModuleMap(AllModuleNames()...)` triggers init()
+// in all stdlib packages at import time, causing unnecessary binary size, startup
+// time, and memory cost for unused modules. Modules and Exports must be lazy
+// accessor functions that defer initialization until first use.
+func TestModulesAndExportsAreLazy(t *testing.T) {
+	// Before the fix, Modules and Exports are eagerly-initialized package-level
+	// vars (*vm.ModuleMap and map respectively). After the fix, they should be
+	// functions that lazily compute and cache the maps on first call.
+	rtMod := reflect.TypeOf(rumo.Modules)
+	if rtMod.Kind() != reflect.Func {
+		t.Fatalf("Modules should be a lazy accessor function, got %v (eager init via package-level var)", rtMod.Kind())
+	}
+	rtExp := reflect.TypeOf(rumo.Exports)
+	if rtExp.Kind() != reflect.Func {
+		t.Fatalf("Exports should be a lazy accessor function, got %v (eager init via package-level var)", rtExp.Kind())
+	}
+}
+
+// Regression: lazy Modules() must return a module map containing every module.
+func TestModulesReturnsAllModules(t *testing.T) {
+	mods := rumo.Modules()
+	names := rumo.AllModuleNames()
+	require.Equal(t, len(names), mods.Len())
+	for _, name := range names {
+		require.NotNil(t, mods.Get(name), "module %q missing from Modules()", name)
+	}
+}
+
+// Regression: lazy Exports() must return exports for every module.
+func TestExportsReturnsAllExports(t *testing.T) {
+	exports := rumo.Exports()
+	expected := len(rumo.BuiltinModules) + len(rumo.SourceModules)
+	require.Equal(t, expected, len(exports))
+	for _, name := range rumo.AllModuleNames() {
+		_, ok := exports[name]
+		require.True(t, ok, "module %q missing from Exports()", name)
+	}
+}
+
+// Regression: Modules() must return the same cached instance on repeated calls.
+func TestModulesReturnsCachedSingleton(t *testing.T) {
+	m1 := rumo.Modules()
+	m2 := rumo.Modules()
+	require.True(t, m1 == m2, "Modules() should return the same cached instance")
+}
+
+// Regression: Exports() must return the same cached instance on repeated calls.
+func TestExportsReturnsCachedSingleton(t *testing.T) {
+	e1 := rumo.Exports()
+	e2 := rumo.Exports()
+	require.Equal(t, len(e1), len(e2))
+	for k := range e1 {
+		if _, ok := e2[k]; !ok {
+			t.Fatalf("Exports() returned inconsistent keys: %q missing on second call", k)
+		}
+	}
+}
 
 func TestGetModules(t *testing.T) {
 	mods := rumo.GetModuleMap()
