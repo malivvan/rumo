@@ -66,6 +66,10 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 	cfn, compiled := fn.(*CompiledFunction)
 	if compiled {
 		gvm.VM = vm.ShallowClone()
+		// Deep-copy the closure's Free variables so the child VM operates
+		// on its own isolated *ObjectPtr cells and does not race with the
+		// parent (or other children) on closed-over variables. (Issue #2)
+		cfn = isolateClosureFree(cfn)
 	} else {
 		callers = vm.callers()
 	}
@@ -186,6 +190,53 @@ func (gvm *routineVM) getRet(ctx context.Context, args ...Object) (Object, error
 	}
 
 	return gvm.ret.val, nil
+}
+
+// isolateClosureFree returns a copy of fn whose Free *ObjectPtr cells have
+// been deep-copied so that OpSetFree in the child VM does not mutate the
+// parent's (or sibling routines') closed-over variables.
+//
+// A deduplication map is threaded through the recursion: if the same
+// *ObjectPtr is referenced by multiple Free slots (or by nested closures
+// sharing a captured variable), they will still share a single *new* cell
+// in the copy—preserving intra-routine variable identity while isolating
+// inter-routine access.
+func isolateClosureFree(fn *CompiledFunction) *CompiledFunction {
+	if len(fn.Free) == 0 {
+		return fn
+	}
+	return isolateClosureFreeRec(fn, make(map[*ObjectPtr]*ObjectPtr))
+}
+
+func isolateClosureFreeRec(fn *CompiledFunction, seen map[*ObjectPtr]*ObjectPtr) *CompiledFunction {
+	if len(fn.Free) == 0 {
+		return fn
+	}
+	newFree := make([]*ObjectPtr, len(fn.Free))
+	for i, fv := range fn.Free {
+		if dup, ok := seen[fv]; ok {
+			newFree[i] = dup
+			continue
+		}
+		val := *fv.Value
+		// If the captured value is itself a closure with free variables,
+		// recurse to isolate its ObjectPtr cells as well (nested closures
+		// that share the same captured variable with the outer closure).
+		if inner, ok := val.(*CompiledFunction); ok && len(inner.Free) > 0 {
+			val = isolateClosureFreeRec(inner, seen)
+		}
+		newFV := &ObjectPtr{Value: &val}
+		seen[fv] = newFV
+		newFree[i] = newFV
+	}
+	return &CompiledFunction{
+		Instructions:  fn.Instructions,
+		NumLocals:     fn.NumLocals,
+		NumParameters: fn.NumParameters,
+		VarArgs:       fn.VarArgs,
+		SourceMap:     fn.SourceMap,
+		Free:          newFree,
+	}
 }
 
 type objchan chan Object
