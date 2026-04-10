@@ -234,3 +234,111 @@ out = r.result()
 `, Opts().Skip2ndPass(), 42)
 }
 
+// Issue #3: ShallowClone context stores parent VM pointer
+//
+// context.WithValue(v.ctx, ContextKey("vm"), v) stored the **parent** VM
+// pointer instead of the clone. This caused builtins in the child VM
+// (e.g. abort(), start()) to operate on the wrong VM — breaking abort
+// propagation and child tracking. For example, calling abort() from a
+// child routine would abort the parent instead of the child, and
+// start() inside a child would register grandchildren on the parent
+// instead of the child, breaking the abort chain.
+//
+// The fix changes ShallowClone to store the clone (vClone) in the
+// context instead of the parent (v).
+
+// TestIssue3_AbortFromChildAbortsChild verifies that calling abort()
+// from within a child routine aborts that child, not the parent.
+// Before the fix, the child's context stored the parent VM, so
+// abort() would abort the parent — leaving the parent's output
+// unset or causing it to terminate prematurely.
+func TestIssue3_AbortFromChildAbortsChild(t *testing.T) {
+	// The child calls abort() which should only abort itself.
+	// The parent should continue and produce the expected output.
+	expectRun(t, `
+r := start(func() {
+	abort()
+	return "should not reach"
+})
+r.wait()
+out = "parent alive"
+`, Opts().Skip2ndPass(), "parent alive")
+}
+
+// TestIssue3_AbortFromChildDoesNotAbortParent verifies that the parent
+// continues executing after a child self-aborts. Before the fix, the
+// child's abort() targeted the parent VM, which would stop it.
+func TestIssue3_AbortFromChildDoesNotAbortParent(t *testing.T) {
+	expectRun(t, `
+ch := chan()
+r := start(func() {
+	ch.send("started")
+	abort()
+})
+ch.recv()
+r.wait()
+out = 42
+`, Opts().Skip2ndPass(), 42)
+}
+
+// TestIssue3_NestedStartRegistersOnChild verifies that start() inside
+// a child routine registers the grandchild on the child VM (not the
+// parent). When the child is aborted, the grandchild should also be
+// aborted. Before the fix, the grandchild was registered as a child
+// of the parent, so aborting the child would not propagate.
+func TestIssue3_NestedStartRegistersOnChild(t *testing.T) {
+	// Parent starts child, child starts grandchild.
+	// Aborting the child should propagate to the grandchild.
+	// If abort propagates correctly, grandchild's channel recv
+	// will be interrupted and the grandchild will complete.
+	expectRun(t, `
+ch := chan()
+r := start(func() {
+	gc := start(func() {
+		for {
+			// infinite loop — only abort can stop this
+			x := 1 + 1
+		}
+	})
+	gc.abort()
+	gc.wait()
+	return "done"
+})
+out = r.result()
+`, Opts().Skip2ndPass(), "done")
+}
+
+// TestIssue3_ChildAbortPropagatesDownward verifies the full abort
+// chain: parent → child → grandchild. The parent aborts the child,
+// which should cascade to the grandchild. If propagation is broken,
+// the grandchild's infinite loop never terminates and child.wait(5)
+// would time out (return false).
+func TestIssue3_ChildAbortPropagatesDownward(t *testing.T) {
+	expectRun(t, `
+child := start(func() {
+	gc := start(func() {
+		for {
+			x := 1 + 1
+		}
+	})
+	gc.wait()
+})
+child.abort()
+out = child.wait(5)
+`, Opts().Skip2ndPass(), true)
+}
+
+// TestIssue3_StartInsideChildDoesNotAffectParent verifies that
+// start() from a child does not add the grandchild to the parent's
+// child list. The parent should be able to finish independently.
+func TestIssue3_StartInsideChildDoesNotAffectParent(t *testing.T) {
+	expectRun(t, `
+r := start(func() {
+	gc := start(func() {
+		return 99
+	})
+	return gc.result()
+})
+out = r.result()
+`, Opts().Skip2ndPass(), 99)
+}

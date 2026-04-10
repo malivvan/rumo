@@ -140,7 +140,7 @@ func (v *VM) ShallowClone() *VM {
 		Out:         v.Out,
 		Args:        v.Args,
 	}
-	vClone.ctx, vClone.cancel = context.WithCancel(context.WithValue(v.ctx, ContextKey("vm"), v))
+	vClone.ctx, vClone.cancel = context.WithCancel(context.WithValue(v.ctx, ContextKey("vm"), vClone))
 	frame := &frame{
 		fn: emptyEntry,
 		ip: -1,
