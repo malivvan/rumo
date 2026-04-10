@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -20,9 +21,10 @@ type ret struct {
 }
 
 type routineVM struct {
-	*VM      // if not nil, run CompiledFunction in VM
-	ret      // return value
-	waitChan chan ret
+	mu       sync.Mutex
+	*VM           // if not nil, run CompiledFunction in VM
+	ret           // return value
+	doneChan chan struct{}
 	done     int64
 }
 
@@ -59,7 +61,7 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 	}
 
 	gvm := &routineVM{
-		waitChan: make(chan ret, 1),
+		doneChan: make(chan struct{}),
 	}
 
 	var callers []frame
@@ -90,9 +92,15 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 			if err != nil {
 				vm.addError(err)
 			}
-			gvm.waitChan <- ret{val, err}
+			gvm.mu.Lock()
+			gvm.ret = ret{val, err}
+			gvm.mu.Unlock()
+			atomic.StoreInt64(&gvm.done, 1)
+			close(gvm.doneChan)
 			vm.delChild(gvm.VM)
+			gvm.mu.Lock()
 			gvm.VM = nil
+			gvm.mu.Unlock()
 		}()
 
 		if cfn != nil {
@@ -131,8 +139,7 @@ func (gvm *routineVM) wait(seconds int64) bool {
 	}
 
 	select {
-	case gvm.ret = <-gvm.waitChan:
-		atomic.StoreInt64(&gvm.done, 1)
+	case <-gvm.doneChan:
 	case <-time.After(time.Duration(seconds) * time.Second):
 		return false
 	}
@@ -171,8 +178,11 @@ func (gvm *routineVM) abort(ctx context.Context, args ...Object) (Object, error)
 	if len(args) != 0 {
 		return nil, ErrWrongNumArguments
 	}
-	if gvm.VM != nil {
-		gvm.Abort()
+	gvm.mu.Lock()
+	vm := gvm.VM
+	gvm.mu.Unlock()
+	if vm != nil {
+		vm.Abort()
 	}
 	return nil, nil
 }
@@ -185,11 +195,14 @@ func (gvm *routineVM) getRet(ctx context.Context, args ...Object) (Object, error
 	}
 
 	gvm.wait(-1)
-	if gvm.ret.err != nil {
-		return &Error{Value: &String{Value: gvm.ret.err.Error()}}, nil
+	gvm.mu.Lock()
+	r := gvm.ret
+	gvm.mu.Unlock()
+	if r.err != nil {
+		return &Error{Value: &String{Value: r.err.Error()}}, nil
 	}
 
-	return gvm.ret.val, nil
+	return r.val, nil
 }
 
 // isolateClosureFree returns a copy of fn whose Free *ObjectPtr cells have

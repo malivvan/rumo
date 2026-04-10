@@ -1,7 +1,9 @@
 package vm_test
 
 import (
+	"sync"
 	"testing"
+	"time"
 )
 
 // Issue #1: Shared globals slice in ShallowClone (data race)
@@ -342,3 +344,258 @@ r := start(func() {
 out = r.result()
 `, Opts().Skip2ndPass(), 99)
 }
+
+// Issue #4: routineVM.abort() races with goroutine completion
+//
+// routineVM.abort() reads gvm.VM to check for nil and then calls
+// gvm.Abort(), but the goroutine's deferred cleanup sets gvm.VM = nil
+// without any synchronisation. If abort() is called while the goroutine
+// is completing, the nil check passes but gvm.VM is nilled before
+// Abort() executes — causing a nil-pointer dereference crash.
+
+// TestIssue4_AbortRacesWithCompletion triggers the data race between
+// routineVM.abort() reading gvm.VM and the goroutine's deferred cleanup
+// nilling it. Under -race, this reliably detects the unsynchronised
+// read/write. Without -race, repeated iterations increase the chance
+// of hitting the nil-pointer dereference crash.
+func TestIssue4_AbortRacesWithCompletion(t *testing.T) {
+	// We run many iterations to maximise the chance of hitting the
+	// timing window where abort() and goroutine cleanup overlap.
+	for i := 0; i < 100; i++ {
+		expectRun(t, `
+f := func() {
+	return 1
+}
+r := start(f)
+r.abort()
+r.wait()
+out = "ok"
+`, Opts().Skip2ndPass(), "ok")
+	}
+}
+
+// TestIssue4_AbortRacesWithCompletionParallel uses parallel goroutines
+// to call abort() at the exact moment the routine finishes, exercising
+// the race window more aggressively.
+func TestIssue4_AbortRacesWithCompletionParallel(t *testing.T) {
+	for i := 0; i < 50; i++ {
+		expectRun(t, `
+ch := chan()
+f := func() {
+	ch.recv()
+	return 1
+}
+r := start(f)
+ch.send(1)
+r.abort()
+r.wait()
+out = "ok"
+`, Opts().Skip2ndPass(), "ok")
+	}
+}
+
+// TestIssue4_ConcurrentAbortCalls verifies that calling abort()
+// multiple times concurrently from different goroutines does not
+// panic or race.
+func TestIssue4_ConcurrentAbortCalls(t *testing.T) {
+	// This script launches a long-running routine and then
+	// immediately aborts it — the parent calls abort() which
+	// races with the routine's own natural completion.
+	for i := 0; i < 50; i++ {
+		expectRun(t, `
+r := start(func() {
+	for i := 0; i < 10; i++ {
+		x := i
+	}
+	return "done"
+})
+r.abort()
+r.abort()
+r.wait()
+out = "ok"
+`, Opts().Skip2ndPass(), "ok")
+	}
+}
+
+// TestIssue4_AbortAfterCompletion verifies that calling abort() after
+// the routine has already finished and gvm.VM has been nilled does not
+// crash.
+func TestIssue4_AbortAfterCompletion(t *testing.T) {
+	expectRun(t, `
+r := start(func() {
+	return 42
+})
+r.wait()
+r.abort()
+out = r.result()
+`, Opts().Skip2ndPass(), 42)
+}
+
+// TestIssue4_AbortAndResultRace exercises calling abort() and result()
+// concurrently from different started routines to stress the synchronisation.
+func TestIssue4_AbortAndResultRace(t *testing.T) {
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			expectRun(t, `
+r := start(func() {
+	return 1
+})
+r.abort()
+r.wait()
+out = "ok"
+`, Opts().Skip2ndPass(), "ok")
+		}()
+	}
+	wg.Wait()
+}
+
+// Issue #5: wait() channel is one-shot — concurrent callers deadlock
+//
+// waitChan has capacity 1. The goroutine sends exactly one ret value when
+// the routine completes. If two concurrent callers (e.g. two routines both
+// calling wait() or result() on the same handle) both see done == 0 and
+// enter the select, only one receives the value — the other blocks forever.
+//
+// The fix replaces the single-value waitChan with a close()-based broadcast
+// channel (chan struct{}). Closing a channel unblocks ALL receivers. The
+// return value is stored in the struct under mutex protection before the
+// channel is closed.
+
+// TestIssue5_ConcurrentWaitDeadlock verifies that two concurrent routines
+// calling wait() on the same routine handle do NOT deadlock.
+// Before the fix, waitChan was a single-value buffered channel — only one
+// of the two waiters would receive, and the other would block forever.
+func TestIssue5_ConcurrentWaitDeadlock(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		expectRun(t, `
+ch := chan()
+r := start(func() {
+	ch.recv()
+	return 42
+})
+w1 := start(func() {
+	return r.wait(10)
+})
+w2 := start(func() {
+	return r.wait(10)
+})
+ch.send(true)
+out = [w1.result(), w2.result()]
+`, Opts().Skip2ndPass(), ARR{true, true})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("TestIssue5_ConcurrentWaitDeadlock: timed out — likely deadlock")
+	}
+}
+
+// TestIssue5_ConcurrentResultDeadlock verifies that two concurrent routines
+// calling result() on the same routine handle do NOT deadlock.
+// Uses sync channels to maximise the chance both routines enter wait()
+// before the target routine completes.
+func TestIssue5_ConcurrentResultDeadlock(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		expectRun(t, `
+ch := chan()
+sync := chan()
+r := start(func() {
+	ch.recv()
+	return 42
+})
+r1 := start(func() {
+	sync.send(true)
+	return r.result()
+})
+r2 := start(func() {
+	sync.send(true)
+	return r.result()
+})
+sync.recv()
+sync.recv()
+ch.send(true)
+out = [r1.result(), r2.result()]
+`, Opts().Skip2ndPass(), ARR{42, 42})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("TestIssue5_ConcurrentResultDeadlock: timed out — likely deadlock")
+	}
+}
+
+// TestIssue5_WaitAfterResult verifies that calling wait() after result()
+// has already consumed the value still returns true (not blocked forever).
+func TestIssue5_WaitAfterResult(t *testing.T) {
+	expectRun(t, `
+r := start(func() {
+	return 42
+})
+v := r.result()
+out = [v, r.wait()]
+`, Opts().Skip2ndPass(), ARR{42, true})
+}
+
+// TestIssue5_MultipleWaitCalls verifies that calling wait() multiple times
+// from the same routine works correctly (idempotent).
+func TestIssue5_MultipleWaitCalls(t *testing.T) {
+	expectRun(t, `
+r := start(func() {
+	return 42
+})
+w1 := r.wait()
+w2 := r.wait()
+w3 := r.wait()
+out = [w1, w2, w3]
+`, Opts().Skip2ndPass(), ARR{true, true, true})
+}
+
+// TestIssue5_MultipleResultCalls verifies that calling result() multiple
+// times returns the same value without deadlocking.
+func TestIssue5_MultipleResultCalls(t *testing.T) {
+	expectRun(t, `
+r := start(func() {
+	return 42
+})
+v1 := r.result()
+v2 := r.result()
+v3 := r.result()
+out = [v1, v2, v3]
+`, Opts().Skip2ndPass(), ARR{42, 42, 42})
+}
+
+// TestIssue5_ConcurrentWaitStress runs many iterations of concurrent
+// wait/result calls to stress-test the broadcast mechanism.
+func TestIssue5_ConcurrentWaitStress(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 50; i++ {
+			expectRun(t, `
+r := start(func() {
+	return 1
+})
+w1 := start(func() { return r.wait(10) })
+w2 := start(func() { return r.wait(10) })
+w3 := start(func() { return r.result() })
+out = [w1.result(), w2.result(), w3.result()]
+`, Opts().Skip2ndPass(), ARR{true, true, 1})
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(60 * time.Second):
+		t.Fatal("TestIssue5_ConcurrentWaitStress: timed out — likely deadlock")
+	}
+}
+
