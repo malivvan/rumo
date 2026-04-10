@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/malivvan/rumo/vm"
@@ -21,21 +20,6 @@ func init() {
 		Func("string_slice_flag(config map) (flag map)					creates a string slice flag configuration", cliStringSliceFlag)
 }
 
-// ---------------------------------------------------------------------------
-// callFunc — invoke a rumo callback (compiled or builtin)
-// ---------------------------------------------------------------------------
-
-func callFunc(ctx context.Context, fn vm.Object, args ...vm.Object) (vm.Object, error) {
-	if cfn, ok := fn.(*vm.CompiledFunction); ok {
-		if vmVal := ctx.Value(vm.ContextKey("vm")); vmVal != nil {
-			parentVM := vmVal.(*vm.VM)
-			clone := parentVM.ShallowClone()
-			return clone.RunCompiled(cfn, args...)
-		}
-		return nil, fmt.Errorf("no VM in context to run compiled function")
-	}
-	return fn.Call(ctx, args...)
-}
 
 // ---------------------------------------------------------------------------
 // Config-map helpers
@@ -395,7 +379,7 @@ func buildCommand(ctx context.Context, cfg map[string]vm.Object, persistent bool
 	if actionFn := cfgFunc(cfg, "action"); actionFn != nil {
 		fn := actionFn
 		cmd.RunE = func(c *Command, a []string) error {
-			_, err := callFunc(ctx, fn, wrapContext(c, a))
+			_, err := vm.CallFunc(ctx, fn, wrapContext(c, a))
 			return err
 		}
 	}
@@ -404,12 +388,12 @@ func buildCommand(ctx context.Context, cfg map[string]vm.Object, persistent bool
 		fn := beforeFn
 		if persistent {
 			cmd.PersistentPreRunE = func(c *Command, a []string) error {
-				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				_, err := vm.CallFunc(ctx, fn, wrapContext(c, a))
 				return err
 			}
 		} else {
 			cmd.PreRunE = func(c *Command, a []string) error {
-				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				_, err := vm.CallFunc(ctx, fn, wrapContext(c, a))
 				return err
 			}
 		}
@@ -419,12 +403,12 @@ func buildCommand(ctx context.Context, cfg map[string]vm.Object, persistent bool
 		fn := afterFn
 		if persistent {
 			cmd.PersistentPostRunE = func(c *Command, a []string) error {
-				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				_, err := vm.CallFunc(ctx, fn, wrapContext(c, a))
 				return err
 			}
 		} else {
 			cmd.PostRunE = func(c *Command, a []string) error {
-				_, err := callFunc(ctx, fn, wrapContext(c, a))
+				_, err := vm.CallFunc(ctx, fn, wrapContext(c, a))
 				return err
 			}
 		}

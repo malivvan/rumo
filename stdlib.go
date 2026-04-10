@@ -1,6 +1,8 @@
 package rumo
 
 import (
+	"sort"
+
 	"github.com/malivvan/rumo/std/base64"
 	"github.com/malivvan/rumo/std/cli"
 	"github.com/malivvan/rumo/std/cui"
@@ -16,7 +18,7 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-// BuiltinModules are source type standard library modules.
+// BuiltinModules are builtin type standard library modules.
 var BuiltinModules = map[string]*module.BuiltinModule{
 	"base64":   base64.Module,
 	"cli":   cli.Module,
@@ -33,156 +35,7 @@ var BuiltinModules = map[string]*module.BuiltinModule{
 
 // SourceModules are source type standard library modules.
 var SourceModules = map[string]*module.SourceModule{
-	"enum": module.NewSource(`is_enumerable := func(x) {
-  return is_array(x) || is_map(x) || is_immutable_array(x) || is_immutable_map(x)
-}
-
-is_array_like := func(x) {
-  return is_array(x) || is_immutable_array(x)
-}
-
-export {
-  // all(x map, fn func(key, value) bool) (result bool)
-  // all returns true if the given function 'fn' evaluates to a truthy value on
-  // all of the items in 'x'. It returns undefined if 'x' is not enumerable.
-  all: func(x, fn) {
-    if !is_enumerable(x) { return undefined }
-
-    for k, v in x {
-      if !fn(k, v) { return false }
-    }
-
-    return true
-  },
-
-  // any(x map, fn func(key, value) bool) (result bool)
-  // any returns true if the given function 'fn' evaluates to a truthy value on
-  // any of the items in 'x'. It returns undefined if 'x' is not enumerable.
-  any: func(x, fn) {
-    if !is_enumerable(x) { return undefined }
-
-    for k, v in x {
-      if fn(k, v) { return true }
-    }
-
-    return false
-  },
-
-  // chunk(x array, size int) (result array)
-  // chunk returns an array of elements split into groups the length of size.
-  // If 'x' can't be split evenly, the final chunk will be the remaining elements.
-  // It returns undefined if 'x' is not array.
-  chunk: func(x, size) {
-    if !is_array_like(x) || !size { return undefined }
-
-    numElements := len(x)
-    if !numElements { return [] }
-
-    res := []
-    idx := 0
-    for idx < numElements {
-      res = append(res, x[idx:idx+size])
-      idx += size
-    }
-
-    return res
-  },
-
-  // at(x map, key string) (result any)
-  // at returns an element at the given index (if 'x' is array) or
-  // key (if 'x' is map). It returns undefined if 'x' is not enumerable.
-  at: func(x, key) {
-    if !is_enumerable(x) { return undefined }
-
-    if is_array_like(x) {
-        if !is_int(key) { return undefined }
-    } else {
-        if !is_string(key) { return undefined }
-    }
-
-    return x[key]
-  },
-
-  // each(x map, fn func(key, value)) (result undefined)
-  // each iterates over elements of 'x' and invokes 'fn' for each element. 'fn' is
-  // invoked with two arguments: 'key' and 'value'. 'key' is an int index
-  // if 'x' is array. 'key' is a string key if 'x' is map. It does not iterate
-  // and returns undefined if 'x' is not enumerable.
-  each: func(x, fn) {
-    if !is_enumerable(x) { return undefined }
-
-    for k, v in x {
-      fn(k, v)
-    }
-  },
-
-  // filter(x map, fn func(key, value) bool) (result array)
-  // filter iterates over elements of 'x', returning an array of all elements 'fn'
-  // returns truthy for. 'fn' is invoked with two arguments: 'key' and 'value'.
-  // 'key' is an int index if 'x' is array. 'key' is a string key if 'x' is map.
-  // It returns undefined if 'x' is not enumerable.
-  filter: func(x, fn) {
-    if !is_array_like(x) { return undefined }
-
-    dst := []
-    for k, v in x {
-      if fn(k, v) { dst = append(dst, v) }
-    }
-
-    return dst
-  },
-
-  // find(x map, fn func(key, value) bool) (result any)
-  // find iterates over elements of 'x', returning value of the first element 'fn'
-  // returns truthy for. 'fn' is invoked with two arguments: 'key' and 'value'.
-  // 'key' is an int index if 'x' is array. 'key' is a string key if 'x' is map.
-  // It returns undefined if 'x' is not enumerable.
-  find: func(x, fn) {
-    if !is_enumerable(x) { return undefined }
-
-    for k, v in x {
-      if fn(k, v) { return v }
-    }
-  },
-
-  // find_key(x map, fn func(key, value) bool) (result any)
-  // find_key iterates over elements of 'x', returning key or index of the first
-  // element 'fn' returns truthy for. 'fn' is invoked with two arguments: 'key'
-  // and 'value'. 'key' is an int index if 'x' is array. 'key' is a string key if
-  // 'x' is map. It returns undefined if 'x' is not enumerable.
-  find_key: func(x, fn) {
-    if !is_enumerable(x) { return undefined }
-
-    for k, v in x {
-      if fn(k, v) { return k }
-    }
-  },
-
-  // map(x map, fn func(key, value) any) (result array)
-  // map creates an array of values by running each element in 'x' through 'fn'.
-  // 'fn' is invoked with two arguments: 'key' and 'value'. 'key' is an int index
-  // if 'x' is array. 'key' is a string key if 'x' is map. It returns undefined
-  // if 'x' is not enumerable.
-  map: func(x, fn) {
-    if !is_enumerable(x) { return undefined }
-
-    dst := []
-    for k, v in x {
-      dst = append(dst, fn(k, v))
-    }
-
-    return dst
-  },
-
-  // key(k, v) (result any)
-  // key returns the first argument.
-  key: func(k, _) { return k },
-
-  // value(k, v) (result any)
-  // value returns the second argument.
-  value: func(_, v) { return v }
-}
-`),
+	"enum": module.NewSource("is_enumerable := func(x) {\n  return is_array(x) || is_map(x) || is_immutable_array(x) || is_immutable_map(x)\n}\n\nis_array_like := func(x) {\n  return is_array(x) || is_immutable_array(x)\n}\n\nexport {\n  // all(x map, fn func(key, value) bool) (result bool)\n  // all returns true if the given function 'fn' evaluates to a truthy value on\n  // all of the items in 'x'. It returns undefined if 'x' is not enumerable.\n  all: func(x, fn) {\n    if !is_enumerable(x) { return undefined }\n\n    for k, v in x {\n      if !fn(k, v) { return false }\n    }\n\n    return true\n  },\n\n  // any(x map, fn func(key, value) bool) (result bool)\n  // any returns true if the given function 'fn' evaluates to a truthy value on\n  // any of the items in 'x'. It returns undefined if 'x' is not enumerable.\n  any: func(x, fn) {\n    if !is_enumerable(x) { return undefined }\n\n    for k, v in x {\n      if fn(k, v) { return true }\n    }\n\n    return false\n  },\n\n  // chunk(x array, size int) (result array)\n  // chunk returns an array of elements split into groups the length of size.\n  // If 'x' can't be split evenly, the final chunk will be the remaining elements.\n  // It returns undefined if 'x' is not array.\n  chunk: func(x, size) {\n    if !is_array_like(x) || !size { return undefined }\n\n    numElements := len(x)\n    if !numElements { return [] }\n\n    res := []\n    idx := 0\n    for idx < numElements {\n      res = append(res, x[idx:idx+size])\n      idx += size\n    }\n\n    return res\n  },\n\n  // at(x map, key string) (result any)\n  // at returns an element at the given index (if 'x' is array) or\n  // key (if 'x' is map). It returns undefined if 'x' is not enumerable.\n  at: func(x, key) {\n    if !is_enumerable(x) { return undefined }\n\n    if is_array_like(x) {\n        if !is_int(key) { return undefined }\n    } else {\n        if !is_string(key) { return undefined }\n    }\n\n    return x[key]\n  },\n\n  // each(x map, fn func(key, value)) (result undefined)\n  // each iterates over elements of 'x' and invokes 'fn' for each element. 'fn' is\n  // invoked with two arguments: 'key' and 'value'. 'key' is an int index\n  // if 'x' is array. 'key' is a string key if 'x' is map. It does not iterate\n  // and returns undefined if 'x' is not enumerable.\n  each: func(x, fn) {\n    if !is_enumerable(x) { return undefined }\n\n    for k, v in x {\n      fn(k, v)\n    }\n  },\n\n  // filter(x map, fn func(key, value) bool) (result array)\n  // filter iterates over elements of 'x', returning an array of all elements 'fn'\n  // returns truthy for. 'fn' is invoked with two arguments: 'key' and 'value'.\n  // 'key' is an int index if 'x' is array. 'key' is a string key if 'x' is map.\n  // It returns undefined if 'x' is not enumerable.\n  filter: func(x, fn) {\n    if !is_array_like(x) { return undefined }\n\n    dst := []\n    for k, v in x {\n      if fn(k, v) { dst = append(dst, v) }\n    }\n\n    return dst\n  },\n\n  // find(x map, fn func(key, value) bool) (result any)\n  // find iterates over elements of 'x', returning value of the first element 'fn'\n  // returns truthy for. 'fn' is invoked with two arguments: 'key' and 'value'.\n  // 'key' is an int index if 'x' is array. 'key' is a string key if 'x' is map.\n  // It returns undefined if 'x' is not enumerable.\n  find: func(x, fn) {\n    if !is_enumerable(x) { return undefined }\n\n    for k, v in x {\n      if fn(k, v) { return v }\n    }\n  },\n\n  // find_key(x map, fn func(key, value) bool) (result any)\n  // find_key iterates over elements of 'x', returning key or index of the first\n  // element 'fn' returns truthy for. 'fn' is invoked with two arguments: 'key'\n  // and 'value'. 'key' is an int index if 'x' is array. 'key' is a string key if\n  // 'x' is map. It returns undefined if 'x' is not enumerable.\n  find_key: func(x, fn) {\n    if !is_enumerable(x) { return undefined }\n\n    for k, v in x {\n      if fn(k, v) { return k }\n    }\n  },\n\n  // map(x map, fn func(key, value) any) (result array)\n  // map creates an array of values by running each element in 'x' through 'fn'.\n  // 'fn' is invoked with two arguments: 'key' and 'value'. 'key' is an int index\n  // if 'x' is array. 'key' is a string key if 'x' is map. It returns undefined\n  // if 'x' is not enumerable.\n  map: func(x, fn) {\n    if !is_enumerable(x) { return undefined }\n\n    dst := []\n    for k, v in x {\n      dst = append(dst, fn(k, v))\n    }\n\n    return dst\n  },\n\n  // key(k, v) (result any)\n  // key returns the first argument.\n  key: func(k, _) { return k },\n\n  // value(k, v) (result any)\n  // value returns the second argument.\n  value: func(_, v) { return v }\n}\n"),
 }
 
 // AllModuleNames returns a list of all default module names.
@@ -194,6 +47,7 @@ func AllModuleNames() []string {
 	for name := range SourceModules {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 

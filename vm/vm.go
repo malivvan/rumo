@@ -795,14 +795,18 @@ func (v *VM) run() {
 				v.sp--
 				switch arr := v.stack[v.sp].(type) {
 				case *Array:
-					v.checkGrowStack(len(arr.Value))
+					if !v.checkGrowStack(len(arr.Value)) {
+						return
+					}
 					for _, item := range arr.Value {
 						v.stack[v.sp] = item
 						v.sp++
 					}
 					numArgs += len(arr.Value) - 1
 				case *ImmutableArray:
-					v.checkGrowStack(len(arr.Value))
+					if !v.checkGrowStack(len(arr.Value)) {
+						return
+					}
 					for _, item := range arr.Value {
 						v.stack[v.sp] = item
 						v.sp++
@@ -1118,18 +1122,20 @@ func (v *VM) run() {
 			v.err = fmt.Errorf("unknown opcode: %d", v.curInsts[v.ip])
 			return
 		}
-		v.checkGrowStack(0)
+		if !v.checkGrowStack(0) {
+			return
+		}
 	}
 }
 
-func (v *VM) checkGrowStack(added int) {
+func (v *VM) checkGrowStack(added int) bool {
 	should := v.sp + added
 	if should < len(v.stack) {
-		return
+		return true
 	}
 	if should >= StackSize {
 		v.err = ErrStackOverflow
-		return
+		return false
 	}
 	roundup := initialStackSize
 	newSize := len(v.stack) * 2
@@ -1139,6 +1145,7 @@ func (v *VM) checkGrowStack(added int) {
 	new := make([]Object, newSize)
 	copy(new, v.stack)
 	v.stack = new
+	return true
 }
 
 // IsStackEmpty tests if the stack is empty or not.
@@ -1168,7 +1175,7 @@ func indexAssign(dst, src Object, selectors []Object) error {
 			return fmt.Errorf("not index-assignable: %s", dst.TypeName())
 		}
 		if err == ErrInvalidIndexValueType {
-			return fmt.Errorf("invaid index value type: %s", src.TypeName())
+			return fmt.Errorf("invalid index value type: %s", src.TypeName())
 		}
 		return err
 	}

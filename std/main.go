@@ -63,6 +63,8 @@ func main() {
 	out.WriteString(`package rumo
 
 import (
+	"sort"
+
 `)
 	for _, name := range builtins {
 		out.WriteString(fmt.Sprintf("	\"github.com/malivvan/rumo/std/%s\"\n", name))
@@ -72,7 +74,7 @@ import (
 )
 `)
 	out.WriteString(`
-// BuiltinModules are source type standard library modules.
+// BuiltinModules are builtin type standard library modules.
 var BuiltinModules = map[string]*module.BuiltinModule{` + "\n")
 	for _, name := range builtins {
 		out.WriteString(fmt.Sprintf("	\"%s\":   %s.Module,\n", name, name))
@@ -82,7 +84,7 @@ var BuiltinModules = map[string]*module.BuiltinModule{` + "\n")
 // SourceModules are source type standard library modules.
 var SourceModules = map[string]*module.SourceModule{` + "\n")
 	for modName, modSrc := range modules {
-		out.WriteString("\t\"" + modName + "\": module.NewSource(`" + modSrc + "`),\n")
+		out.WriteString("\t\"" + modName + "\": module.NewSource(" + strconv.Quote(modSrc) + "),\n")
 	}
 	out.WriteString("}\n")
 	out.WriteString(`
@@ -95,6 +97,7 @@ func AllModuleNames() []string {
 	for name := range SourceModules {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 

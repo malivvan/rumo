@@ -66,14 +66,14 @@ func (v *Variable) Char() rune {
 	return c
 }
 
-// Bool returns bool value of the variable value. It returns 0 if the value is
-// not convertible to bool.
+// Bool returns bool value of the variable value. It returns false if the value
+// is not convertible to bool.
 func (v *Variable) Bool() bool {
 	c, _ := vm.ToBool(v.value)
 	return c
 }
 
-// Array returns []interface value of the variable value. It returns 0 if the
+// Array returns []interface value of the variable value. It returns nil if the
 // value is not convertible to []interface.
 func (v *Variable) Array() []interface{} {
 	switch val := v.value.(type) {
@@ -88,7 +88,7 @@ func (v *Variable) Array() []interface{} {
 }
 
 // Map returns map[string]interface{} value of the variable value. It returns
-// 0 if the value is not convertible to map[string]interface{}.
+// nil if the value is not convertible to map[string]interface{}.
 func (v *Variable) Map() map[string]interface{} {
 	switch val := v.value.(type) {
 	case *vm.Map:
@@ -101,8 +101,8 @@ func (v *Variable) Map() map[string]interface{} {
 	return nil
 }
 
-// String returns string value of the variable value. It returns 0 if the value
-// is not convertible to string.
+// String returns string value of the variable value. It returns an empty
+// string if the value is not convertible to string.
 func (v *Variable) String() string {
 	c, _ := vm.ToString(v.value)
 	return c

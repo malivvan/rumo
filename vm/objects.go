@@ -89,11 +89,11 @@ type ObjectImpl struct {
 
 // TypeName returns the name of the type.
 func (o *ObjectImpl) TypeName() string {
-	panic(ErrNotImplemented)
+	return "unknown"
 }
 
 func (o *ObjectImpl) String() string {
-	panic(ErrNotImplemented)
+	return ""
 }
 
 // BinaryOp returns another object that is the result of a given binary
@@ -812,7 +812,10 @@ func (o *ImmutableArray) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if rhs, ok := rhs.(*ImmutableArray); ok {
 		switch op {
 		case token.Add:
-			return &Array{Value: append(o.Value, rhs.Value...)}, nil
+			arr := make([]Object, 0, len(o.Value)+len(rhs.Value))
+			arr = append(arr, o.Value...)
+			arr = append(arr, rhs.Value...)
+			return &Array{Value: arr}, nil
 		}
 	}
 	return nil, ErrInvalidOperator
@@ -1013,12 +1016,18 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			}
 			return &Int{Value: r}, nil
 		case token.Quo:
+			if rhs.Value == 0 {
+				return nil, fmt.Errorf("division by zero")
+			}
 			r := o.Value / rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
 			return &Int{Value: r}, nil
 		case token.Rem:
+			if rhs.Value == 0 {
+				return nil, fmt.Errorf("division by zero")
+			}
 			r := o.Value % rhs.Value
 			if r == o.Value {
 				return o, nil
