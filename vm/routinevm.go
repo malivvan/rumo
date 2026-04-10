@@ -22,8 +22,9 @@ type ret struct {
 
 type routineVM struct {
 	mu       sync.Mutex
-	*VM           // if not nil, run CompiledFunction in VM
-	ret           // return value
+	*VM                        // if not nil, run CompiledFunction in VM
+	cancelFn context.CancelFunc // cancel for non-compiled callables
+	ret                        // return value
 	doneChan chan struct{}
 	done     int64
 }
@@ -65,6 +66,7 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 	}
 
 	var callers []frame
+	var callCtx context.Context
 	cfn, compiled := fn.(*CompiledFunction)
 	if compiled {
 		gvm.VM = vm.ShallowClone()
@@ -74,6 +76,10 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		cfn = isolateClosureFree(cfn)
 	} else {
 		callers = vm.callers()
+		// Create an independent derived context so that gvm.abort() can
+		// cancel non-compiled callables. Without this, the callable
+		// receives the parent's context and abort() is a no-op. (Issue #7)
+		callCtx, gvm.cancelFn = context.WithCancel(ctx)
 	}
 
 	if err := vm.addChild(gvm.VM); err != nil {
@@ -107,7 +113,7 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		if cfn != nil {
 			val, err = gvm.RunCompiled(cfn, args[1:]...)
 		} else {
-			val, err = fn.Call(ctx, args[1:]...)
+			val, err = fn.Call(callCtx, args[1:]...)
 		}
 	}()
 
@@ -181,9 +187,12 @@ func (gvm *routineVM) abort(ctx context.Context, args ...Object) (Object, error)
 	}
 	gvm.mu.Lock()
 	vm := gvm.VM
+	cancel := gvm.cancelFn
 	gvm.mu.Unlock()
 	if vm != nil {
 		vm.Abort()
+	} else if cancel != nil {
+		cancel()
 	}
 	return nil, nil
 }

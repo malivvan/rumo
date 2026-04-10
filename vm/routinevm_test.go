@@ -1,9 +1,12 @@
 package vm_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/malivvan/rumo/vm"
 )
 
 // Issue #1: Shared globals slice in ShallowClone (data race)
@@ -744,6 +747,170 @@ r2 := start(func() {
 r1.wait()
 r2.wait()
 `, nil, "channel already closed")
+	}
+}
+
+// Issue #7: Non-compiled callables use parent context — not abortable
+//
+// Non-compiled callables (e.g. BuiltinFunction) passed to start() receive
+// the parent VM's context and have no independent cancel(). The routineVM
+// stores gvm.VM = nil for non-compiled callables, so gvm.abort() — which
+// checks gvm.VM != nil — is a complete no-op. There is no way to
+// independently abort a non-compiled callable routine; it only stops when
+// the parent's context is cancelled.
+//
+// The fix creates a derived context with its own cancel function for
+// non-compiled callables. gvm.abort() calls this cancel when gvm.VM is
+// nil, allowing independent abort of non-compiled callable routines.
+
+// TestIssue7_NonCompiledCallableAbort verifies that aborting a routine
+// started with a non-compiled callable (BuiltinFunction) actually cancels
+// the function's context. Before the fix, gvm.abort() was a no-op for
+// non-compiled callables because gvm.VM was nil.
+func TestIssue7_NonCompiledCallableAbort(t *testing.T) {
+	// A BuiltinFunction that blocks until its context is cancelled or
+	// a timeout fires. If abort works, context is cancelled quickly and
+	// it returns "cancelled". If abort is a no-op, the function waits
+	// for the full timeout and returns "timeout".
+	blockingFn := &vm.BuiltinFunction{
+		Name: "blocking_fn",
+		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+			select {
+			case <-ctx.Done():
+				return &vm.String{Value: "cancelled"}, nil
+			case <-time.After(5 * time.Second):
+				return &vm.String{Value: "timeout"}, nil
+			}
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		expectRun(t, `
+r := start(blocking_fn)
+r.abort()
+v := r.result()
+out = v
+`, Opts().Skip2ndPass().Symbol("blocking_fn", blockingFn), "cancelled")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("TestIssue7_NonCompiledCallableAbort: timed out — abort was a no-op for non-compiled callable")
+	}
+}
+
+// TestIssue7_NonCompiledCallableAbortIdempotent verifies that calling
+// abort() multiple times on a non-compiled callable routine does not
+// panic. cancel() is idempotent, so repeated calls must be safe.
+func TestIssue7_NonCompiledCallableAbortIdempotent(t *testing.T) {
+	blockingFn := &vm.BuiltinFunction{
+		Name: "blocking_fn",
+		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+			select {
+			case <-ctx.Done():
+				return &vm.String{Value: "cancelled"}, nil
+			case <-time.After(5 * time.Second):
+				return &vm.String{Value: "timeout"}, nil
+			}
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		expectRun(t, `
+r := start(blocking_fn)
+r.abort()
+r.abort()
+r.abort()
+v := r.result()
+out = v
+`, Opts().Skip2ndPass().Symbol("blocking_fn", blockingFn), "cancelled")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("TestIssue7_NonCompiledCallableAbortIdempotent: timed out")
+	}
+}
+
+// TestIssue7_NonCompiledCallableAbortAfterCompletion verifies that calling
+// abort() on a non-compiled callable routine after it has already completed
+// is harmless (does not panic or error).
+func TestIssue7_NonCompiledCallableAbortAfterCompletion(t *testing.T) {
+	simpleFn := &vm.BuiltinFunction{
+		Name: "simple_fn",
+		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+			return &vm.Int{Value: 42}, nil
+		},
+	}
+
+	expectRun(t, `
+r := start(simple_fn)
+r.wait()
+r.abort()
+out = r.result()
+`, Opts().Skip2ndPass().Symbol("simple_fn", simpleFn), 42)
+}
+
+// TestIssue7_NonCompiledCallableNormalReturn verifies that non-compiled
+// callables that return normally (without blocking) still work correctly
+// after the fix.
+func TestIssue7_NonCompiledCallableNormalReturn(t *testing.T) {
+	addFn := &vm.BuiltinFunction{
+		Name: "add_fn",
+		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+			a := args[0].(*vm.Int).Value
+			b := args[1].(*vm.Int).Value
+			return &vm.Int{Value: a + b}, nil
+		},
+	}
+
+	expectRun(t, `
+r := start(add_fn, 10, 32)
+out = r.result()
+`, Opts().Skip2ndPass().Symbol("add_fn", addFn), 42)
+}
+
+// TestIssue7_NonCompiledCallableChannelAbort verifies that a non-compiled
+// callable blocked on a channel operation is unblocked when abort is called,
+// because the context cancellation triggers the channel's ctx.Done() path.
+func TestIssue7_NonCompiledCallableChannelAbort(t *testing.T) {
+	// A BuiltinFunction that tries to receive from a channel (which will
+	// block forever). Abort should cancel its context, causing the recv
+	// to return ErrVMAborted.
+	recvFn := &vm.BuiltinFunction{
+		Name: "recv_fn",
+		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+			ch := make(chan vm.Object)
+			select {
+			case <-ctx.Done():
+				return &vm.String{Value: "aborted"}, nil
+			case <-ch:
+				return &vm.String{Value: "received"}, nil
+			}
+		},
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		expectRun(t, `
+r := start(recv_fn)
+r.abort()
+v := r.result()
+out = v
+`, Opts().Skip2ndPass().Symbol("recv_fn", recvFn), "aborted")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("TestIssue7_NonCompiledCallableChannelAbort: timed out")
 	}
 }
 
