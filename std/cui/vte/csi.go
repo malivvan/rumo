@@ -2,6 +2,7 @@ package vte
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/gdamore/tcell/v3"
@@ -76,11 +77,11 @@ func (vt *VT) csi(csi string, params []int) {
 		resp.WriteString("22")
 		// Response terminator
 		resp.WriteString("c")
-		vt.pty.WriteString(resp.String())
+		io.WriteString(vt.pty, resp.String())
 	case ">c":
 		// Send secondary device attributes.
 		// Report a generic VT220-compatible terminal.
-		vt.pty.WriteString("\x1B[>1;0;0c")
+		io.WriteString(vt.pty, "\x1B[>1;0;0c")
 	case "d":
 		vt.vpa(ps(params))
 	case "e":
@@ -109,24 +110,24 @@ func (vt *VT) csi(csi string, params []int) {
 		switch ps(params) {
 		case 5:
 			// "Ok"
-			vt.pty.WriteString("\x1B[0n")
+			io.WriteString(vt.pty, "\x1B[0n")
 		case 6:
 			// report cursor position
 			// This sequence can be identical to a function key?
 			// CSI r ; c R
 			row, col := vt.reportedCursor()
 			resp := fmt.Sprintf("\x1B[%d;%dR", row+1, col+1)
-			vt.pty.WriteString(resp)
+			io.WriteString(vt.pty, resp)
 		}
 	case "?n":
 		// Send DEC device status report.
 		switch ps(params) {
 		case 5:
-			vt.pty.WriteString("\x1B[?13n")
+			io.WriteString(vt.pty, "\x1B[?13n")
 		case 6:
 			row, col := vt.reportedCursor()
 			resp := fmt.Sprintf("\x1B[?%d;%dR", row+1, col+1)
-			vt.pty.WriteString(resp)
+			io.WriteString(vt.pty, resp)
 		}
 	case "r":
 		vt.decstbm(params)

@@ -10,7 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/creack/pty"
+	localpty "github.com/malivvan/rumo/std/cui/vte/pty"
+
 	"github.com/gdamore/tcell/v3"
 	"github.com/mattn/go-runewidth"
 )
@@ -48,11 +49,11 @@ type VT struct {
 	primaryState cursorState
 	altState     cursorState
 
-	cmd          *exec.Cmd
+	cmd          *localpty.Cmd
 	dirty        bool
 	eventHandler func(tcell.Event)
 	parser       *Parser
-	pty          *os.File
+	pty          io.ReadWriteCloser
 	surface      Surface
 	events       chan tcell.Event
 
@@ -146,13 +147,48 @@ func New() *VT {
 	}
 }
 
+// StartWithPty starts the terminal using an already-opened pty (or any
+// io.ReadWriteCloser). No subprocess is spawned; the caller is responsible
+// for driving the slave side of the pty. StartWithPty returns immediately.
+func (vt *VT) StartWithPty(p io.ReadWriteCloser) error {
+	vt.mu.Lock()
+	w, h := vt.surface.Size()
+	vt.mu.Unlock()
+
+	vt.pty = p
+	vt.cmd = nil
+
+	vt.Resize(w, h)
+	vt.parser = NewParser(vt.pty)
+	go func() {
+		defer vt.recover()
+		for {
+			select {
+			case ev := <-vt.events:
+				vt.eventHandler(ev)
+			default:
+				seq := vt.parser.Next()
+				switch seq := seq.(type) {
+				case EOF:
+					vt.eventHandler(&EventClosed{
+						EventTerminal: newEventTerminal(vt),
+					})
+					return
+				default:
+					vt.update(seq)
+				}
+			}
+		}
+	}()
+	return nil
+}
+
 // Start starts the terminal with the specified command. Start returns when the
 // command has been successfully started.
 func (vt *VT) Start(cmd *exec.Cmd) error {
 	if cmd == nil {
 		return fmt.Errorf("no command to run")
 	}
-	vt.cmd = cmd
 	vt.mu.Lock()
 	w, h := vt.surface.Size()
 	vt.mu.Unlock()
@@ -165,21 +201,30 @@ func (vt *VT) Start(cmd *exec.Cmd) error {
 	if cmd.Env != nil {
 		env = cmd.Env
 	}
-	cmd.Env = append(env, "TERM="+vt.TERM)
 
-	// Start the command with a pty.
-	var err error
-	winsize := pty.Winsize{
-		Cols: uint16(w),
-		Rows: uint16(h),
-	}
-	vt.pty, err = pty.StartWithAttrs(
-		cmd,
-		&winsize,
-		&syscallProcAttr)
+	// Create a new pty.
+	p, err := localpty.New()
 	if err != nil {
 		return err
 	}
+
+	// Create and configure the command attached to the pty.
+	args := cmd.Args
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	c := p.Command(cmd.Path, args...)
+	c.Env = append(env, "TERM="+vt.TERM)
+	c.Dir = cmd.Dir
+
+	// Start the command.
+	if err := c.Start(); err != nil {
+		p.Close()
+		return err
+	}
+
+	vt.pty = p
+	vt.cmd = c
 
 	vt.Resize(w, h)
 	vt.parser = NewParser(vt.pty)
@@ -321,10 +366,9 @@ func (vt *VT) Resize(w int, h int) {
 	}
 
 	if vt.pty != nil {
-		_ = pty.Setsize(vt.pty, &pty.Winsize{
-			Cols: uint16(w),
-			Rows: uint16(h),
-		})
+		if r, ok := vt.pty.(interface{ Resize(int, int) error }); ok {
+			_ = r.Resize(w, h)
+		}
 	}
 }
 
@@ -518,22 +562,22 @@ func (vt *VT) HandleEvent(e tcell.Event) bool {
 	defer vt.mu.Unlock()
 	switch e := e.(type) {
 	case *tcell.EventKey:
-		vt.pty.WriteString(keyCode(e))
+		io.WriteString(vt.pty, keyCode(e))
 		return true
 	case *tcell.EventPaste:
 		switch {
 		case vt.mode&paste == 0:
 			return false
 		case e.Start():
-			vt.pty.WriteString(info.PasteStart)
+			io.WriteString(vt.pty, info.PasteStart)
 			return true
 		case e.End():
-			vt.pty.WriteString(info.PasteEnd)
+			io.WriteString(vt.pty, info.PasteEnd)
 			return true
 		}
 	case *tcell.EventMouse:
 		str := vt.handleMouse(e)
-		vt.pty.WriteString(str)
+		io.WriteString(vt.pty, str)
 	}
 	return false
 }

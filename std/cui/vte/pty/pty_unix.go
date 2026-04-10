@@ -8,7 +8,6 @@ import (
 	"errors"
 	"os"
 
-	"github.com/creack/pty"
 	"golang.org/x/sys/unix"
 )
 
@@ -16,6 +15,7 @@ import (
 // See: https://pubs.opengroup.org/onlinepubs/9699919799/
 type unixPty struct {
 	master, slave *os.File
+	slaveName     string
 	closed        bool
 }
 
@@ -29,7 +29,11 @@ func (p *unixPty) Close() error {
 	defer func() {
 		p.closed = true
 	}()
-	return errors.Join(p.master.Close(), p.slave.Close())
+	var slaveErr error
+	if p.slave != nil {
+		slaveErr = p.slave.Close()
+	}
+	return errors.Join(p.master.Close(), slaveErr)
 }
 
 // Command implements Pty.
@@ -51,7 +55,7 @@ func (p *unixPty) CommandContext(ctx context.Context, name string, args ...strin
 
 // Name implements Pty.
 func (p *unixPty) Name() string {
-	return p.slave.Name()
+	return p.slaveName
 }
 
 // Read implements Pty.
@@ -115,14 +119,3 @@ func (p *unixPty) Fd() uintptr {
 	return p.master.Fd()
 }
 
-func newPty() (UnixPty, error) {
-	master, slave, err := pty.Open()
-	if err != nil {
-		return nil, err
-	}
-
-	return &unixPty{
-		master: master,
-		slave:  slave,
-	}, nil
-}

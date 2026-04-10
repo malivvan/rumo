@@ -5,7 +5,6 @@ go 1.25.8
 require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/ssh v0.0.0-20250826160808-ebfa259c7309
-	github.com/creack/pty v1.1.24
 	github.com/gdamore/tcell/v3 v3.2.0
 	github.com/lucasb-eyer/go-colorful v1.4.0
 	github.com/mattn/go-runewidth v0.0.23
@@ -25,6 +24,7 @@ require (
 	github.com/charmbracelet/x/errors v0.0.0-20240508181413-e8d8b6e2de86 // indirect
 	github.com/charmbracelet/x/termios v0.1.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
+	github.com/creack/pty v1.1.24 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gdamore/encoding v1.0.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

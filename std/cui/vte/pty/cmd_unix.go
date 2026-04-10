@@ -48,6 +48,13 @@ func (c *Cmd) start() error {
 		return err
 	}
 
+	// Close the slave in the parent process so the master gets EOF
+	// when the child process exits.
+	if pty.slave != nil {
+		pty.slave.Close()
+		pty.slave = nil
+	}
+
 	c.Process = cmd.Process
 	return nil
 }

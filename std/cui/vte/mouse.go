@@ -2,6 +2,7 @@ package vte
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/gdamore/tcell/v3"
 )
@@ -12,14 +13,14 @@ func (vt *VT) handleMouse(ev *tcell.EventMouse) string {
 			// Translate wheel motion into arrows up and down
 			// 3x rows
 			if ev.Buttons()&tcell.WheelUp != 0 {
-				vt.pty.WriteString(info.KeyUp)
-				vt.pty.WriteString(info.KeyUp)
-				vt.pty.WriteString(info.KeyUp)
+				io.WriteString(vt.pty, info.KeyUp)
+				io.WriteString(vt.pty, info.KeyUp)
+				io.WriteString(vt.pty, info.KeyUp)
 			}
 			if ev.Buttons()&tcell.WheelDown != 0 {
-				vt.pty.WriteString(info.KeyDown)
-				vt.pty.WriteString(info.KeyDown)
-				vt.pty.WriteString(info.KeyDown)
+				io.WriteString(vt.pty, info.KeyDown)
+				io.WriteString(vt.pty, info.KeyDown)
+				io.WriteString(vt.pty, info.KeyDown)
 			}
 		}
 		return ""

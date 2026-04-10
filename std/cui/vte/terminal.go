@@ -1,6 +1,7 @@
 package vte
 
 import (
+	"io"
 	"os/exec"
 	"sync"
 
@@ -14,6 +15,7 @@ type Terminal struct {
 	term          *VT
 	running       bool
 	cmd           *exec.Cmd
+	pty           io.ReadWriteCloser
 	app           *cui.App
 	w             int
 	h             int
@@ -28,6 +30,19 @@ func NewTerminal(app *cui.App, cmd *exec.Cmd) *Terminal {
 		term: New(),
 		app:  app,
 		cmd:  cmd,
+	}
+	return t
+}
+
+// NewTerminalFromPty creates a Terminal widget driven by a pre-opened pty (or
+// any io.ReadWriteCloser). No subprocess is spawned; the caller is responsible
+// for driving the slave side.
+func NewTerminalFromPty(app *cui.App, p io.ReadWriteCloser) *Terminal {
+	t := &Terminal{
+		Box:  cui.NewBox(),
+		term: New(),
+		app:  app,
+		pty:  p,
 	}
 	return t
 }
@@ -50,7 +65,12 @@ func (t *Terminal) Draw(s tcell.Screen) {
 	}
 
 	if !t.running {
-		err := t.term.Start(t.cmd)
+		var err error
+		if t.cmd != nil {
+			err = t.term.Start(t.cmd)
+		} else if t.pty != nil {
+			err = t.term.StartWithPty(t.pty)
+		}
 		if err != nil {
 			panic(err)
 		}
