@@ -16,9 +16,19 @@ import (
 )
 
 // Decode parses the JSON-encoded data and returns the result object.
-func Decode(data []byte) (vm.Object, error) {
+func Decode(data []byte) (ret vm.Object, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if s, ok := r.(string); ok {
+				ret, err = nil, &SyntaxError{msg: s}
+			} else {
+				panic(r) // re-panic for unexpected types
+			}
+		}
+	}()
+
 	var d decodeState
-	err := checkValid(data, &d.scan)
+	err = checkValid(data, &d.scan)
 	if err != nil {
 		return nil, err
 	}
