@@ -6,14 +6,21 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/malivvan/rumo"
 )
 
 func main() {
-	fmt.Println(rumo.AllModuleNames())
-	os.Exit(run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(execute(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
+
+func execute(args []string, in io.Reader, out, errOut io.Writer) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return run(ctx, args, in, out, errOut)
 }
 
 func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
