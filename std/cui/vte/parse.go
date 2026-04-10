@@ -20,7 +20,7 @@ const eof rune = -1
 // few modifications.
 //
 // Many of the comments are directly from Paul Flo Williams description of
-// the parser, licensed undo [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)
+// the parser, licensed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/)
 type Parser struct {
 	r            *bufio.Reader
 	sequences    chan Sequence
@@ -394,6 +394,25 @@ func anywhere(r rune, p *Parser) stateFn {
 		p.runExit()
 		p.clear()
 		return escape
+	// 8-bit C1 control codes
+	case is(r, 0x90): // DCS
+		p.runExit()
+		p.clear()
+		return dcsEntry
+	case is(r, 0x9B): // CSI
+		p.runExit()
+		p.clear()
+		return csiEntry
+	case is(r, 0x9D): // OSC
+		p.runExit()
+		p.oscStart()
+		return oscString
+	case is(r, 0x9C): // ST
+		p.runExit()
+		return ground
+	case in(r, 0x80, 0x8F), in(r, 0x91, 0x9A), is(r, 0x9E, 0x9F):
+		// Other C1 codes: treat as ignored
+		return p.state(r, p)
 	default:
 		return p.state(r, p)
 	}
@@ -439,7 +458,7 @@ func csiEntry(r rune, p *Parser) stateFn {
 		return ground
 	default:
 		// Return to ground on unexpected characters
-		p.emit(fmt.Errorf("unexpected characted: %c", r))
+		p.emit(fmt.Errorf("unexpected character: %c", r))
 		return ground
 	}
 }
@@ -473,7 +492,7 @@ func csiParam(r rune, p *Parser) stateFn {
 		return csiIgnore
 	default:
 		// Return to ground on unexpected characters
-		p.emit(fmt.Errorf("unexpected characted: %c", r))
+		p.emit(fmt.Errorf("unexpected character: %c", r))
 		return ground
 	}
 }
@@ -516,8 +535,6 @@ func csiIgnore(r rune, p *Parser) stateFn {
 // state.
 func csiIntermediate(r rune, p *Parser) stateFn {
 	switch {
-	case r == eof:
-		return nil
 	case in(r, 0x00, 0x17), is(r, 0x19), in(r, 0x1C, 0x1F):
 		p.execute(r)
 		return csiIntermediate
@@ -534,7 +551,7 @@ func csiIntermediate(r rune, p *Parser) stateFn {
 		return ground
 	default:
 		// Return to ground on unexpected characters
-		p.emit(fmt.Errorf("unexpected characted: %c", r))
+		p.emit(fmt.Errorf("unexpected character: %c", r))
 		return ground
 	}
 }
@@ -599,7 +616,7 @@ func dcsIntermediate(r rune, p *Parser) stateFn {
 		return dcsPassthrough
 	default:
 		// Return to ground on unexpected characters
-		p.emit(fmt.Errorf("unexpected characted: %c", r))
+		p.emit(fmt.Errorf("unexpected character: %c", r))
 		return ground
 	}
 }
@@ -630,7 +647,7 @@ func dcsParam(r rune, p *Parser) stateFn {
 		return dcsPassthrough
 	default:
 		// Return to ground on unexpected characters
-		p.emit(fmt.Errorf("unexpected characted: %c", r))
+		p.emit(fmt.Errorf("unexpected character: %c", r))
 		return ground
 	}
 }
@@ -677,7 +694,6 @@ func dcsIgnore(r rune, p *Parser) stateFn {
 // last soft character in a DECDLD string can be completed when there is no
 // other means of knowing that its definition has ended, for example.
 func dcsPassthrough(r rune, p *Parser) stateFn {
-	p.setExit(p.unhook)
 	switch {
 	case in(r, 0x00, 0x17), is(r, 0x19), in(r, 0x1C, 0x1F):
 		p.put(r)

@@ -884,3 +884,55 @@ func TestOSC(t *testing.T) {
 		})
 	}
 }
+
+// VTE-025: 8-bit C1 code 0x9B should enter CSI state (same as ESC [).
+func TestC1_CSI_8bit(t *testing.T) {
+	// 0x9B followed by 'H' is CSI H (cursor home)
+	input := string([]byte{0x9B}) + "H"
+	r := strings.NewReader(input)
+	parse := NewParser(r)
+	seq := parse.Next()
+	csi, ok := seq.(CSI)
+	assert.True(t, ok, "expected CSI sequence from 8-bit C1 0x9B")
+	assert.Equal(t, 'H', csi.Final)
+}
+
+// VTE-025: 8-bit C1 code 0x9D should enter OSC state (same as ESC ]).
+func TestC1_OSC_8bit(t *testing.T) {
+	// 0x9D followed by OSC data terminated by BEL
+	input := string([]byte{0x9D}) + "2;title\a"
+	r := strings.NewReader(input)
+	parse := NewParser(r)
+	seq := parse.Next()
+	osc, ok := seq.(OSC)
+	assert.True(t, ok, "expected OSC sequence from 8-bit C1 0x9D")
+	assert.Equal(t, "2;title", string(osc.Payload))
+}
+
+// VTE-017: DCS passthrough should not redundantly set exit on every character.
+// Verify that hook sets the exit function and passthrough data is received correctly.
+func TestDCS_Passthrough(t *testing.T) {
+	// DCS q (final char) followed by data "abc" then ST (ESC \)
+	input := "\x1BPq" + "abc" + "\x1B\\"
+	r := strings.NewReader(input)
+	parse := NewParser(r)
+
+	// First should be the DCS hook
+	seq := parse.Next()
+	dcs, ok := seq.(DCS)
+	assert.True(t, ok, "expected DCS sequence")
+	assert.Equal(t, 'q', dcs.Final)
+
+	// Then the passthrough data
+	for _, expected := range []rune{'a', 'b', 'c'} {
+		seq = parse.Next()
+		data, ok := seq.(DCSData)
+		assert.True(t, ok, "expected DCSData")
+		assert.Equal(t, expected, rune(data))
+	}
+
+	// Then end of data
+	seq = parse.Next()
+	_, ok = seq.(DCSEndOfData)
+	assert.True(t, ok, "expected DCSEndOfData")
+}

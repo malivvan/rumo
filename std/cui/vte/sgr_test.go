@@ -97,3 +97,18 @@ func TestSGR(t *testing.T) {
 		})
 	}
 }
+
+// VTE-023: SGR 6 (Rapid Blink) should enable blink attribute.
+func TestSGR_RapidBlink(t *testing.T) {
+	vt := New()
+	vt.sgr([]int{6})
+	assert.Equal(t, tcell.StyleDefault.Blink(true), vt.cursor.attrs)
+}
+
+// VTE-024: SGR 26 should disable rapid blink (blink attribute).
+func TestSGR_RapidBlinkOff(t *testing.T) {
+	vt := New()
+	vt.sgr([]int{6})
+	vt.sgr([]int{26})
+	assert.Equal(t, tcell.StyleDefault, vt.cursor.attrs)
+}

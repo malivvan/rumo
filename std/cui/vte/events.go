@@ -1,8 +1,9 @@
 package vte
 
 import (
-	"github.com/gdamore/tcell/v3"
 	"time"
+
+	"github.com/gdamore/tcell/v3"
 )
 
 // EventTerminal is a generic terminal event
@@ -65,4 +66,19 @@ type EventBell struct {
 type EventPanic struct {
 	*EventTerminal
 	Error error
+}
+
+// EventClipboard is emitted when an OSC 52 clipboard sequence is received
+type EventClipboard struct {
+	*EventTerminal
+	selection string
+	data      string
+}
+
+func (ev *EventClipboard) Selection() string {
+	return ev.selection
+}
+
+func (ev *EventClipboard) Data() string {
+	return ev.data
 }

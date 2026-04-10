@@ -1,5 +1,7 @@
 package vte
 
+import "github.com/gdamore/tcell/v3"
+
 func (vt *VT) esc(esc string) {
 	switch esc {
 	case "7":
@@ -42,10 +44,32 @@ func (vt *VT) esc(esc string) {
 		vt.charsets.designations[g2] = ascii
 	case "+B":
 		vt.charsets.designations[g3] = ascii
+	case "#3":
+		// DECDHL - Double-Height Line (Top Half) - not supported
+	case "#4":
+		// DECDHL - Double-Height Line (Bottom Half) - not supported
+	case "#5":
+		// DECSWL - Single-Width Line - not supported (default behavior)
+	case "#6":
+		// DECDWL - Double-Width Line - not supported
 	case "#8":
-		// DECALN
-		// Fill the screen with capital Es
-		// Not supported
+		// DECALN - Fill the screen with capital Es
+		for r := row(0); r < row(vt.height()); r++ {
+			for c := column(0); c < column(vt.width()); c++ {
+				vt.activeScreen[r][c].content = 'E'
+				vt.activeScreen[r][c].width = 1
+				vt.activeScreen[r][c].attrs = tcell.StyleDefault
+				vt.activeScreen[r][c].combining = nil
+				vt.activeScreen[r][c].wrapped = false
+			}
+		}
+		// Reset margins and cursor per spec
+		vt.margin.top = 0
+		vt.margin.bottom = row(vt.height()) - 1
+		vt.margin.left = 0
+		vt.margin.right = column(vt.width()) - 1
+		vt.cursor.row = 0
+		vt.cursor.col = 0
 	}
 }
 
@@ -73,7 +97,22 @@ func (vt *VT) nel() {
 
 // Horizontal tab set ESC-H
 func (vt *VT) hts() {
-	vt.tabStop = append(vt.tabStop, vt.cursor.col)
+	col := vt.cursor.col
+	// Find sorted insertion point
+	i := 0
+	for i < len(vt.tabStop) {
+		if vt.tabStop[i] == col {
+			return // already exists
+		}
+		if vt.tabStop[i] > col {
+			break
+		}
+		i++
+	}
+	// Insert at position i
+	vt.tabStop = append(vt.tabStop, 0)
+	copy(vt.tabStop[i+1:], vt.tabStop[i:])
+	vt.tabStop[i] = col
 }
 
 // Reverse Index ESC-M

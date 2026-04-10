@@ -24,6 +24,9 @@ func (c *cell) rune() rune {
 func (c *cell) erase(s tcell.Style) {
 	bg := s.GetBackground()
 	c.content = 0
+	c.combining = nil
+	c.width = 0
+	c.wrapped = false
 	c.attrs = tcell.StyleDefault.Background(bg)
 }
 

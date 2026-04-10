@@ -439,15 +439,15 @@ var info = &terminfo{
 	KeyShfPgUp:              "\x1b[5;2~", // kPRV
 	KeyShfPgDn:              "\x1b[6;2~", // kNXT
 	KeyCtrlUp:               "\x1b[1;5A", // ctrl-up
-	KeyCtrlDown:             "\x1b[1;5B", // ctrl-left
+	KeyCtrlDown:             "\x1b[1;5B", // ctrl-down
 	KeyCtrlRight:            "\x1b[1;5C", // ctrl-right
 	KeyCtrlLeft:             "\x1b[1;5D", // ctrl-left
 	KeyMetaUp:               "\x1b[1;9A", // meta-up
-	KeyMetaDown:             "\x1b[1;9B", // meta-left
+	KeyMetaDown:             "\x1b[1;9B", // meta-down
 	KeyMetaRight:            "\x1b[1;9C", // meta-right
 	KeyMetaLeft:             "\x1b[1;9D", // meta-left
 	KeyAltUp:                "\x1b[1;3A", // alt-up
-	KeyAltDown:              "\x1b[1;3B", // alt-left
+	KeyAltDown:              "\x1b[1;3B", // alt-down
 	KeyAltRight:             "\x1b[1;3C", // alt-right
 	KeyAltLeft:              "\x1b[1;3D", // alt-left
 	KeyCtrlHome:             "\x1b[1;5H",
@@ -462,8 +462,8 @@ var info = &terminfo{
 	KeyAltShfLeft:           "\x1b[1;4D",
 	KeyMetaShfUp:            "\x1b[1;10A",
 	KeyMetaShfDown:          "\x1b[1;10B",
-	KeyMetaShfLeft:          "\x1b[1;10C",
-	KeyMetaShfRight:         "\x1b[1;10D",
+	KeyMetaShfLeft:          "\x1b[1;10D",
+	KeyMetaShfRight:         "\x1b[1;10C",
 	KeyCtrlShfUp:            "\x1b[1;6A",
 	KeyCtrlShfDown:          "\x1b[1;6B",
 	KeyCtrlShfRight:         "\x1b[1;6C",

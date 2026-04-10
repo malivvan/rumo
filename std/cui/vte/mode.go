@@ -123,6 +123,7 @@ func (vt *VT) decset(params []int) {
 		case 4:
 			vt.mode |= decsclm
 		case 5:
+			// DECSCNM (Reverse Video) - recognized but not yet implemented
 		case 6:
 			vt.mode |= decom
 			vt.homeCursor()
@@ -167,6 +168,7 @@ func (vt *VT) decrst(params []int) {
 		case 4:
 			vt.mode &^= decsclm
 		case 5:
+			// DECSCNM (Reverse Video) - recognized but not yet implemented
 		case 6:
 			vt.mode &^= decom
 			vt.homeCursor()

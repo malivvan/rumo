@@ -20,6 +20,8 @@ func (vt *VT) sgr(params []int) {
 			vt.cursor.attrs = vt.cursor.attrs.Underline(true)
 		case 5:
 			vt.cursor.attrs = vt.cursor.attrs.Blink(true)
+		case 6:
+			vt.cursor.attrs = vt.cursor.attrs.Blink(true)
 		case 7:
 			vt.cursor.attrs = vt.cursor.attrs.Reverse(true)
 		case 8:
@@ -35,6 +37,8 @@ func (vt *VT) sgr(params []int) {
 		case 24:
 			vt.cursor.attrs = vt.cursor.attrs.Underline(false)
 		case 25:
+			vt.cursor.attrs = vt.cursor.attrs.Blink(false)
+		case 26:
 			vt.cursor.attrs = vt.cursor.attrs.Blink(false)
 		case 27:
 			vt.cursor.attrs = vt.cursor.attrs.Reverse(false)

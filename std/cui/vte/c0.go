@@ -21,7 +21,7 @@ func (vt *VT) c0(r rune) {
 	case 0x0E:
 		vt.charsets.selected = g1
 	case 0x0F:
-		vt.charsets.selected = g2
+		vt.charsets.selected = g0
 	}
 }
 
@@ -32,7 +32,10 @@ func (vt *VT) bs() {
 		if vt.cursor.row == vt.margin.top {
 			return
 		}
-		// reverse wrap
+		// reverse wrap only when DECAWM is set
+		if vt.mode&decawm == 0 {
+			return
+		}
 		vt.cursor.col = vt.margin.right
 		vt.cursor.row -= 1
 		return
@@ -45,7 +48,7 @@ func (vt *VT) ht() {
 	vt.cht(1)
 }
 
-// Linefeed 0x10
+// Linefeed 0x0A
 func (vt *VT) lf() {
 	vt.ind()
 
@@ -55,17 +58,17 @@ func (vt *VT) lf() {
 	vt.cursor.col = vt.margin.left
 }
 
-// Vertical tabulation 0x11
+// Vertical tabulation 0x0B
 func (vt *VT) vt() {
 	vt.lf()
 }
 
-// Form feed 0x12
+// Form feed 0x0C
 func (vt *VT) ff() {
 	vt.lf()
 }
 
-// Carriage return 0x13
+// Carriage return 0x0D
 func (vt *VT) cr() {
 	vt.lastCol = false
 	vt.cursor.col = vt.margin.left

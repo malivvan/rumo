@@ -280,6 +280,8 @@ func (vt *VT) Cursor() (int, int, tcell.CursorStyle, bool) {
 }
 
 func (vt *VT) Resize(w int, h int) {
+	vt.mu.Lock()
+	defer vt.mu.Unlock()
 	primary := vt.primaryScreen
 	vt.altScreen = make([][]cell, h)
 	vt.primaryScreen = make([][]cell, h)
@@ -318,10 +320,12 @@ func (vt *VT) Resize(w int, h int) {
 		vt.activeScreen = vt.altScreen
 	}
 
-	_ = pty.Setsize(vt.pty, &pty.Winsize{
-		Cols: uint16(w),
-		Rows: uint16(h),
-	})
+	if vt.pty != nil {
+		_ = pty.Setsize(vt.pty, &pty.Winsize{
+			Cols: uint16(w),
+			Rows: uint16(h),
+		})
+	}
 }
 
 func (vt *VT) width() int {
@@ -424,7 +428,9 @@ func (vt *VT) scrollUp(n int) {
 			}
 			continue
 		}
-		copy(vt.activeScreen[row], vt.activeScreen[row+n])
+		for col := vt.margin.left; col <= vt.margin.right; col += 1 {
+			vt.activeScreen[row][col] = vt.activeScreen[row+n][col]
+		}
 	}
 }
 
@@ -437,7 +443,9 @@ func (vt *VT) scrollDown(n int) {
 			}
 			continue
 		}
-		copy(vt.activeScreen[r], vt.activeScreen[r-row(n)])
+		for col := vt.margin.left; col <= vt.margin.right; col += 1 {
+			vt.activeScreen[r][col] = vt.activeScreen[r-row(n)][col]
+		}
 	}
 }
 
@@ -448,7 +456,9 @@ func (vt *VT) Close() {
 		vt.cmd.Process.Kill()
 		vt.cmd.Wait()
 	}
-	vt.pty.Close()
+	if vt.pty != nil {
+		vt.pty.Close()
+	}
 }
 
 func (vt *VT) Attach(fn func(ev tcell.Event)) {

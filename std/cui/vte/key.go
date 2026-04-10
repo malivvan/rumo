@@ -99,23 +99,23 @@ func keyCode(ev *tcell.EventKey) string {
 		case tcell.KeyF3:
 			key.WriteString(info.KeyF51)
 		case tcell.KeyF4:
-			key.WriteString(info.KeyF53)
+			key.WriteString(info.KeyF52)
 		case tcell.KeyF5:
-			key.WriteString(info.KeyF54)
+			key.WriteString(info.KeyF53)
 		case tcell.KeyF6:
-			key.WriteString(info.KeyF55)
+			key.WriteString(info.KeyF54)
 		case tcell.KeyF7:
-			key.WriteString(info.KeyF56)
+			key.WriteString(info.KeyF55)
 		case tcell.KeyF8:
-			key.WriteString(info.KeyF57)
+			key.WriteString(info.KeyF56)
 		case tcell.KeyF9:
-			key.WriteString(info.KeyF58)
+			key.WriteString(info.KeyF57)
 		case tcell.KeyF10:
-			key.WriteString(info.KeyF59)
+			key.WriteString(info.KeyF58)
 		case tcell.KeyF11:
-			key.WriteString(info.KeyF60)
+			key.WriteString(info.KeyF59)
 		case tcell.KeyF12:
-			key.WriteString(info.KeyF61)
+			key.WriteString(info.KeyF60)
 		}
 	case tcell.ModCtrl:
 		switch ev.Key() {
@@ -243,6 +243,22 @@ func keyCode(ev *tcell.EventKey) string {
 			key.WriteString(info.KeyF63)
 		case tcell.KeyF4:
 			key.WriteString(info.KeyF64)
+		case tcell.KeyF5:
+			key.WriteString("\x1b[15;4~")
+		case tcell.KeyF6:
+			key.WriteString("\x1b[17;4~")
+		case tcell.KeyF7:
+			key.WriteString("\x1b[18;4~")
+		case tcell.KeyF8:
+			key.WriteString("\x1b[19;4~")
+		case tcell.KeyF9:
+			key.WriteString("\x1b[20;4~")
+		case tcell.KeyF10:
+			key.WriteString("\x1b[21;4~")
+		case tcell.KeyF11:
+			key.WriteString("\x1b[23;4~")
+		case tcell.KeyF12:
+			key.WriteString("\x1b[24;4~")
 		}
 	case tcell.ModAlt | tcell.ModCtrl:
 		switch ev.Key() {

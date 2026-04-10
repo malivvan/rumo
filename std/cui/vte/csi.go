@@ -72,8 +72,6 @@ func (vt *VT) csi(csi string, params []int) {
 		resp.WriteString("\x1B[?")
 		// We are a vt220
 		resp.WriteString("62;")
-		// We have sixel support
-		resp.WriteString("4;")
 		// We have ANSI color support
 		resp.WriteString("22")
 		// Response terminator
@@ -98,6 +96,10 @@ func (vt *VT) csi(csi string, params []int) {
 		vt.decset(params)
 	case "l":
 		vt.rm(params)
+	case "?J":
+		vt.decsed(ps(params))
+	case "?K":
+		vt.decsel(ps(params))
 	case "?l":
 		vt.decrst(params)
 	case "m":
@@ -133,7 +135,6 @@ func (vt *VT) csi(csi string, params []int) {
 	case "u":
 		vt.decrc()
 	case " q":
-		ps(params)
 		vt.cursor.style = tcell.CursorStyle(ps(params))
 	}
 }
@@ -256,7 +257,7 @@ func (vt *VT) cnl(ps int) {
 }
 
 // Cursor Preceding Line (CPL) CSI Ps F
-// Move cursor to left margin Ps lines down, scrolling if necessary
+// Move cursor to left margin Ps lines up, scrolling if necessary
 func (vt *VT) cpl(ps int) {
 	vt.lastCol = false
 	if ps == 0 {
@@ -331,7 +332,7 @@ func (vt *VT) cht(ps int) {
 		if n == ps {
 			break
 		}
-		if vt.cursor.col > ts {
+		if vt.cursor.col >= ts {
 			continue
 		}
 		vt.cursor.col = ts
@@ -536,7 +537,7 @@ func (vt *VT) ech(ps int) {
 	}
 
 	for i := column(0); i < column(ps); i += 1 {
-		if vt.cursor.col+i == column(vt.width())-1 {
+		if vt.cursor.col+i >= column(vt.width()) {
 			return
 		}
 		vt.activeScreen[vt.cursor.row][vt.cursor.col+i].erase(vt.cursor.attrs)
@@ -556,8 +557,8 @@ func (vt *VT) cbt(ps int) {
 		if n == ps {
 			break
 		}
-		if vt.cursor.col < vt.tabStop[i] {
-			break
+		if vt.cursor.col <= vt.tabStop[i] {
+			continue
 		}
 		vt.cursor.col = vt.tabStop[i]
 		n += 1
@@ -648,10 +649,16 @@ func (vt *VT) rep(ps int) {
 	}
 	ch := vt.activeScreen[vt.cursor.row][col-1]
 	for i := 0; i < ps; i += 1 {
-		if col+column(i) == vt.margin.right {
-			return
+		if vt.cursor.col > vt.margin.right {
+			break
 		}
-		vt.activeScreen[vt.cursor.row][vt.cursor.col+column(i)].content = ch.content
+		vt.activeScreen[vt.cursor.row][vt.cursor.col].content = ch.content
+		vt.activeScreen[vt.cursor.row][vt.cursor.col].attrs = ch.attrs
+		vt.activeScreen[vt.cursor.row][vt.cursor.col].width = ch.width
+		vt.cursor.col += 1
+	}
+	if vt.cursor.col > vt.margin.right {
+		vt.cursor.col = vt.margin.right
 	}
 }
 
@@ -681,4 +688,69 @@ func (vt *VT) decstbm(pm []int) {
 	vt.margin.top = row(top - 1)
 	vt.margin.bottom = row(bottom - 1)
 	vt.homeCursor()
+}
+
+// Selective Erase in Display (DECSED) CSI ? Ps J
+//
+// Erases characters in the display that do NOT have the protected attribute set
+// (DECSCA). This is the selective variant of ED (CSI Ps J).
+// Ps=0: from cursor to end of screen
+// Ps=1: from beginning of screen to cursor
+// Ps=2: entire display
+func (vt *VT) decsed(ps int) {
+	switch ps {
+	case 0:
+		vt.lastCol = false
+		for r := vt.cursor.row; r < row(vt.height()); r += 1 {
+			for col := column(0); col < column(vt.width()); col += 1 {
+				if r == vt.cursor.row && col < vt.cursor.col {
+					continue
+				}
+				vt.activeScreen[r][col].selectiveErase()
+			}
+		}
+	case 1:
+		vt.lastCol = false
+		for r := row(0); r <= vt.cursor.row; r += 1 {
+			for col := column(0); col < column(vt.width()); col += 1 {
+				if r == vt.cursor.row && col > vt.cursor.col {
+					break
+				}
+				vt.activeScreen[r][col].selectiveErase()
+			}
+		}
+	case 2:
+		vt.lastCol = false
+		for r := row(0); r < row(vt.height()); r += 1 {
+			for col := column(0); col < column(vt.width()); col += 1 {
+				vt.activeScreen[r][col].selectiveErase()
+			}
+		}
+	}
+}
+
+// Selective Erase in Line (DECSEL) CSI ? Ps K
+//
+// Erases characters on the current line that do NOT have the protected attribute
+// set (DECSCA). This is the selective variant of EL (CSI Ps K).
+// Ps=0: from cursor to end of line
+// Ps=1: from beginning of line to cursor
+// Ps=2: entire line
+func (vt *VT) decsel(ps int) {
+	r := vt.cursor.row
+	vt.lastCol = false
+	switch ps {
+	case 0:
+		for col := vt.cursor.col; col < column(vt.width()); col += 1 {
+			vt.activeScreen[r][col].selectiveErase()
+		}
+	case 1:
+		for col := column(0); col <= vt.cursor.col; col += 1 {
+			vt.activeScreen[r][col].selectiveErase()
+		}
+	case 2:
+		for col := column(0); col < column(vt.width()); col += 1 {
+			vt.activeScreen[r][col].selectiveErase()
+		}
+	}
 }
