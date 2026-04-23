@@ -1,5 +1,5 @@
 ---
-title: interoperability
+title: interop
 ---
 
 
@@ -127,15 +127,15 @@ converts Go values into rumo values based on the following conversion table.
 |`time.Time`| `Time`          ||
 |`error`| `Error{String}` |use `error.Error()` as String value|
 |`map[string]Object`| `Map`           ||
-|`map[string]interface{}`| `Map`           |individual elements converted to VV objects|
+|`map[string]interface{}`| `Map`           |individual elements converted to rumo objects|
 |`[]Object`| `Array`         ||
-|`[]interface{}`| `Array`         |individual elements converted to VV objects|
+|`[]interface{}`| `Array`         |individual elements converted to rumo objects|
 |`Object`| `Object`        |_(no type conversion performed)_|
 
 ### User Types
 
-Users can add and use a custom user type in VV code by implementing
-[Object](https://godoc.org/github.com/malivvan/rumo#Object) interface. VV runtime
+Users can add and use a custom user type in rumo code by implementing
+[Object](https://godoc.org/github.com/malivvan/rumo#Object) interface. rumo runtime
 will treat the user types in the same way it does to the runtime types with no
 performance overhead. See
 [Object Types](objects.md) for
@@ -160,7 +160,7 @@ s.SetImports(std.GetModuleMap("math"))
 s.SetImports(std.GetModuleMap(std.AllModuleNames()...))
 ```
 
-You can also include VV's written module using `objects.SourceModule`
+You can also include rumo's written module using `objects.SourceModule`
 (which implements `objects.Importable`).
 
 ```golang
@@ -227,7 +227,7 @@ for i := 0; i < concurrency; i++ {
 
 ## Compiler and VM
 
-Although it's not recommended, you can directly create and run the VV
+Although it's not recommended, you can directly create and run the rumo
 [Compiler](https://godoc.org/github.com/malivvan/rumo#Compiler), and
 [VM](https://godoc.org/github.com/malivvan/rumo#VM) for yourself instead of using
 Scripts and Script Variables. It's a bit more involved as you have to manage

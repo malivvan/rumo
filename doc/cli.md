@@ -41,7 +41,7 @@ rumo help
 - `rumo version` prints the embedded version string.
 - Running `rumo` with no arguments starts the REPL.
 
-## Compiling and Executing VV Code
+## Compiling and Executing rumo Code
 
 You can directly execute rumo source code:
 

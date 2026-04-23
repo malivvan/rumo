@@ -229,7 +229,7 @@ for more details on these runtime types.
 
 Users can easily extend and add their own types by implementing the same
 [Object](https://godoc.org/github.com/malivvan/rumo#Object) interface and the
-default `ObjectImpl` implementation. VV runtime will treat them in the
+default `ObjectImpl` implementation. rumo runtime will treat them in the
 same way as its runtime types with no performance overhead.
 
 Here's an example user type implementation, `StringArray`:

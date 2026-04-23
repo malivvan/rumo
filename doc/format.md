@@ -1,5 +1,5 @@
 ---
-title: formatting
+title: format
 ---
 
 The format 'verbs' are derived from Go's but are simpler.

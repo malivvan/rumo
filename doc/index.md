@@ -1,14 +1,27 @@
 ---
-title: tutorial
+title: index
 ---
-
 
 rumo's syntax is designed to be familiar to Go developers while being a bit
 simpler and more streamlined.
 
+## std library
+
+- [`cli`](stdlib-cli.md): declarative CLI framework for building command-line applications
+- [`os`](stdlib-os.md): platform-independent interface to operating system functionality.
+- [`text`](stdlib-text.md): regular expressions, string conversion, and manipulation
+- [`math`](stdlib-math.md): mathematical constants and functions
+- [`times`](stdlib-times.md): time-related functions
+- [`rand`](stdlib-rand.md): random functions
+- [`fmt`](stdlib-fmt.md): formatting functions
+- [`json`](stdlib-json.md): JSON functions
+- [`enum`](stdlib-enum.md): enumeration functions
+- [`hex`](stdlib-hex.md): hex encoding and decoding functions
+- [`base64`](stdlib-base64.md): base64 encoding and decoding functions
+
 ## Values and Value Types
 
-In VV, everything is a value, and, all values are associated with a type.
+In rumo, everything is a value, and, all values are associated with a type.
 
 ```golang
 19 + 84               // int values
@@ -268,7 +281,7 @@ a = [1, 2, 3]   // re-assigned 'array'
 
 ## Type Conversions
 
-Although the type is not directly specified in VV, one can use type
+Although the type is not directly specified in rumo, one can use type
 conversion
 [builtin functions](builtins.md)
 to convert between value types.
@@ -295,7 +308,7 @@ for more details on type coercions.
 | `!`   | logical NOT | all types* |
 | `^`   | bitwise complement | int |
 
-_In VV, all values can be either
+_In rumo, all values can be either
 [truthy or falsy](runtime-types.md#objectisfalsy)._
 
 ### Binary Operators
@@ -326,7 +339,7 @@ for more details._
 
 ### Ternary Operators
 
-VV has a ternary conditional operator `(condition expression) ? (true expression) : (false expression)`.
+rumo has a ternary conditional operator `(condition expression) ? (true expression) : (false expression)`.
 
 ```golang
 a := true ? 1 : -1    // a == 1
@@ -469,7 +482,7 @@ for {
 
 ### For-In Statement
 
-"For-In" statement is new in VV. It's similar to Go's `for range` statement.
+"For-In" statement is new in rumo. It's similar to Go's `for range` statement.
 "For-In" statement can iterate any iterable value types (array, map, bytes,
 string, undefined).  
 
@@ -489,7 +502,7 @@ for k, v in {k1: 1, k2: 2} {  // map: key and value
 
 ## Modules
 
-Module is the basic compilation unit in VV. A module can import another
+Module is the basic compilation unit in rumo. A module can import another
 module using `import` expression.
 
 Main module:
@@ -509,7 +522,7 @@ export func(x) {
 }
 ```
 
-In VV, modules are very similar to functions.
+In rumo, modules are very similar to functions.
 
 - `import` expression loads the module code and execute it like a function.
 - Module should return a value using `export` statement.
@@ -533,7 +546,7 @@ a := math.abs(-19.84)  // == 19.84
 
 ## Comments
 
-Like Go, VV supports line comments (`//...`) and block comments
+Like Go, rumo supports line comments (`//...`) and block comments
 (`/* ... */`).
 
 ```golang
@@ -546,7 +559,7 @@ a := 5    // line comments
 
 ## Differences from Go
 
-Unlike Go, VV does not have the following:
+Unlike Go, rumo does not have the following:
 
 - Declarations
 - Imaginary values
