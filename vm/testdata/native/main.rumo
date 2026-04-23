@@ -11,9 +11,9 @@ native libm = "libm.so.6" {
     fabs: func(float) float
 }
 
-fmt.println("sqrt(2)      =", libm.sqrt(2.0))
-fmt.println("pow(2, 10)   =", libm.pow(2.0, 10.0))
-fmt.println("fabs(-3.14)  =", libm.fabs(-3.14))
+fmt.println("sqrt(2)      = ", libm.sqrt(2.0))
+fmt.println("pow(2, 10)   = ", libm.pow(2.0, 10.0))
+fmt.println("fabs(-3.14)  = ", libm.fabs(-3.14))
 
 // Short-form declarations drop the `: func` prefix.
 native libc = "libc.so.6" {
@@ -21,5 +21,5 @@ native libc = "libc.so.6" {
     abs(int) int
 }
 
-fmt.println("strlen(hi!)  =", libc.strlen("hi!"))
-fmt.println("abs(-42)     =", libc.abs(-42))
+fmt.println("strlen(hi!)  = ", libc.strlen("hi!"))
+fmt.println("abs(-42)     = ", libc.abs(-42))
