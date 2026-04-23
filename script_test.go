@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,8 +12,11 @@ import (
 	"github.com/malivvan/rumo"
 
 	"github.com/malivvan/rumo/vm"
+
 	"github.com/malivvan/rumo/vm/require"
 	"github.com/malivvan/rumo/vm/token"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func TestExample(t *testing.T) {
@@ -397,7 +399,7 @@ func TestScriptSourceModule(t *testing.T) {
 				Name: "title",
 				Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 					s, _ := vm.ToString(args[0])
-					return &vm.String{Value: strings.Title(s)}, nil
+					return &vm.String{Value: cases.Title(language.Und).String(s)}, nil
 				}},
 		})
 	scr.SetImports(mods)

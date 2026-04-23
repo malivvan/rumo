@@ -10,6 +10,8 @@ import (
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var Module = module.NewBuiltin().
@@ -38,7 +40,7 @@ var Module = module.NewBuiltin().
 	Func("split_after(s string, sep string) (ret string)																returns a slice of strings split from s by the separator sep, including the separator in the resulting strings", strings.SplitAfter).
 	Func("split_after_n(s string, sep string, n int) (ret string)														returns a slice of strings split from s by the separator sep, including the separator in the resulting strings, with a maximum of n splits", strings.SplitAfterN).
 	Func("split_n(s string, sep string, n int) (ret string)																returns a slice of strings split from s by the separator sep, with a maximum of n splits", strings.SplitN).
-	Func("title(s string) (ret string)																					returns a copy of the string s with all Unicode letters that begin words mapped to their title case", strings.Title).
+	Func("title(s string) (ret string)																					returns a copy of the string s with all Unicode letters that begin words mapped to their title case", textTitle).
 	Func("to_lower(s string) (ret string)																				returns a copy of the string s with all Unicode letters mapped to their lower case", strings.ToLower).
 	Func("to_title(s string) (ret string)																				returns a copy of the string s with all Unicode letters mapped to their title case", strings.ToTitle).
 	Func("to_upper(s string) (ret string)																				returns a copy of the string s with all Unicode letters mapped to their upper case", strings.ToUpper).
@@ -60,6 +62,15 @@ var Module = module.NewBuiltin().
 	Func("parse_int(str string, base int, bits int) (i int, err error)													returns the integer represented by the string str in the specified base and bit size", textParseInt).
 	Func("quote(str string) (ret string)																				returns a double-quoted Go string literal representing str", strconv.Quote).
 	Func("unquote(str string) (result string, err error)																returns the string represented by the Go string literal str", strconv.Unquote)
+
+// textTitle returns s with all Unicode letters that begin words mapped to their
+// title case, using golang.org/x/text/cases for correct Unicode handling
+// (e.g. the Dutch "ij" digraph).
+var titleCaser = cases.Title(language.Und)
+
+func textTitle(s string) string {
+	return titleCaser.String(s)
+}
 
 func textREMatch(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 	if len(args) != 2 {
