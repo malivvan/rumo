@@ -203,7 +203,12 @@ func (v *VM) RunCompiled(fn *CompiledFunction, args ...Object) (val Object, err 
 		}
 		v.childCtl.Wait() // waits for all child VMs to exit
 		err = v.postRun()
-		if fn != nil && atomic.LoadInt64(&v.aborting) == 0 {
+		// Only extract the return value from the stack when there was no
+		// error.  A stack-overflow (or any other run-time error) can leave
+		// v.sp pointing beyond len(v.stack) — accessing v.stack[v.sp-1] in
+		// that state panics with an index-out-of-range error, masking the
+		// real ErrStackOverflow.
+		if fn != nil && atomic.LoadInt64(&v.aborting) == 0 && v.err == nil {
 			val = v.stack[v.sp-1]
 		}
 		v.releaseSpace()
