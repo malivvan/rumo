@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -43,6 +44,140 @@ func cdRoot() bool {
 		}
 	}
 	return false
+}
+
+// --- Doc generation ---
+
+// regexes to extract the first string arg of Func("...") and Const("...") calls.
+// Note: in chained style the leading dot is on the previous line, so we match
+// Func/Const without requiring a preceding dot.
+var reFuncDef = regexp.MustCompile(`\bFunc\("([^"]+)"`)
+var reConstDef = regexp.MustCompile(`\bConst\("([^"]+)"`)
+
+// regexes to parse a function/const definition string
+var reFuncSig = regexp.MustCompile(`^\s*(\w+)\s*\(([^)]*)\)\s*(?:\(([^)]*)\))?\s*(.*?)\s*$`)
+var reConstSig = regexp.MustCompile(`^\s*(\w+)\s+(\w+)\s*(.*?)\s*$`)
+
+type exportKind int
+
+const (
+	kindFunc  exportKind = iota
+	kindConst exportKind = iota
+)
+
+type exportDoc struct {
+	kind    exportKind
+	name    string
+	params  string // functions: raw param string, e.g. "b bytes, n int"
+	ret     string // functions: return type string, e.g. "string"
+	comment string
+}
+
+// extractReturnType picks the type from an output spec like "s string" or "time".
+func extractReturnType(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	parts := strings.Fields(s)
+	return parts[len(parts)-1]
+}
+
+func parseFuncDef(def string) exportDoc {
+	m := reFuncSig.FindStringSubmatch(strings.TrimSpace(def))
+	if m == nil {
+		return exportDoc{kind: kindFunc, name: def}
+	}
+	return exportDoc{
+		kind:    kindFunc,
+		name:    m[1],
+		params:  strings.TrimSpace(m[2]),
+		ret:     extractReturnType(m[3]),
+		comment: strings.TrimSpace(m[4]),
+	}
+}
+
+func parseConstDef(def string) exportDoc {
+	m := reConstSig.FindStringSubmatch(strings.TrimSpace(def))
+	if m == nil {
+		return exportDoc{kind: kindConst, name: def}
+	}
+	return exportDoc{
+		kind:    kindConst,
+		name:    m[1],
+		comment: strings.TrimSpace(m[3]),
+	}
+}
+
+// extractModuleDocs scans all non-test .go files under ./std/<modName>/
+// and returns exportDocs in source order.
+func extractModuleDocs(modName string) []exportDoc {
+	var docs []exportDoc
+	files, err := filepath.Glob(filepath.Join("./std", modName, "*.go"))
+	if err != nil {
+		return nil
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if m := reFuncDef.FindStringSubmatch(line); m != nil {
+				docs = append(docs, parseFuncDef(m[1]))
+			} else if m := reConstDef.FindStringSubmatch(line); m != nil {
+				docs = append(docs, parseConstDef(m[1]))
+			}
+		}
+	}
+	return docs
+}
+
+// generateModuleDoc produces the markdown content for a single module.
+func generateModuleDoc(name string, docs []exportDoc) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("---\ntitle: Standard Library - %s\n---\n\n", name))
+	sb.WriteString(fmt.Sprintf("## Import\n\n```golang\n%s := import(\"%s\")\n```\n", name, name))
+
+	var consts, funcs []exportDoc
+	for _, d := range docs {
+		if d.kind == kindConst {
+			consts = append(consts, d)
+		} else {
+			funcs = append(funcs, d)
+		}
+	}
+
+	if len(consts) > 0 {
+		sb.WriteString("\n## Constants\n\n")
+		for _, c := range consts {
+			if c.comment != "" {
+				sb.WriteString(fmt.Sprintf("- `%s`: %s\n", c.name, c.comment))
+			} else {
+				sb.WriteString(fmt.Sprintf("- `%s`\n", c.name))
+			}
+		}
+	}
+
+	if len(funcs) > 0 {
+		sb.WriteString("\n## Functions\n\n")
+		for _, f := range funcs {
+			sig := fmt.Sprintf("%s(%s)", f.name, f.params)
+			if f.ret != "" {
+				sig += fmt.Sprintf(" => %s", f.ret)
+			}
+			if f.comment != "" {
+				sb.WriteString(fmt.Sprintf("- `%s`: %s\n", sig, f.comment))
+			} else {
+				sb.WriteString(fmt.Sprintf("- `%s`\n", sig))
+			}
+		}
+	}
+
+	return sb.String()
 }
 
 func main() {
@@ -160,4 +295,14 @@ func GetExportMap(names ...string) map[string]map[string]*module.Export {
 	}
 	println("generated " + target + " (" + strconv.Itoa(len(out.Bytes())) + ")")
 
+	// Generate doc/std-*.md for each builtin module
+	for _, name := range builtins {
+		docs := extractModuleDocs(name)
+		docContent := generateModuleDoc(name, docs)
+		docPath := filepath.Join("./doc", "std-"+name+".md")
+		if err := os.WriteFile(docPath, []byte(docContent), 0644); err != nil {
+			log.Fatal(err)
+		}
+		println("generated " + docPath + " (" + strconv.Itoa(len(docContent)) + ")")
+	}
 }
