@@ -155,46 +155,151 @@ have to be string.
 v = string(undefined, "foo")  // v == "foo"
 v = string(undefined, false)  // v == false
 ```
+## byte
+Tries to convert an object to byte object. See [this](types.md) for more details on type conversion.
 
+```golang
+v := byte("123") //  v == 123
+```
+
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to byte. Note that the second argument does not have
+to be byte.
+
+```golang
+v = byte(undefined, 10)    // v == 10
+v = byte(undefined, false) // v == false
+```
+
+## int8
+Tries to convert an object to int8 object. See [this](types.md) for more details on type conversion.
+
+```golang
+v := int8("123") //  v == 123
+``` 
+
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to int8. Note that the second argument does not have
+to be int8.
+
+```golang
+v = int8(undefined, 10)    // v == 10
+v = int8(undefined, false) // v == false
+```
+
+## int16
+Tries to convert an object to int16 object. See [this](types.md) for more details on type conversion.
+
+```golang
+v := int16("123") //  v == 123
+``` 
+
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to int16. Note that the second argument does not have to be int16. 
+
+```golang
+v = int16(undefined, 10)    // v == 10
+v = int16(undefined, false) // v == false
+```
+## uint 
+Tries to convert an object to uint object. See [this](types.md) for more details on type conversion.
+
+```golang
+v := uint("123") //  v == 123
+``` 
+
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to uint. Note that the second argument does not have to be uint.
+```golang
+v = uint(undefined, 10)    // v == 10
+v = uint(undefined, false) // v == false
+```
+
+## uint8
+Tries to convert an object to uint8 object. See [this](types.md) for
+more details on type conversion.
+
+```golang
+v := uint8("123") //  v == 123
+``` 
+
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to uint8. Note that the second argument does not have
+to be uint8.
+
+```golang
+v = uint8(undefined, 10)    // v == 10
+v = uint8(undefined, false) // v == false
+```
+
+## uint16
+Tries to convert an object to uint16 object. See [this](types.md) for
+more details on type conversion.
+
+```golang
+v := uint16("123") //  v == 123
+```
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to uint16. Note that the second argument does not have
+to be uint16.
+
+```golang
+v = uint16(undefined, 10)    // v == 10
+v = uint16(undefined, false) // v == false
+```
+    
+## uint64
+Tries to convert an object to uint64 object. See [this](types.md) for
+more details on type conversion.
+
+```golang
+v := uint64("123") //  v == 123
+```
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to uint64. Note that the second argument does not have to be uint64.
+
+```golang
+v = uint64(undefined, 10)    // v == 10
+v = uint64(undefined, false) // v == false
+```
 ## int
-
-Tries to convert an object to int object. See
-[this](runtime-types.md)
-for more details on type conversion.
+Tries to convert an object to int object. See [this](types.md) for more details on type conversion.
 
 ```golang
 v := int("123") //  v == 123
 ```
-
 Optionally it can take the second argument, which will be returned if the first
-argument cannot be converted to int. Note that the second argument does not have
-to be int.
-
+argument cannot be converted to int. Note that the second argument does not have to be int.
 ```golang
 v = int(undefined, 10)    // v == 10
 v = int(undefined, false) // v == false
 ```
 
+## int64
+Tries to convert an object to int64 object. See [this](types.md) for
+more details on type conversion.
+
+```golang
+v := int64("123") //  v == 123
+``` 
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to int64. Note that the second argument does not have
+to be int64.
+
 ## bool
 
-Tries to convert an object to bool object. See
-[this](runtime-types.md) for more
-details on type conversion.
+Tries to convert an object to bool object. See[this](types.md) for more details on type conversion.
 
 ```golang
 v := bool(1) //  v == true
 ```
 
 ## float
-
-Tries to convert an object to float object. See
-[this](runtime-types.md) for more
-details on type conversion.
+Tries to convert an object to float object. See [this](types.md) for more details on type conversion.
 
 ```golang
 v := float("19.84") //  v == 19.84
 ```
-
 Optionally it can take the second argument, which will be returned if the first
 argument cannot be converted to float. Note that the second argument does not
 have to be float.
@@ -204,38 +309,48 @@ v = float(undefined, 19.84)    // v == 19.84
 v = float(undefined, false)    // v == false
 ```
 
-## char
-
-Tries to convert an object to char object. See
-[this](runtime-types.md) for more
-details on type conversion.
+## double
+Tries to convert an object to double object. See [this](types.md) for more details on type conversion.
 
 ```golang
-v := char(89) //  v == 'Y'
+v := double("19.84") //  v == 19.84
 ```
 
 Optionally it can take the second argument, which will be returned if the first
-argument cannot be converted to float. Note that the second argument does not
-have to be float.
+argument cannot be converted to double. Note that the second argument does not
+have to be double.
 
 ```golang
-v = char(undefined, 'X')    // v == 'X'
-v = char(undefined, false)  // v == false
+v = double(undefined, 19.84)    // v == 19.84
+v = double(undefined, false)    // v == false
+```
+
+## rune
+Tries to convert an object to char object. See [this](types.md) for more details on type conversion.
+
+```golang
+v := rune(89) //  v == 'Y'
+```
+
+Optionally it can take the second argument, which will be returned if the first
+argument cannot be converted to rune. Note that the second argument does not
+have to be rune.
+
+```golang
+v = rune(undefined, 'X')    // v == 'X'
+v = rune(undefined, false)  // v == false
 ```
 
 ## bytes
-
-Tries to convert an object to bytes object. See
-[this](runtime-types.md) for more
-details on type conversion.
+Tries to convert an object to bytes object. See [this](types.md) for more  details on type conversion.
 
 ```golang
 v := bytes("foo") //  v == [102 111 111]
 ```
 
 Optionally it can take the second argument, which will be returned if the first
-argument cannot be converted to float. Note that the second argument does not
-have to be float.
+argument cannot be converted to bytes. Note that the second argument does not
+have to be bytes.
 
 ```golang
 v = bytes(undefined, bytes("foo"))    // v == bytes("foo")
@@ -250,7 +365,6 @@ v := bytes(100)
 ```
 
 ## time
-
 Tries to convert an object to time value.
 
 ```golang
@@ -258,69 +372,83 @@ v := time(1257894000) // 2009-11-10 23:00:00 +0000 UTC
 ```
 
 ## is_string
-
 Returns `true` if the object's type is string. Or it returns `false`.
 
 ## is_int
-
 Returns `true` if the object's type is int. Or it returns `false`.
 
-## is_bool
+## is_int8
+Returns `true` if the object's type is int8. Or it returns `false`.
 
+## is_int16
+Returns `true` if the object's type is int16. Or it returns `false`.
+
+## is_int32
+Returns `true` if the object's type is int32. Or it returns `false`.
+
+## is_int64
+Returns `true` if the object's type is int64. Or it returns `false`.
+
+## is_uint
+Returns `true` if the object's type is uint. Or it returns `false`.
+
+## is_uint8
+Returns `true` if the object's type is uint8. Or it returns `false`.
+
+## is_uint16
+Returns `true` if the object's type is uint16. Or it returns `false`.
+
+## is_uint32
+Returns `true` if the object's type is uint32. Or it returns `false`.
+
+## is_uint64
+Returns `true` if the object's type is uint64. Or it returns `false`.   
+
+## is_bool
 Returns `true` if the object's type is bool. Or it returns `false`.
 
 ## is_float
-
 Returns `true` if the object's type is float. Or it returns `false`.
 
-## is_char
+## is_double
+Returns `true` if the object's type is double. Or it returns `false`.
 
-Returns `true` if the object's type is char. Or it returns `false`.
+## is_rune
+Returns `true` if the object's type is rune. Or it returns `false`.
 
 ## is_bytes
-
 Returns `true` if the object's type is bytes. Or it returns `false`.
 
 ## is_error
-
 Returns `true` if the object's type is error. Or it returns `false`.
 
 ## is_undefined
-
 Returns `true` if the object's type is undefined. Or it returns `false`.
 
 ## is_function
-
 Returns `true` if the object's type is function or closure. Or it returns
 `false`. Note that `is_function` returns `false` for builtin functions and
 user-provided callable objects.
 
 ## is_callable
-
 Returns `true` if the object is callable (e.g. function, closure, builtin
 function, or user-provided callable objects). Or it returns `false`.
 
 ## is_array
-
 Returns `true` if the object's type is array. Or it returns `false`.
 
 ## is_immutable_array
-
 Returns `true` if the object's type is immutable array. Or it returns `false`.
 
 ## is_map
-
 Returns `true` if the object's type is map. Or it returns `false`.
 
 ## is_immutable_map
-
 Returns `true` if the object's type is immutable map. Or it returns `false`.
 
 ## is_iterable
-
 Returns `true` if the object's type is iterable: array, immutable array, map,
 immutable map, string, and bytes are iterable types in rumo.
 
 ## is_time
-
 Returns `true` if the object's type is time. Or it returns `false`.
