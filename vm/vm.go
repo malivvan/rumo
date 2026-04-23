@@ -231,12 +231,14 @@ func (v *VM) addError(err error) {
 }
 
 // Abort aborts the execution of current VM and all its descendant VMs.
+// The CAS guarantees that exactly one goroutine transitions aborting 0→1
+// and executes the abort body, eliminating the TOCTOU window that existed
+// between the old atomic.Load check and the subsequent lock acquisition.
 func (v *VM) Abort() {
-	if atomic.LoadInt64(&v.aborting) != 0 {
+	if !atomic.CompareAndSwapInt64(&v.aborting, 0, 1) {
 		return
 	}
 	v.childCtl.Lock()
-	atomic.StoreInt64(&v.aborting, 1)
 	v.cancel()
 	for cvm := range v.childCtl.vmMap {
 		cvm.Abort()
