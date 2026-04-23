@@ -42,6 +42,7 @@ func init() {
 	addBuiltinFunction("type_name", builtinTypeName)
 	addBuiltinFunction("format", builtinFormat)
 	addBuiltinFunction("range", builtinRange)
+	addBuiltinFunction("args", builtinArgs)
 }
 
 // GetAllBuiltinFunctions returns all builtin function objects.
@@ -289,6 +290,24 @@ func builtinRange(ctx context.Context, args ...Object) (Object, error) {
 	}
 
 	return buildRange(start.Value, stop.Value, step.Value), nil
+}
+
+// builtinArgs returns the argument list associated with the running VM
+// (set via vm.Args / Program.SetArgs). Returns an empty array when running
+// without a VM context or when no args were provided.
+func builtinArgs(ctx context.Context, callArgs ...Object) (Object, error) {
+	if len(callArgs) != 0 {
+		return nil, ErrWrongNumArguments
+	}
+	v, ok := ctx.Value(ContextKey("vm")).(*VM)
+	if !ok || v == nil {
+		return &Array{}, nil
+	}
+	result := make([]Object, len(v.Args))
+	for i, a := range v.Args {
+		result[i] = &String{Value: a}
+	}
+	return &Array{Value: result}, nil
 }
 
 func buildRange(start, stop, step int64) *Array {

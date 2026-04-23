@@ -84,7 +84,7 @@ func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, maxAllocs 
 		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{})},
 		In:          os.Stdin,
 		Out:         os.Stdout,
-		Args:        os.Args,
+		Args:        nil, // callers must set Args explicitly; do not default to os.Args
 	}
 	v.ctx, v.cancel = context.WithCancel(context.WithValue(ctx, ContextKey("vm"), v))
 	frame := &frame{

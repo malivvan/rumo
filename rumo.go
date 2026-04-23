@@ -289,6 +289,11 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 
 		bytecode := c.Bytecode()
 		machine := vm.NewVM(ctx, bytecode, globals, -1)
+		// Propagate the custom In/Out streams so that stdlib modules (e.g.
+		// fmt.print/println) write to the provided writer instead of os.Stdout.
+		machine.In = in
+		machine.Out = rl.Stdout()
+		machine.Args = []string{} // REPL scripts have no args by default
 		if err := machine.Run(); err != nil {
 			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
 			continue

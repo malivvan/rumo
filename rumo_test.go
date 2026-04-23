@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/malivvan/rumo"
+	"github.com/malivvan/rumo/vm"
 )
 
 func TestRunREPLWritesEvaluationToProvidedWriter(t *testing.T) {
@@ -97,3 +98,86 @@ func TestScriptFileImportRejectsEscapingImportRoot(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+// VM defaults Args to os.Args — leaks host binary arguments into sandboxed scripts.
+// When Program.SetArgs is not called, the script should see an empty argument list,
+// not the host process's os.Args. When SetArgs is called the script must see exactly
+// the provided list. RunREPL must also forward its custom In/Out writers to per-line
+// VMs so that fmt module I/O is not silently redirected to os.Stdout/os.Stdin.
+
+// TestScriptArgsDefaultToEmptyWhenNotSet verifies that a script run without SetArgs
+// sees an empty args() list rather than the host binary's os.Args.
+func TestScriptArgsDefaultToEmptyWhenNotSet(t *testing.T) {
+	s := rumo.NewScript([]byte(`out := args()`))
+	p, err := s.Run()
+	if err != nil {
+		t.Fatalf("run script: %v", err)
+	}
+	arr := p.Get("out").Array()
+	if len(arr) != 0 {
+		t.Errorf("expected empty args, got %d args: %v (os.Args=%v)", len(arr), arr, os.Args)
+	}
+}
+
+// TestProgramSetArgsMakesArgsVisibleToScript verifies that args set via SetArgs are
+// exactly what the script sees through the args() builtin.
+func TestProgramSetArgsMakesArgsVisibleToScript(t *testing.T) {
+	s := rumo.NewScript([]byte(`out := args()`))
+	p, err := s.Compile()
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	want := []string{"script.rumo", "--flag", "value"}
+	p.SetArgs(want)
+	if err := p.Run(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got := p.Get("out").Array()
+	if len(got) != len(want) {
+		t.Fatalf("args len mismatch: want %d, got %d (%v)", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("args[%d]: want %q, got %q", i, w, got[i])
+		}
+	}
+}
+
+// TestCompileAndRunPropagatesArgsToScript verifies that CompileAndRun passes the
+// provided args slice through to the script's args() builtin.
+func TestCompileAndRunPropagatesArgsToScript(t *testing.T) {
+	script := []byte(`n := len(args())`)
+	if err := rumo.CompileAndRun(context.Background(), script, "test.rumo", []string{"a", "b", "c"}); err != nil {
+		t.Fatalf("CompileAndRun: %v", err)
+	}
+}
+
+// TestNewVMDoesNotDefaultToOSArgs verifies that NewVM defaults Args to nil/empty
+// rather than os.Args so that independently-constructed VMs do not leak host args.
+func TestNewVMDoesNotDefaultToOSArgs(t *testing.T) {
+	bytecode := &vm.Bytecode{
+		FileSet:      nil,
+		MainFunction: &vm.CompiledFunction{},
+		Constants:    nil,
+	}
+	v := vm.NewVM(context.Background(), bytecode, nil, -1)
+	if len(v.Args) > 0 {
+		t.Errorf("NewVM should default Args to empty, got %v", v.Args)
+	}
+}
+
+// TestRunREPLFmtPrintWritesToProvidedWriter verifies that the fmt stdlib module's
+// print functions write to the custom io.Writer passed to RunREPL, not os.Stdout.
+func TestRunREPLFmtPrintWritesToProvidedWriter(t *testing.T) {
+	var out bytes.Buffer
+	// "fmt" is pre-imported globally by passing it in the modules slice, so no import
+	// statement is needed in the REPL line.
+	input := strings.NewReader(`fmt.println("hello-from-fmt")` + "\n")
+	rumo.RunREPL(context.Background(), input, &out, ">> ", []string{"fmt"})
+
+	got := out.String()
+	if !strings.Contains(got, "hello-from-fmt") {
+		t.Errorf("expected fmt.println output in provided writer, got: %q", got)
+	}
+}
+

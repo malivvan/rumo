@@ -346,9 +346,12 @@ func (p *Program) Run() error {
 	p.lock.RUnlock()
 
 	v := vm.NewVM(context.Background(), bytecode, globals, maxAllocs)
-	if args != nil {
-		v.Args = args
+	// Always override Args so the script never inherits os.Args from the VM default.
+	// Default to an empty slice when the caller did not call SetArgs.
+	if args == nil {
+		args = []string{}
 	}
+	v.Args = args
 	err := v.Run()
 
 	// Write back modified globals under a brief write lock.
@@ -371,9 +374,12 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 	p.lock.RUnlock()
 
 	v := vm.NewVM(ctx, bytecode, globals, maxAllocs)
-	if args != nil {
-		v.Args = args
+	// Always override Args so the script never inherits os.Args from the VM default.
+	// Default to an empty slice when the caller did not call SetArgs.
+	if args == nil {
+		args = []string{}
 	}
+	v.Args = args
 	ch := make(chan error, 1)
 	go func() {
 		ch <- v.Run()
