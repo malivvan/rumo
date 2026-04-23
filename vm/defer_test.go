@@ -3,7 +3,9 @@ package vm_test
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/parser"
@@ -284,6 +286,231 @@ func TestDefer_NotACallError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "function call") {
 		t.Fatalf("expected error about function call, got: %s", err.Error())
+	}
+}
+
+// makeDeferTestBuiltins returns a pair of builtin functions and a reader for
+// recorded events. `block` blocks until its context is cancelled; `record`
+// appends to a shared event log protected by a mutex.
+func makeDeferTestBuiltins() (*vm.BuiltinFunction, *vm.BuiltinFunction, func() []string) {
+	var mu sync.Mutex
+	var events []string
+	blockFn := &vm.BuiltinFunction{
+		Name: "block",
+		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+			<-ctx.Done()
+			return vm.UndefinedValue, nil
+		},
+	}
+	recordFn := &vm.BuiltinFunction{
+		Name: "record",
+		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+			mu.Lock()
+			events = append(events, args[0].(*vm.String).Value)
+			mu.Unlock()
+			return vm.UndefinedValue, nil
+		},
+	}
+	read := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		cp := make([]string, len(events))
+		copy(cp, events)
+		return cp
+	}
+	return blockFn, recordFn, read
+}
+
+// runDeferCancelScript runs a rumo script that registers defers in a routine,
+// synchronises with the main VM via a startCh channel, then cancels the
+// routine. Returns the recorded events.
+func runDeferCancelScript(t *testing.T, body string) []string {
+	t.Helper()
+	blockFn, recordFn, read := makeDeferTestBuiltins()
+
+	// The script pattern: the routine registers its defers, sends on
+	// startCh to signal readiness, then calls block() which waits for
+	// cancellation. The main VM receives on startCh, cancels the
+	// routine, and waits for it to finish. This avoids the race where
+	// cancel fires before defers are registered.
+	script := `
+startCh := chan()
+r := go func() {
+` + body + `
+}()
+startCh.recv()
+r.cancel()
+r.wait()
+out = "ok"
+`
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		expectRun(t, script, Opts().Skip2ndPass().
+			Symbol("block", blockFn).
+			Symbol("record", recordFn), "ok")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for script to finish")
+	}
+	return read()
+}
+
+// TestDefer_OnCancel_Simple verifies that a deferred function runs when
+// the routine is cancelled while its body is blocked.
+func TestDefer_OnCancel_Simple(t *testing.T) {
+	events := runDeferCancelScript(t, `
+	defer record("deferred")
+	startCh.send(true)
+	block()
+	record("after-block")
+`)
+	foundDeferred := false
+	for _, e := range events {
+		if e == "deferred" {
+			foundDeferred = true
+		}
+		if e == "after-block" {
+			t.Fatalf("body continued after block returned from cancel, got %v", events)
+		}
+	}
+	if !foundDeferred {
+		t.Fatalf("deferred call was not executed, got %v", events)
+	}
+}
+
+// TestDefer_OnCancel_LIFO verifies that multiple defers in a cancelled
+// routine still execute in LIFO order.
+func TestDefer_OnCancel_LIFO(t *testing.T) {
+	events := runDeferCancelScript(t, `
+	defer record("d1")
+	defer record("d2")
+	defer record("d3")
+	startCh.send(true)
+	block()
+`)
+	want := []string{"d3", "d2", "d1"}
+	if len(events) != 3 {
+		t.Fatalf("expected %v, got %v", want, events)
+	}
+	for i, w := range want {
+		if events[i] != w {
+			t.Fatalf("expected %v, got %v", want, events)
+		}
+	}
+}
+
+// TestDefer_OnCancel_NestedFrames verifies that defers across multiple
+// nested frames all run when the deepest frame is cancelled.
+func TestDefer_OnCancel_NestedFrames(t *testing.T) {
+	events := runDeferCancelScript(t, `
+	inner := func(sig) {
+		defer record("inner-defer")
+		sig.send(true)
+		block()
+	}
+	defer record("outer-defer")
+	inner(startCh)
+`)
+	want := []string{"inner-defer", "outer-defer"}
+	if len(events) != 2 {
+		t.Fatalf("expected %v, got %v", want, events)
+	}
+	for i, w := range want {
+		if events[i] != w {
+			t.Fatalf("expected %v, got %v", want, events)
+		}
+	}
+}
+
+// TestDefer_OnCancel_CompiledDefer verifies that defers running compiled
+// functions (bytecode, not just builtins) execute correctly during cancel.
+func TestDefer_OnCancel_CompiledDefer(t *testing.T) {
+	// The deferred function body contains multiple statements to force
+	// the compiled-function deferred-call path (not a single builtin).
+	events := runDeferCancelScript(t, `
+	defer func() {
+		msg := "compiled-defer"
+		record(msg)
+	}()
+	startCh.send(true)
+	block()
+`)
+	if len(events) != 1 || events[0] != "compiled-defer" {
+		t.Fatalf("expected compiled deferred function to run, got %v", events)
+	}
+}
+
+// TestDefer_OnCancel_DeferWithDeferredDefer verifies a defer inside a
+// deferred function also runs when the routine is cancelled.
+func TestDefer_OnCancel_DeferWithDeferredDefer(t *testing.T) {
+	events := runDeferCancelScript(t, `
+	defer func() {
+		defer record("nested-defer")
+		record("outer-defer-body")
+	}()
+	startCh.send(true)
+	block()
+`)
+	want := []string{"outer-defer-body", "nested-defer"}
+	if len(events) != 2 {
+		t.Fatalf("expected %v, got %v", want, events)
+	}
+	for i, w := range want {
+		if events[i] != w {
+			t.Fatalf("expected %v, got %v", want, events)
+		}
+	}
+}
+
+// TestDefer_OnAbortBuiltin verifies that defers run when the cancel()
+// builtin is called from within the routine itself (self-cancellation).
+func TestDefer_OnAbortBuiltin(t *testing.T) {
+	_, recordFn, read := makeDeferTestBuiltins()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		expectRun(t, `
+r := go func() {
+	defer record("deferred")
+	record("before-cancel")
+	cancel()
+	record("unreachable")
+}()
+r.wait()
+out = "ok"
+`, Opts().Skip2ndPass().Symbol("record", recordFn), "ok")
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("TestDefer_OnAbortBuiltin: timed out")
+	}
+
+	events := read()
+	foundDeferred := false
+	foundBefore := false
+	for _, e := range events {
+		if e == "deferred" {
+			foundDeferred = true
+		}
+		if e == "before-cancel" {
+			foundBefore = true
+		}
+		if e == "unreachable" {
+			t.Fatalf("cancel() should have prevented 'unreachable', got %v", events)
+		}
+	}
+	if !foundBefore {
+		t.Fatalf("expected 'before-cancel' to have run, got %v", events)
+	}
+	if !foundDeferred {
+		t.Fatalf("defer was not executed when cancel() fired, got %v", events)
 	}
 }
 

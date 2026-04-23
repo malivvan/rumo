@@ -49,26 +49,27 @@ type vmChildCtl struct {
 
 // VM is a virtual machine that executes the bytecode compiled by Compiler.
 type VM struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	constants   []Object
-	stack       []Object
-	sp          int
-	globals     []Object
-	fileSet     *parser.SourceFileSet
-	frames      []*frame
-	framesIndex int
-	curFrame    *frame
-	curInsts    []byte
-	ip          int
-	aborting    int64
-	maxAllocs   int64
-	allocs      int64
-	err         error
-	childCtl    vmChildCtl
-	In          io.Reader
-	Out         io.Writer
-	Args        []string
+	ctx           context.Context
+	cancel        context.CancelFunc
+	constants     []Object
+	stack         []Object
+	sp            int
+	globals       []Object
+	fileSet       *parser.SourceFileSet
+	frames        []*frame
+	framesIndex   int
+	curFrame      *frame
+	curInsts      []byte
+	ip            int
+	aborting      int64
+	inAbortUnwind bool // true while running deferred calls due to abort
+	maxAllocs     int64
+	allocs        int64
+	err           error
+	childCtl      vmChildCtl
+	In            io.Reader
+	Out           io.Writer
+	Args          []string
 }
 
 const (
@@ -204,6 +205,7 @@ func (v *VM) RunCompiled(fn *CompiledFunction, args ...Object) (val Object, err 
 	v.curFrame.inDefer = false
 	v.curInsts = v.curFrame.fn.Instructions
 	v.framesIndex = 1
+	v.inAbortUnwind = false
 	v.ip = -1
 	v.allocs = v.maxAllocs + 1
 
@@ -357,7 +359,20 @@ func (v *VM) postRun() (err error) {
 }
 
 func (v *VM) run() {
-	for atomic.LoadInt64(&v.aborting) == 0 {
+	for {
+		if atomic.LoadInt64(&v.aborting) != 0 && !v.inAbortUnwind {
+			// Abort requested. Start executing deferred calls across all
+			// pending frames before exiting. handleReturn walks up the
+			// frame stack, running each frame's defers in LIFO order.
+			v.inAbortUnwind = true
+			retVal := Object(UndefinedValue)
+			if !v.handleReturn(&retVal) {
+				return
+			}
+			// A compiled deferred function frame was set up. Continue the
+			// run loop so its bytecode executes. When it returns, OpReturn
+			// calls handleReturn which continues the unwinding chain.
+		}
 		v.ip++
 
 		switch v.curInsts[v.ip] {
@@ -1053,6 +1068,10 @@ func (v *VM) run() {
 			if v.handleReturn(&retVal) {
 				continue
 			}
+			if v.inAbortUnwind {
+				// All pending defers have run; exit the run loop.
+				return
+			}
 			v.stack[v.sp-1] = retVal
 		case parser.OpDefineLocal:
 			v.ip++
@@ -1252,18 +1271,23 @@ func (v *VM) run() {
 // deferred calls. Returns true if a compiled deferred function frame was
 // set up and the caller should continue the run loop. Returns false when
 // the return is complete and retVal has been updated with the final value.
+//
+// When v.inAbortUnwind is true, the function walks up the entire frame stack
+// (not just defer-mode frames), running each frame's defers in LIFO order so
+// that cancelled routines still get their defers executed.
 func (v *VM) handleReturn(retVal *Object) bool {
 	thisFrame := v.frames[v.framesIndex-1]
+	unwinding := v.inAbortUnwind
 
 	// Start executing defers for this frame if it has any
-	if len(thisFrame.defers) > 0 {
+	if len(thisFrame.defers) > 0 && !thisFrame.inDefer {
 		thisFrame.deferRetVal = *retVal
 		thisFrame.inDefer = true
 		v.sp = thisFrame.basePointer
 		if v.runNextDefer(thisFrame) {
 			return true // compiled deferred function frame set up
 		}
-		if v.err != nil {
+		if v.err != nil && !unwinding {
 			return false
 		}
 		*retVal = thisFrame.deferRetVal
@@ -1274,12 +1298,27 @@ func (v *VM) handleReturn(retVal *Object) bool {
 	// Pop frames, handling any parent defer chains
 	for {
 		v.framesIndex--
+		if v.framesIndex <= 0 {
+			return false
+		}
 		v.curFrame = v.frames[v.framesIndex-1]
 		v.curInsts = v.curFrame.fn.Instructions
 		v.ip = v.curFrame.ip
 		v.sp = v.frames[v.framesIndex].basePointer
 
+		// In abort-unwind mode, also run defers on frames that weren't
+		// yet in defer mode — they had their body interrupted by abort.
+		if unwinding && !v.curFrame.inDefer && len(v.curFrame.defers) > 0 {
+			v.curFrame.deferRetVal = *retVal
+			v.curFrame.inDefer = true
+			v.sp = v.curFrame.basePointer
+		}
+
 		if !v.curFrame.inDefer {
+			if unwinding && v.framesIndex > 1 {
+				// Keep unwinding through frames without defers.
+				continue
+			}
 			return false
 		}
 
@@ -1288,7 +1327,7 @@ func (v *VM) handleReturn(retVal *Object) bool {
 			if v.runNextDefer(v.curFrame) {
 				return true
 			}
-			if v.err != nil {
+			if v.err != nil && !unwinding {
 				return false
 			}
 		}

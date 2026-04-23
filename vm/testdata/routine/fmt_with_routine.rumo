@@ -3,20 +3,37 @@ times := import("times")
 
 writeRoutine := func(num) {
     return func() {
-        for i := 0; i < 100; i++ {
+        defer func() {
+            fmt.println("Routine " + num + " exiting")
+        }()
+        fmt.println("Starting writeRoutine: " + num)
+        for i := 0; i < 12; i++ {
             fmt.println("Hello from writeRoutine: "+ num + " i: " + i)
-            times.sleep(500*times.millisecond)
+            times.sleep(250*times.millisecond)
         }
+        return "routine " + num + " done"
     }
 }
 
 r1 := go writeRoutine(1)()
-go writeRoutine(2)()
-go writeRoutine(3)()
-times.sleep(3 * times.second)
+r2 := go writeRoutine(2)()
+r3 := go writeRoutine(3)()
+times.sleep(1 * times.second)
 fmt.println("Cancelling routine 1")
 r1.cancel()
 
 
-times.sleep(3 * times.second)
-fmt.println("Cancelling all routines")
+times.sleep(2 * times.second)
+fmt.println("Cancelling routine 2")
+r2.cancel()
+
+fmt.println("Waiting for routine 3 to finish")
+r3.wait()
+fmt.println("All routines finished")
+
+ret1 := r1.result()
+ret2 := r2.result()
+ret3 := r3.result()
+fmt.println("Routine 1 result: " + ret1)
+fmt.println("Routine 2 result: " + ret2)
+fmt.println("Routine 3 result: " + ret3)
