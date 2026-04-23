@@ -10,8 +10,7 @@ import (
 )
 
 func init() {
-	addBuiltinFunction("start", builtinStart)
-	addBuiltinFunction("abort", builtinAbort)
+	addBuiltinFunction("cancel", builtinCancel)
 	addBuiltinFunction("chan", builtinChan)
 }
 
@@ -37,12 +36,12 @@ type routineVM struct {
 // The fn can also be any object that has Call() method, such as BuiltinFunction,
 // in which case no cloned VM will be created.
 //
-// Returns a routineVM object that has wait, result, abort methods.
+// Returns a routineVM object that has wait, result, cancel methods.
 //
 // The routineVM will not exit unless:
 //  1. All its descendant routineVMs exit
-//  2. It calls abort()
-//  3. Its routineVM object abort() is called on behalf of its parent VM
+//  2. It calls cancel()
+//  3. Its routineVM object cancel() is called on behalf of its parent VM
 //
 // The latter 2 cases will trigger aborting procedure of all the descendant routineVMs,
 // which will further result in #1 above.
@@ -76,9 +75,9 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		cfn = isolateClosureFree(cfn)
 	} else {
 		callers = vm.callers()
-		// Create an independent derived context so that gvm.abort() can
+		// Create an independent derived context so that gvm.cancel() can
 		// cancel non-compiled callables. Without this, the callable
-		// receives the parent's context and abort() is a no-op. (Issue #7)
+		// receives the parent's context and cancel() is a no-op. (Issue #7)
 		callCtx, gvm.cancelFn = context.WithCancel(ctx)
 	}
 
@@ -120,13 +119,13 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 	obj := map[string]Object{
 		"result": &BuiltinFunction{Value: gvm.getRet},
 		"wait":   &BuiltinFunction{Value: gvm.waitTimeout},
-		"abort":  &BuiltinFunction{Value: gvm.abort},
+		"cancel": &BuiltinFunction{Value: gvm.cancel},
 	}
 	return &Map{Value: obj}, nil
 }
 
 // Triggers the termination process of the current VM and all its descendant VMs.
-func builtinAbort(ctx context.Context, args ...Object) (Object, error) {
+func builtinCancel(ctx context.Context, args ...Object) (Object, error) {
 	vm := ctx.Value(ContextKey("vm")).(*VM)
 	if len(args) != 0 {
 		return nil, ErrWrongNumArguments
@@ -181,7 +180,7 @@ func (gvm *routineVM) waitTimeout(ctx context.Context, args ...Object) (Object, 
 }
 
 // Triggers the termination process of the routineVM and all its descendant VMs.
-func (gvm *routineVM) abort(ctx context.Context, args ...Object) (Object, error) {
+func (gvm *routineVM) cancel(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 0 {
 		return nil, ErrWrongNumArguments
 	}

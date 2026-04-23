@@ -330,6 +330,30 @@ func (e *ImmutableExpr) String() string {
 	return "immutable(" + e.Expr.String() + ")"
 }
 
+// GoExpr represents a go expression that launches a function as a routine.
+// Syntax: go callExpr
+// Returns a routine handle map with wait/cancel/result methods.
+type GoExpr struct {
+	GoPos Pos
+	Call  *CallExpr
+}
+
+func (e *GoExpr) exprNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (e *GoExpr) Pos() Pos {
+	return e.GoPos
+}
+
+// End returns the position of first character immediately after the node.
+func (e *GoExpr) End() Pos {
+	return e.Call.End()
+}
+
+func (e *GoExpr) String() string {
+	return "go " + e.Call.String()
+}
+
 // ImportExpr represents an import expression
 type ImportExpr struct {
 	ModuleName string

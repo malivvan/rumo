@@ -34,8 +34,8 @@ inc := func() {
 	}
 	return counter
 }
-r1 := start(inc)
-r2 := start(inc)
+r1 := go inc()
+r2 := go inc()
 v1 := r1.result()
 v2 := r2.result()
 out = [counter, v1, v2]
@@ -51,7 +51,7 @@ f := func() {
 	x = 42
 	return x
 }
-r := start(f)
+r := go f()
 v := r.result()
 out = [x, v]
 `, Opts().Skip2ndPass(), ARR{10, 42})
@@ -70,10 +70,10 @@ inc := func() {
 	}
 	return counter
 }
-r1 := start(inc)
+r1 := go inc()
 r1.wait()
 counter = 500
-r2 := start(inc)
+r2 := go inc()
 v1 := r1.result()
 v2 := r2.result()
 out = [counter, v1, v2]
@@ -91,7 +91,7 @@ f := func() {
 	y = y + 2
 	return [x, y]
 }
-r := start(f)
+r := go f()
 v := r.result()
 out = [x, y, v]
 `, Opts().Skip2ndPass(), ARR{10, 20, ARR{11, 22}})
@@ -106,7 +106,7 @@ ch := chan()
 f := func() {
 	ch.send(msg)
 }
-r := start(f)
+r := go f()
 msg = "changed"
 out = ch.recv()
 r.wait()
@@ -141,8 +141,8 @@ out = func() {
 		}
 		return counter
 	}
-	r1 := start(inc)
-	r2 := start(inc)
+	r1 := go inc()
+	r2 := go inc()
 	v1 := r1.result()
 	v2 := r2.result()
 	return [counter, v1, v2]
@@ -159,7 +159,7 @@ out = func() {
 		x = 42
 		return x
 	}
-	r := start(f)
+	r := go f()
 	v := r.result()
 	return [x, v]
 }()`, Opts().Skip2ndPass(), ARR{10, 42})
@@ -179,10 +179,10 @@ out = func() {
 		}
 		return counter
 	}
-	r1 := start(inc)
+	r1 := go inc()
 	r1.wait()
 	counter = 500
-	r2 := start(inc)
+	r2 := go inc()
 	v1 := r1.result()
 	v2 := r2.result()
 	return [counter, v1, v2]
@@ -200,12 +200,12 @@ out = func() {
 	a := 1
 	inc := func() { a += 1 }
 	get := func() { return a }
-	r := start(func() {
+	r := go func() {
 		inc()
 		inc()
 		inc()
 		return get()
-	})
+	}()
 	v := r.result()
 	return [a, v]
 }()`, Opts().Skip2ndPass(), ARR{1, 4})
@@ -223,7 +223,7 @@ out = func() {
 		y = y + 2
 		return [x, y]
 	}
-	r := start(f)
+	r := go f()
 	v := r.result()
 	return [x, y, v]
 }()`, Opts().Skip2ndPass(), ARR{10, 20, ARR{11, 22}})
@@ -234,7 +234,7 @@ out = func() {
 func TestIssue2_ClosureNoFreeVars(t *testing.T) {
 	expectRun(t, `
 f := func() { return 42 }
-r := start(f)
+r := go f()
 out = r.result()
 `, Opts().Skip2ndPass(), 42)
 }
@@ -243,144 +243,144 @@ out = r.result()
 //
 // context.WithValue(v.ctx, ContextKey("vm"), v) stored the **parent** VM
 // pointer instead of the clone. This caused builtins in the child VM
-// (e.g. abort(), start()) to operate on the wrong VM — breaking abort
-// propagation and child tracking. For example, calling abort() from a
-// child routine would abort the parent instead of the child, and
-// start() inside a child would register grandchildren on the parent
-// instead of the child, breaking the abort chain.
+// (e.g. cancel(), go) to operate on the wrong VM — breaking cancel
+// propagation and child tracking. For example, calling cancel() from a
+// child routine would cancel the parent instead of the child, and
+// go inside a child would register grandchildren on the parent
+// instead of the child, breaking the cancel chain.
 //
 // The fix changes ShallowClone to store the clone (vClone) in the
 // context instead of the parent (v).
 
-// TestIssue3_AbortFromChildAbortsChild verifies that calling abort()
-// from within a child routine aborts that child, not the parent.
+// TestIssue3_CancelFromChildCancelsChild verifies that calling cancel()
+// from within a child routine cancels that child, not the parent.
 // Before the fix, the child's context stored the parent VM, so
-// abort() would abort the parent — leaving the parent's output
+// cancel() would cancel the parent — leaving the parent's output
 // unset or causing it to terminate prematurely.
-func TestIssue3_AbortFromChildAbortsChild(t *testing.T) {
-	// The child calls abort() which should only abort itself.
+func TestIssue3_CancelFromChildCancelsChild(t *testing.T) {
+	// The child calls cancel() which should only cancel itself.
 	// The parent should continue and produce the expected output.
 	expectRun(t, `
-r := start(func() {
-	abort()
+r := go func() {
+	cancel()
 	return "should not reach"
-})
+}()
 r.wait()
 out = "parent alive"
 `, Opts().Skip2ndPass(), "parent alive")
 }
 
-// TestIssue3_AbortFromChildDoesNotAbortParent verifies that the parent
-// continues executing after a child self-aborts. Before the fix, the
-// child's abort() targeted the parent VM, which would stop it.
-func TestIssue3_AbortFromChildDoesNotAbortParent(t *testing.T) {
+// TestIssue3_CancelFromChildDoesNotCancelParent verifies that the parent
+// continues executing after a child self-cancels. Before the fix, the
+// child's cancel() targeted the parent VM, which would stop it.
+func TestIssue3_CancelFromChildDoesNotCancelParent(t *testing.T) {
 	expectRun(t, `
 ch := chan()
-r := start(func() {
+r := go func() {
 	ch.send("started")
-	abort()
-})
+	cancel()
+}()
 ch.recv()
 r.wait()
 out = 42
 `, Opts().Skip2ndPass(), 42)
 }
 
-// TestIssue3_NestedStartRegistersOnChild verifies that start() inside
+// TestIssue3_NestedGoRegistersOnChild verifies that go inside
 // a child routine registers the grandchild on the child VM (not the
-// parent). When the child is aborted, the grandchild should also be
-// aborted. Before the fix, the grandchild was registered as a child
-// of the parent, so aborting the child would not propagate.
-func TestIssue3_NestedStartRegistersOnChild(t *testing.T) {
+// parent). When the child is cancelled, the grandchild should also be
+// cancelled. Before the fix, the grandchild was registered as a child
+// of the parent, so cancelling the child would not propagate.
+func TestIssue3_NestedGoRegistersOnChild(t *testing.T) {
 	// Parent starts child, child starts grandchild.
-	// Aborting the child should propagate to the grandchild.
-	// If abort propagates correctly, grandchild's channel recv
+	// Cancelling the child should propagate to the grandchild.
+	// If cancel propagates correctly, grandchild's channel recv
 	// will be interrupted and the grandchild will complete.
 	expectRun(t, `
 ch := chan()
-r := start(func() {
-	gc := start(func() {
+r := go func() {
+	gc := go func() {
 		for {
-			// infinite loop — only abort can stop this
+			// infinite loop — only cancel can stop this
 			x := 1 + 1
 		}
-	})
-	gc.abort()
+	}()
+	gc.cancel()
 	gc.wait()
 	return "done"
-})
+}()
 out = r.result()
 `, Opts().Skip2ndPass(), "done")
 }
 
-// TestIssue3_ChildAbortPropagatesDownward verifies the full abort
-// chain: parent → child → grandchild. The parent aborts the child,
+// TestIssue3_ChildCancelPropagatesDownward verifies the full cancel
+// chain: parent → child → grandchild. The parent cancels the child,
 // which should cascade to the grandchild. If propagation is broken,
 // the grandchild's infinite loop never terminates and child.wait(5)
 // would time out (return false).
-func TestIssue3_ChildAbortPropagatesDownward(t *testing.T) {
+func TestIssue3_ChildCancelPropagatesDownward(t *testing.T) {
 	expectRun(t, `
-child := start(func() {
-	gc := start(func() {
+child := go func() {
+	gc := go func() {
 		for {
 			x := 1 + 1
 		}
-	})
+	}()
 	gc.wait()
-})
-child.abort()
+}()
+child.cancel()
 out = child.wait(5)
 `, Opts().Skip2ndPass(), true)
 }
 
-// TestIssue3_StartInsideChildDoesNotAffectParent verifies that
-// start() from a child does not add the grandchild to the parent's
+// TestIssue3_GoInsideChildDoesNotAffectParent verifies that
+// go from a child does not add the grandchild to the parent's
 // child list. The parent should be able to finish independently.
-func TestIssue3_StartInsideChildDoesNotAffectParent(t *testing.T) {
+func TestIssue3_GoInsideChildDoesNotAffectParent(t *testing.T) {
 	expectRun(t, `
-r := start(func() {
-	gc := start(func() {
+r := go func() {
+	gc := go func() {
 		return 99
-	})
+	}()
 	return gc.result()
-})
+}()
 out = r.result()
 `, Opts().Skip2ndPass(), 99)
 }
 
-// Issue #4: routineVM.abort() races with goroutine completion
+// Issue #4: routineVM.cancel() races with goroutine completion
 //
-// routineVM.abort() reads gvm.VM to check for nil and then calls
+// routineVM.cancel() reads gvm.VM to check for nil and then calls
 // gvm.Abort(), but the goroutine's deferred cleanup sets gvm.VM = nil
-// without any synchronisation. If abort() is called while the goroutine
+// without any synchronisation. If cancel() is called while the goroutine
 // is completing, the nil check passes but gvm.VM is nilled before
 // Abort() executes — causing a nil-pointer dereference crash.
 
-// TestIssue4_AbortRacesWithCompletion triggers the data race between
-// routineVM.abort() reading gvm.VM and the goroutine's deferred cleanup
+// TestIssue4_CancelRacesWithCompletion triggers the data race between
+// routineVM.cancel() reading gvm.VM and the goroutine's deferred cleanup
 // nilling it. Under -race, this reliably detects the unsynchronised
 // read/write. Without -race, repeated iterations increase the chance
 // of hitting the nil-pointer dereference crash.
-func TestIssue4_AbortRacesWithCompletion(t *testing.T) {
+func TestIssue4_CancelRacesWithCompletion(t *testing.T) {
 	// We run many iterations to maximise the chance of hitting the
-	// timing window where abort() and goroutine cleanup overlap.
+	// timing window where cancel() and goroutine cleanup overlap.
 	for i := 0; i < 100; i++ {
 		expectRun(t, `
 f := func() {
 	return 1
 }
-r := start(f)
-r.abort()
+r := go f()
+r.cancel()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
 	}
 }
 
-// TestIssue4_AbortRacesWithCompletionParallel uses parallel goroutines
-// to call abort() at the exact moment the routine finishes, exercising
+// TestIssue4_CancelRacesWithCompletionParallel uses parallel goroutines
+// to call cancel() at the exact moment the routine finishes, exercising
 // the race window more aggressively.
-func TestIssue4_AbortRacesWithCompletionParallel(t *testing.T) {
+func TestIssue4_CancelRacesWithCompletionParallel(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		expectRun(t, `
 ch := chan()
@@ -388,65 +388,65 @@ f := func() {
 	ch.recv()
 	return 1
 }
-r := start(f)
+r := go f()
 ch.send(1)
-r.abort()
+r.cancel()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
 	}
 }
 
-// TestIssue4_ConcurrentAbortCalls verifies that calling abort()
+// TestIssue4_ConcurrentCancelCalls verifies that calling cancel()
 // multiple times concurrently from different goroutines does not
 // panic or race.
-func TestIssue4_ConcurrentAbortCalls(t *testing.T) {
+func TestIssue4_ConcurrentCancelCalls(t *testing.T) {
 	// This script launches a long-running routine and then
-	// immediately aborts it — the parent calls abort() which
+	// immediately cancels it — the parent calls cancel() which
 	// races with the routine's own natural completion.
 	for i := 0; i < 50; i++ {
 		expectRun(t, `
-r := start(func() {
+r := go func() {
 	for i := 0; i < 10; i++ {
 		x := i
 	}
 	return "done"
-})
-r.abort()
-r.abort()
+}()
+r.cancel()
+r.cancel()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
 	}
 }
 
-// TestIssue4_AbortAfterCompletion verifies that calling abort() after
+// TestIssue4_CancelAfterCompletion verifies that calling cancel() after
 // the routine has already finished and gvm.VM has been nilled does not
 // crash.
-func TestIssue4_AbortAfterCompletion(t *testing.T) {
+func TestIssue4_CancelAfterCompletion(t *testing.T) {
 	expectRun(t, `
-r := start(func() {
+r := go func() {
 	return 42
-})
+}()
 r.wait()
-r.abort()
+r.cancel()
 out = r.result()
 `, Opts().Skip2ndPass(), 42)
 }
 
-// TestIssue4_AbortAndResultRace exercises calling abort() and result()
+// TestIssue4_CancelAndResultRace exercises calling cancel() and result()
 // concurrently from different started routines to stress the synchronisation.
-func TestIssue4_AbortAndResultRace(t *testing.T) {
+func TestIssue4_CancelAndResultRace(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			expectRun(t, `
-r := start(func() {
+r := go func() {
 	return 1
-})
-r.abort()
+}()
+r.cancel()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
@@ -477,16 +477,16 @@ func TestIssue5_ConcurrentWaitDeadlock(t *testing.T) {
 		defer close(done)
 		expectRun(t, `
 ch := chan()
-r := start(func() {
+r := go func() {
 	ch.recv()
 	return 42
-})
-w1 := start(func() {
+}()
+w1 := go func() {
 	return r.wait(10)
-})
-w2 := start(func() {
+}()
+w2 := go func() {
 	return r.wait(10)
-})
+}()
 ch.send(true)
 out = [w1.result(), w2.result()]
 `, Opts().Skip2ndPass(), ARR{true, true})
@@ -510,18 +510,18 @@ func TestIssue5_ConcurrentResultDeadlock(t *testing.T) {
 		expectRun(t, `
 ch := chan()
 sync := chan()
-r := start(func() {
+r := go func() {
 	ch.recv()
 	return 42
-})
-r1 := start(func() {
+}()
+r1 := go func() {
 	sync.send(true)
 	return r.result()
-})
-r2 := start(func() {
+}()
+r2 := go func() {
 	sync.send(true)
 	return r.result()
-})
+}()
 sync.recv()
 sync.recv()
 ch.send(true)
@@ -540,9 +540,9 @@ out = [r1.result(), r2.result()]
 // has already consumed the value still returns true (not blocked forever).
 func TestIssue5_WaitAfterResult(t *testing.T) {
 	expectRun(t, `
-r := start(func() {
+r := go func() {
 	return 42
-})
+}()
 v := r.result()
 out = [v, r.wait()]
 `, Opts().Skip2ndPass(), ARR{42, true})
@@ -552,9 +552,9 @@ out = [v, r.wait()]
 // from the same routine works correctly (idempotent).
 func TestIssue5_MultipleWaitCalls(t *testing.T) {
 	expectRun(t, `
-r := start(func() {
+r := go func() {
 	return 42
-})
+}()
 w1 := r.wait()
 w2 := r.wait()
 w3 := r.wait()
@@ -566,9 +566,9 @@ out = [w1, w2, w3]
 // times returns the same value without deadlocking.
 func TestIssue5_MultipleResultCalls(t *testing.T) {
 	expectRun(t, `
-r := start(func() {
+r := go func() {
 	return 42
-})
+}()
 v1 := r.result()
 v2 := r.result()
 v3 := r.result()
@@ -584,12 +584,12 @@ func TestIssue5_ConcurrentWaitStress(t *testing.T) {
 		defer close(done)
 		for i := 0; i < 50; i++ {
 			expectRun(t, `
-r := start(func() {
+r := go func() {
 	return 1
-})
-w1 := start(func() { return r.wait(10) })
-w2 := start(func() { return r.wait(10) })
-w3 := start(func() { return r.result() })
+}()
+w1 := go func() { return r.wait(10) }()
+w2 := go func() { return r.wait(10) }()
+w3 := go func() { return r.result() }()
 out = [w1.result(), w2.result(), w3.result()]
 `, Opts().Skip2ndPass(), ARR{true, true, 1})
 		}
@@ -645,10 +645,10 @@ ch.send(42)
 func TestIssue6_DoubleCloseInRoutine(t *testing.T) {
 	expectError(t, `
 ch := chan()
-r := start(func() {
+r := go func() {
 	ch.close()
 	ch.close()
-})
+}()
 r.wait()
 `, nil, "channel already closed")
 }
@@ -660,9 +660,9 @@ func TestIssue6_SendOnClosedInRoutine(t *testing.T) {
 	expectError(t, `
 ch := chan()
 ch.close()
-r := start(func() {
+r := go func() {
 	ch.send(42)
-})
+}()
 r.wait()
 `, nil, "send on closed channel")
 }
@@ -675,11 +675,11 @@ func TestIssue6_DoubleCloseResultIsError(t *testing.T) {
 	// ("channel already closed") and not an unrecovered Go panic.
 	expectError(t, `
 ch := chan()
-r := start(func() {
+r := go func() {
 	ch.close()
 	ch.close()
 	return "ok"
-})
+}()
 v := r.result()
 `, nil, "channel already closed")
 }
@@ -690,10 +690,10 @@ func TestIssue6_SendOnClosedResultIsError(t *testing.T) {
 	expectError(t, `
 ch := chan()
 ch.close()
-r := start(func() {
+r := go func() {
 	ch.send(1)
 	return "ok"
-})
+}()
 v := r.result()
 `, nil, "send on closed channel")
 }
@@ -738,39 +738,39 @@ func TestIssue6_ConcurrentCloseStress(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		expectError(t, `
 ch := chan()
-r1 := start(func() {
+r1 := go func() {
 	ch.close()
-})
-r2 := start(func() {
+}()
+r2 := go func() {
 	ch.close()
-})
+}()
 r1.wait()
 r2.wait()
 `, nil, "channel already closed")
 	}
 }
 
-// Issue #7: Non-compiled callables use parent context — not abortable
+// Issue #7: Non-compiled callables use parent context — not cancellable
 //
-// Non-compiled callables (e.g. BuiltinFunction) passed to start() receive
+// Non-compiled callables (e.g. BuiltinFunction) passed to go receive
 // the parent VM's context and have no independent cancel(). The routineVM
-// stores gvm.VM = nil for non-compiled callables, so gvm.abort() — which
+// stores gvm.VM = nil for non-compiled callables, so gvm.cancel() — which
 // checks gvm.VM != nil — is a complete no-op. There is no way to
-// independently abort a non-compiled callable routine; it only stops when
+// independently cancel a non-compiled callable routine; it only stops when
 // the parent's context is cancelled.
 //
 // The fix creates a derived context with its own cancel function for
-// non-compiled callables. gvm.abort() calls this cancel when gvm.VM is
-// nil, allowing independent abort of non-compiled callable routines.
+// non-compiled callables. gvm.cancel() calls this cancel when gvm.VM is
+// nil, allowing independent cancellation of non-compiled callable routines.
 
-// TestIssue7_NonCompiledCallableAbort verifies that aborting a routine
+// TestIssue7_NonCompiledCallableCancel verifies that cancelling a routine
 // started with a non-compiled callable (BuiltinFunction) actually cancels
-// the function's context. Before the fix, gvm.abort() was a no-op for
+// the function's context. Before the fix, gvm.cancel() was a no-op for
 // non-compiled callables because gvm.VM was nil.
-func TestIssue7_NonCompiledCallableAbort(t *testing.T) {
+func TestIssue7_NonCompiledCallableCancel(t *testing.T) {
 	// A BuiltinFunction that blocks until its context is cancelled or
-	// a timeout fires. If abort works, context is cancelled quickly and
-	// it returns "cancelled". If abort is a no-op, the function waits
+	// a timeout fires. If cancel works, context is cancelled quickly and
+	// it returns "cancelled". If cancel is a no-op, the function waits
 	// for the full timeout and returns "timeout".
 	blockingFn := &vm.BuiltinFunction{
 		Name: "blocking_fn",
@@ -788,8 +788,8 @@ func TestIssue7_NonCompiledCallableAbort(t *testing.T) {
 	go func() {
 		defer close(done)
 		expectRun(t, `
-r := start(blocking_fn)
-r.abort()
+r := go blocking_fn()
+r.cancel()
 v := r.result()
 out = v
 `, Opts().Skip2ndPass().Symbol("blocking_fn", blockingFn), "cancelled")
@@ -798,14 +798,14 @@ out = v
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatal("TestIssue7_NonCompiledCallableAbort: timed out — abort was a no-op for non-compiled callable")
+		t.Fatal("TestIssue7_NonCompiledCallableCancel: timed out — cancel was a no-op for non-compiled callable")
 	}
 }
 
-// TestIssue7_NonCompiledCallableAbortIdempotent verifies that calling
-// abort() multiple times on a non-compiled callable routine does not
+// TestIssue7_NonCompiledCallableCancelIdempotent verifies that calling
+// cancel() multiple times on a non-compiled callable routine does not
 // panic. cancel() is idempotent, so repeated calls must be safe.
-func TestIssue7_NonCompiledCallableAbortIdempotent(t *testing.T) {
+func TestIssue7_NonCompiledCallableCancelIdempotent(t *testing.T) {
 	blockingFn := &vm.BuiltinFunction{
 		Name: "blocking_fn",
 		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
@@ -822,10 +822,10 @@ func TestIssue7_NonCompiledCallableAbortIdempotent(t *testing.T) {
 	go func() {
 		defer close(done)
 		expectRun(t, `
-r := start(blocking_fn)
-r.abort()
-r.abort()
-r.abort()
+r := go blocking_fn()
+r.cancel()
+r.cancel()
+r.cancel()
 v := r.result()
 out = v
 `, Opts().Skip2ndPass().Symbol("blocking_fn", blockingFn), "cancelled")
@@ -834,14 +834,14 @@ out = v
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatal("TestIssue7_NonCompiledCallableAbortIdempotent: timed out")
+		t.Fatal("TestIssue7_NonCompiledCallableCancelIdempotent: timed out")
 	}
 }
 
-// TestIssue7_NonCompiledCallableAbortAfterCompletion verifies that calling
-// abort() on a non-compiled callable routine after it has already completed
+// TestIssue7_NonCompiledCallableCancelAfterCompletion verifies that calling
+// cancel() on a non-compiled callable routine after it has already completed
 // is harmless (does not panic or error).
-func TestIssue7_NonCompiledCallableAbortAfterCompletion(t *testing.T) {
+func TestIssue7_NonCompiledCallableCancelAfterCompletion(t *testing.T) {
 	simpleFn := &vm.BuiltinFunction{
 		Name: "simple_fn",
 		Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
@@ -850,9 +850,9 @@ func TestIssue7_NonCompiledCallableAbortAfterCompletion(t *testing.T) {
 	}
 
 	expectRun(t, `
-r := start(simple_fn)
+r := go simple_fn()
 r.wait()
-r.abort()
+r.cancel()
 out = r.result()
 `, Opts().Skip2ndPass().Symbol("simple_fn", simpleFn), 42)
 }
@@ -871,17 +871,17 @@ func TestIssue7_NonCompiledCallableNormalReturn(t *testing.T) {
 	}
 
 	expectRun(t, `
-r := start(add_fn, 10, 32)
+r := go add_fn(10, 32)
 out = r.result()
 `, Opts().Skip2ndPass().Symbol("add_fn", addFn), 42)
 }
 
-// TestIssue7_NonCompiledCallableChannelAbort verifies that a non-compiled
-// callable blocked on a channel operation is unblocked when abort is called,
+// TestIssue7_NonCompiledCallableChannelCancel verifies that a non-compiled
+// callable blocked on a channel operation is unblocked when cancel is called,
 // because the context cancellation triggers the channel's ctx.Done() path.
-func TestIssue7_NonCompiledCallableChannelAbort(t *testing.T) {
+func TestIssue7_NonCompiledCallableChannelCancel(t *testing.T) {
 	// A BuiltinFunction that tries to receive from a channel (which will
-	// block forever). Abort should cancel its context, causing the recv
+	// block forever). Cancel should cancel its context, causing the recv
 	// to return ErrVMAborted.
 	recvFn := &vm.BuiltinFunction{
 		Name: "recv_fn",
@@ -889,7 +889,7 @@ func TestIssue7_NonCompiledCallableChannelAbort(t *testing.T) {
 			ch := make(chan vm.Object)
 			select {
 			case <-ctx.Done():
-				return &vm.String{Value: "aborted"}, nil
+				return &vm.String{Value: "cancelled"}, nil
 			case <-ch:
 				return &vm.String{Value: "received"}, nil
 			}
@@ -900,17 +900,17 @@ func TestIssue7_NonCompiledCallableChannelAbort(t *testing.T) {
 	go func() {
 		defer close(done)
 		expectRun(t, `
-r := start(recv_fn)
-r.abort()
+r := go recv_fn()
+r.cancel()
 v := r.result()
 out = v
-`, Opts().Skip2ndPass().Symbol("recv_fn", recvFn), "aborted")
+`, Opts().Skip2ndPass().Symbol("recv_fn", recvFn), "cancelled")
 	}()
 
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatal("TestIssue7_NonCompiledCallableChannelAbort: timed out")
+		t.Fatal("TestIssue7_NonCompiledCallableChannelCancel: timed out")
 	}
 }
 

@@ -128,46 +128,47 @@ v := ["a", "b", "c"]
 items := splice(v, 1, 1, "d", "e") // items == ["b"], v == ["a", "d", "e", "c"]
 ```
 # routine builtins
-## start
+## go
 
-Starts an independent concurrent routine which runs fn(arg1, arg2, ...)
+The `go` keyword launches an independent concurrent routine from a function call expression.
 
-If fn is CompiledFunction, the current running VM will be cloned to create
+If the function is a CompiledFunction, the current running VM will be cloned to create
 a new VM in which the CompiledFunction will be running.
-The fn can also be any object that has Call() method, such as BuiltinFunction,
+The function can also be any object that has Call() method, such as BuiltinFunction,
 in which case no cloned VM will be created.
-Returns a routineVM object that has wait, result, abort methods.
+Returns a routine handle map with `wait`, `result`, and `cancel` methods.
 
-The routineVM will not exit unless:
-1. All its descendant routineVMs exit
-2. It calls abort()
-3. Its routineVM object abort() is called on behalf of its parent VM
-   The latter 2 cases will trigger aborting procedure of all the descendant
-   routineVMs, which will further result in #1 above.
+The routine will not exit unless:
+1. All its descendant routines exit
+2. It calls `cancel()`
+3. Its handle's `cancel()` method is called on behalf of its parent VM
+
+The latter 2 cases will trigger the cancellation of all descendant routines,
+which will further result in #1 above.
 
 ```golang
-var := 0
+v := 0
 
-f1 := func(a,b) { var = 10; return a+b }
-f2 := func(a,b,c) { var = 11; return a+b+c }
+f1 := func(a,b) { v = 10; return a+b }
+f2 := func(a,b,c) { v = 11; return a+b+c }
 
-rvm1 := start(f1,1,2)
-rvm2 := start(f2,1,2,5)
+rvm1 := go f1(1,2)
+rvm2 := go f2(1,2,5)
 
 fmt.println(rvm1.result()) // 3
 fmt.println(rvm2.result()) // 8
-fmt.println(var) // 10 or 11
+fmt.println(v) // 10 or 11
 ```
 
-* wait() waits for the routineVM to complete up to timeout seconds and
-  returns true if the routineVM exited(successfully or not) within the
-  timeout. It waits forever if the optional timeout not specified,
+* `wait()` waits for the routine to complete up to timeout seconds and
+  returns true if the routine exited (successfully or not) within the
+  timeout. It waits forever if the optional timeout is not specified,
   or timeout < 0.
-* abort() triggers the termination process of the routineVM and all
+* `cancel()` triggers the termination process of the routine and all
   its descendant VMs.
-* result() waits the routineVM to complete, returns Error object if
+* `result()` waits for the routine to complete, returns Error object if
   any runtime error occurred during the execution, otherwise returns the
-  result value of fn(arg1, arg2, ...)
+  result value of the function call.
 
 ### 1 client 1 server
 
@@ -198,13 +199,13 @@ server := func() {
 	}
 }
 
-rClient := start(client, 2)
-rServer := start(server)
+rClient := go client(2)
+rServer := go server()
 
 if ok := rClient.wait(5); !ok {
-	rClient.abort()
+	rClient.cancel()
 }
-rServer.abort()
+rServer.cancel()
 
 //output:
 //hello
@@ -257,37 +258,37 @@ server = func(name) {
 
 clients := func() {
 	for i :=0; i < 5; i++ {
-		start(client, format("client %d: ", i), 1, 4)
+		go client(format("client %d: ", i), 1, 4)
 	}
 }
 
 servers := func() {
 	for i :=0; i < 2; i++ {
-		start(server, format("server %d: ", i))
+		go server(format("server %d: ", i))
 	}
 }
 
 // After 4 seconds, all clients should have exited normally
-rclts := start(clients)
+rclts := go clients()
 // If servers exit earlier than clients, then clients may be
 // blocked forever waiting for the reply chan, because servers
-// were aborted with the req fetched from sharedReqChan before
+// were cancelled with the req fetched from sharedReqChan before
 // sending back the reply.
-// In such case, do below to abort() the clients manually
-//start(func(){times.sleep(6*times.second); gclts.abort()})
+// In such case, do below to cancel() the clients manually
+//go func(){times.sleep(6*times.second); gclts.cancel()}()
 
-// Servers are infinite loop, abort() them after 5 seconds
-rsrvs := start(servers)
+// Servers are infinite loop, cancel() them after 5 seconds
+rsrvs := go servers()
 if ok := rsrvs.wait(5); !ok {
-	rsrvs.abort()
+	rsrvs.cancel()
 }
 
-// Main VM waits here until all the child "go" finish
+// Main VM waits here until all the child routines finish
 
 // If somehow the main VM is stuck, that is because there is
 // at least one child VM that has not exited as expected, we
-// can do abort() to force exit.
-abort()
+// can do cancel() to force exit.
+cancel()
 
 //output:
 //3
@@ -333,7 +334,7 @@ abort()
 
 ```
 
-## abort
+## cancel
 Triggers the termination process of the current VM and all its descendant VMs.
 
 ## chan
@@ -359,7 +360,7 @@ unbufferedChan.close()
 bufferedChan.close()
 ```
 
-On the time the VM that the chan is running in is aborted, the sending
+On the time the VM that the chan is running in is cancelled, the sending
 or receiving call returns immediately.
 
 ## type_name

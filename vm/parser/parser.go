@@ -16,6 +16,7 @@ var stmtStart = map[token.Token]bool{
 	token.Break:    true,
 	token.Continue: true,
 	token.For:      true,
+	token.Go:       true,
 	token.If:       true,
 	token.Return:   true,
 	token.Export:   true,
@@ -427,6 +428,8 @@ func (p *Parser) parseOperand() Expr {
 		return x
 	case token.Import:
 		return p.parseImportExpr()
+	case token.Go:
+		return p.parseGoExpr()
 	case token.LParen:
 		lparen := p.pos
 		p.next()
@@ -478,6 +481,24 @@ func (p *Parser) parseImportExpr() Expr {
 	p.next()
 	p.expect(token.RParen)
 	return expr
+}
+
+func (p *Parser) parseGoExpr() Expr {
+	if p.trace {
+		defer untracep(tracep(p, "GoExpr"))
+	}
+
+	pos := p.expect(token.Go)
+
+	// Parse the callee expression (must result in a call)
+	x := p.parsePrimaryExpr()
+	callExpr, ok := x.(*CallExpr)
+	if !ok {
+		p.error(pos, "expression in go must be a function call")
+		p.advance(stmtStart)
+		return &BadExpr{From: pos, To: p.pos}
+	}
+	return &GoExpr{GoPos: pos, Call: callExpr}
 }
 
 func (p *Parser) parseCharLit() Expr {
@@ -672,7 +693,7 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 	case // simple statements
 		token.Func, token.Error, token.Immutable, token.Ident, token.Int,
 		token.Float, token.Char, token.String, token.True, token.False,
-		token.Undefined, token.Import, token.LParen, token.LBrace,
+		token.Undefined, token.Import, token.Go, token.LParen, token.LBrace,
 		token.LBrack, token.Add, token.Sub, token.Mul, token.And, token.Xor,
 		token.Not:
 		s := p.parseSimpleStmt(false)

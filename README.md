@@ -94,8 +94,8 @@ v := 0
 f1 := func(a,b) { v = 10; return a+b }
 f2 := func(a,b,c) { v = 11; return a+b+c }
 
-rvm1 := start(f1,1,2)
-rvm2 := start(f2,1,2,5)
+rvm1 := go f1(1,2)
+rvm2 := go f2(1,2,5)
 
 fmt.println(rvm1.result()) // 3
 fmt.println(rvm2.result()) // 8
@@ -147,13 +147,13 @@ server := func() {
 	}
 }
 
-rClient := start(client, 2)
-rServer := start(server)
+rClient := go client(2)
+rServer := go server()
 
 if ok := rClient.wait(5); !ok {
-	rClient.abort()
+	rClient.cancel()
 }
-rServer.abort()
+rServer.cancel()
 
 //output:
 //hello

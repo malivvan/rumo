@@ -922,6 +922,63 @@ func (v *VM) run() {
 				v.stack[v.sp] = ret
 				v.sp++
 			}
+		case parser.OpRoutine:
+			numArgs := int(v.curInsts[v.ip+1])
+			spread := int(v.curInsts[v.ip+2])
+			v.ip += 2
+
+			callee := v.stack[v.sp-1-numArgs]
+
+			if spread == 1 {
+				v.sp--
+				switch arr := v.stack[v.sp].(type) {
+				case *Array:
+					if !v.checkGrowStack(len(arr.Value)) {
+						return
+					}
+					for _, item := range arr.Value {
+						v.stack[v.sp] = item
+						v.sp++
+					}
+					numArgs += len(arr.Value) - 1
+				case *ImmutableArray:
+					if !v.checkGrowStack(len(arr.Value)) {
+						return
+					}
+					for _, item := range arr.Value {
+						v.stack[v.sp] = item
+						v.sp++
+					}
+					numArgs += len(arr.Value) - 1
+				default:
+					v.err = fmt.Errorf("not an array: %s", arr.TypeName())
+					return
+				}
+			}
+
+			// Build args slice: [callee, arg0, arg1, ...]
+			routineArgs := make([]Object, 1+numArgs)
+			routineArgs[0] = callee
+			for i := 0; i < numArgs; i++ {
+				routineArgs[1+i] = v.stack[v.sp-numArgs+i]
+			}
+			v.sp -= numArgs + 1
+
+			result, e := builtinStart(v.ctx, routineArgs...)
+			if e != nil {
+				v.err = e
+				return
+			}
+			if result == nil {
+				result = UndefinedValue
+			}
+			v.allocs--
+			if v.allocs == 0 {
+				v.err = ErrObjectAllocLimit
+				return
+			}
+			v.stack[v.sp] = result
+			v.sp++
 		case parser.OpReturn:
 			v.ip++
 			var retVal Object
