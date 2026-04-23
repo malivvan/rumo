@@ -1,6 +1,23 @@
 fmt := import("fmt")
 
-type Person struct { Name string; Age int }
+type Person struct {
+    Name string
+    Age int
+ }
+
+type TestFunc func(Person) string
+type TestRunnerFunc func(TestFunc, Person) string
 
 p1 := Person("Alice", 30)
 fmt.printf("%v\n", p1)
+
+tf := TestFunc(func(p)  {
+    return "Hello, " + p.Name + "! You are " + fmt.sprintf("%d", p.Age) + " years old."
+})
+
+call := TestRunnerFunc(func(f, p)  {
+    return f(p)
+})
+
+result := call(tf, p1)
+fmt.printf("%v\n", result)
