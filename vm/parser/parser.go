@@ -21,6 +21,7 @@ var stmtStart = map[token.Token]bool{
 	token.If:       true,
 	token.Return:   true,
 	token.Export:   true,
+	token.Native:   true,
 }
 
 // Error represents a parser error.
@@ -712,6 +713,8 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return p.parseForStmt()
 	case token.Break, token.Continue:
 		return p.parseBranchStmt(p.token)
+	case token.Native:
+		return p.parseNativeStmt()
 	case token.Semicolon:
 		s := &EmptyStmt{Semicolon: p.pos, Implicit: p.tokenLit == "\n"}
 		p.next()
@@ -934,6 +937,154 @@ func (p *Parser) parseReturnStmt() Stmt {
 	return &ReturnStmt{
 		ReturnPos: pos,
 		Result:    x,
+	}
+}
+
+func (p *Parser) parseNativeStmt() Stmt {
+	if p.trace {
+		defer untracep(tracep(p, "NativeStmt"))
+	}
+
+	pos := p.expect(token.Native)
+
+	// name
+	if p.token != token.Ident {
+		p.errorExpected(p.pos, "identifier")
+		p.advance(stmtStart)
+		return &BadStmt{From: pos, To: p.pos}
+	}
+	name := p.parseIdent()
+
+	// '=' sign
+	assignPos := p.pos
+	if p.token != token.Assign {
+		p.errorExpected(p.pos, "'='")
+		p.advance(stmtStart)
+		return &BadStmt{From: pos, To: p.pos}
+	}
+	p.next()
+
+	// library path (string literal)
+	if p.token != token.String {
+		p.errorExpected(p.pos, "native library path (string literal)")
+		p.advance(stmtStart)
+		return &BadStmt{From: pos, To: p.pos}
+	}
+	pathVal, _ := strconv.Unquote(p.tokenLit)
+	pathLit := &StringLit{
+		Value:    pathVal,
+		ValuePos: p.pos,
+		Literal:  p.tokenLit,
+	}
+	p.next()
+
+	// '{'
+	if p.token != token.LBrace {
+		p.errorExpected(p.pos, "'{'")
+		p.advance(stmtStart)
+		return &BadStmt{From: pos, To: p.pos}
+	}
+	lbrace := p.expect(token.LBrace)
+
+	var funcs []*NativeFuncDecl
+	for p.token != token.RBrace && p.token != token.EOF {
+		// allow blank lines / explicit semicolons between decls
+		if p.token == token.Semicolon {
+			p.next()
+			continue
+		}
+
+		decl := p.parseNativeFuncDecl()
+		if decl == nil {
+			// recovery: skip to next line / closing brace
+			for p.token != token.Semicolon && p.token != token.RBrace && p.token != token.EOF {
+				p.next()
+			}
+			continue
+		}
+		funcs = append(funcs, decl)
+
+		if p.token == token.Semicolon {
+			p.next()
+		} else if p.token != token.RBrace {
+			p.errorExpected(p.pos, "';' or newline")
+			break
+		}
+	}
+
+	rbrace := p.expect(token.RBrace)
+	p.expectSemi()
+
+	return &NativeStmt{
+		NativePos: pos,
+		Name:      name,
+		AssignPos: assignPos,
+		Path:      pathVal,
+		PathLit:   pathLit,
+		LBrace:    lbrace,
+		Funcs:     funcs,
+		RBrace:    rbrace,
+	}
+}
+
+// parseNativeFuncDecl parses a single native function declaration inside a
+// native {...} block.  Grammar (one of):
+//
+//	name : func ( type, type ) retType
+//	name : func ( type, type )                 (void return)
+//	name ( type, type ) retType                (short form)
+//	name ( type, type )
+func (p *Parser) parseNativeFuncDecl() *NativeFuncDecl {
+	if p.token != token.Ident {
+		p.errorExpected(p.pos, "native function name")
+		return nil
+	}
+	name := p.parseIdent()
+
+	// optional ": func" prefix
+	if p.token == token.Colon {
+		p.next()
+		if p.token != token.Func {
+			p.errorExpected(p.pos, "'func'")
+			return nil
+		}
+		p.next() // consume 'func'
+	}
+
+	if p.token != token.LParen {
+		p.errorExpected(p.pos, "'('")
+		return nil
+	}
+	lparen := p.expect(token.LParen)
+
+	var params []*Ident
+	if p.token != token.RParen {
+		for {
+			if p.token != token.Ident {
+				p.errorExpected(p.pos, "native type name")
+				return nil
+			}
+			params = append(params, p.parseIdent())
+			if p.token != token.Comma {
+				break
+			}
+			p.next()
+		}
+	}
+	rparen := p.expect(token.RParen)
+
+	// optional return type
+	var ret *Ident
+	if p.token == token.Ident {
+		ret = p.parseIdent()
+	}
+
+	return &NativeFuncDecl{
+		Name:       name,
+		LParen:     lparen,
+		ParamTypes: params,
+		RParen:     rparen,
+		ReturnType: ret,
 	}
 }
 

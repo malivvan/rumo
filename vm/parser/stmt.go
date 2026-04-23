@@ -61,6 +61,78 @@ func (s *EmbedStmt) End() Pos { return s.Assign.End() }
 
 func (s *EmbedStmt) String() string { return s.Assign.String() }
 
+// NativeFuncDecl represents a single native function declaration inside a
+// NativeStmt body.  It captures the binding name, the list of parameter
+// types (as identifiers, e.g. "int", "float") and the return type (or nil
+// for void).
+type NativeFuncDecl struct {
+	Name       *Ident
+	LParen     Pos
+	ParamTypes []*Ident
+	RParen     Pos
+	ReturnType *Ident // may be nil (void / no return)
+}
+
+// Pos returns the position of first character belonging to the node.
+func (d *NativeFuncDecl) Pos() Pos { return d.Name.Pos() }
+
+// End returns the position of first character immediately after the node.
+func (d *NativeFuncDecl) End() Pos {
+	if d.ReturnType != nil {
+		return d.ReturnType.End()
+	}
+	return d.RParen + 1
+}
+
+func (d *NativeFuncDecl) String() string {
+	var params []string
+	for _, p := range d.ParamTypes {
+		params = append(params, p.Name)
+	}
+	ret := ""
+	if d.ReturnType != nil {
+		ret = " " + d.ReturnType.Name
+	}
+	return d.Name.Name + ": func(" + strings.Join(params, ", ") + ")" + ret
+}
+
+// NativeStmt represents a native library binding statement.
+//
+// Example:
+//
+//	native libm = "libm.so.6" {
+//	    sin: func(float) float
+//	    cos: func(float) float
+//	    pow: func(float, float) float
+//	}
+type NativeStmt struct {
+	NativePos Pos
+	Name      *Ident
+	AssignPos Pos
+	Path      string
+	PathLit   *StringLit
+	LBrace    Pos
+	Funcs     []*NativeFuncDecl
+	RBrace    Pos
+}
+
+func (s *NativeStmt) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *NativeStmt) Pos() Pos { return s.NativePos }
+
+// End returns the position of first character immediately after the node.
+func (s *NativeStmt) End() Pos { return s.RBrace + 1 }
+
+func (s *NativeStmt) String() string {
+	var parts []string
+	for _, f := range s.Funcs {
+		parts = append(parts, f.String())
+	}
+	return "native " + s.Name.Name + " = " + s.PathLit.Literal + " {" +
+		strings.Join(parts, "; ") + "}"
+}
+
 // BadStmt represents a bad statement.
 type BadStmt struct {
 	From Pos

@@ -68,7 +68,7 @@ hi def link     Constants           Keyword
 " Keywords
 syn keyword     CtrlWords           return break continue
 syn keyword     CondWords           if else
-syn keyword     Directive           import export
+syn keyword     Directive           import export native
 syn keyword     RepeatWords         for in
 syn keyword     Declaration         var error immutable
 

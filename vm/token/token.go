@@ -86,6 +86,7 @@ const (
 	Import
 	Go
 	Defer
+	Native
 	_keywordEnd
 )
 
@@ -162,6 +163,7 @@ var tokens = [...]string{
 	Import:       "import",
 	Go:           "go",
 	Defer:        "defer",
+	Native:       "native",
 }
 
 func (tok Token) String() string {

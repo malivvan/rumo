@@ -215,6 +215,12 @@ func (b *Bytecode) RemoveDuplicates() {
 			newIdx := len(deduped)
 			indexMap[curIdx] = newIdx
 			deduped = append(deduped, c)
+		case *Native:
+			// Native loader constants carry per-statement bindings and a
+			// lazily-populated runtime handle; never attempt to share them.
+			newIdx := len(deduped)
+			indexMap[curIdx] = newIdx
+			deduped = append(deduped, c)
 		default:
 			panic(fmt.Errorf("unsupported top-level constant type: %s",
 				c.TypeName()))
