@@ -1,6 +1,8 @@
 package vm_test
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/malivvan/rumo/vm"
@@ -731,4 +733,257 @@ func boolValue(b bool) vm.Object {
 		return vm.TrueValue
 	}
 	return vm.FalseValue
+}
+
+// Issue #25: Map and Array mutations are not thread-safe.
+//
+// IndexSet, builtinAppend, builtinDelete, and builtinSplice mutate the
+// underlying Go map/slice directly without any synchronisation. When the same
+// *Array or *Map object is shared between two concurrent routines (e.g. stored
+// in a global that both child VMs received as a snapshot pointer), concurrent
+// calls to these operations produce data races detected by -race and can crash
+// the process with "concurrent map read and map write" or corrupt slice state.
+//
+// The fix adds a sync.RWMutex to both Array and Map structs and acquires the
+// appropriate lock in every method that reads or writes the underlying
+// value (IndexGet, IndexSet, Copy, String, IsFalsy, Equals, Iterate, BinaryOp).
+// builtinDelete and builtinSplice, which bypass IndexSet to mutate the
+// underlying data directly, are also updated to acquire the write lock.
+
+// TestIssue25_ArrayIndexSetConcurrent verifies that concurrent IndexSet calls
+// on the same *Array do not race. Without the fix this triggers the Go race
+// detector and can corrupt slice state.
+func TestIssue25_ArrayIndexSetConcurrent(t *testing.T) {
+	const size = 100
+	arr := &vm.Array{Value: make([]vm.Object, size)}
+	for i := range arr.Value {
+		arr.Value[i] = &vm.Int{Value: 0}
+	}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 10; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				idx := &vm.Int{Value: int64((g*500 + j) % size)}
+				_ = arr.IndexSet(idx, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// TestIssue25_ArrayIndexGetConcurrent verifies that concurrent IndexGet and
+// IndexSet calls on the same *Array do not race.
+func TestIssue25_ArrayIndexGetConcurrent(t *testing.T) {
+	const size = 50
+	arr := &vm.Array{Value: make([]vm.Object, size)}
+	for i := range arr.Value {
+		arr.Value[i] = &vm.Int{Value: int64(i)}
+	}
+
+	var wg sync.WaitGroup
+	// writers
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				idx := &vm.Int{Value: int64(j % size)}
+				_ = arr.IndexSet(idx, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	// readers
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				_, _ = arr.IndexGet(&vm.Int{Value: int64(j % size)})
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// TestIssue25_MapIndexSetConcurrent verifies that concurrent IndexSet calls on
+// the same *Map do not race. Without the fix Go panics with "concurrent map
+// writes" or the race detector fires.
+func TestIssue25_MapIndexSetConcurrent(t *testing.T) {
+	m := &vm.Map{Value: make(map[string]vm.Object)}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 10; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 500; j++ {
+				key := &vm.String{Value: fmt.Sprintf("key%d", j%20)}
+				_ = m.IndexSet(key, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// TestIssue25_MapIndexGetConcurrent verifies that concurrent IndexGet and
+// IndexSet calls on the same *Map do not race.
+func TestIssue25_MapIndexGetConcurrent(t *testing.T) {
+	m := &vm.Map{Value: map[string]vm.Object{
+		"a": &vm.Int{Value: 1},
+		"b": &vm.Int{Value: 2},
+	}}
+
+	var wg sync.WaitGroup
+	// writers
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 300; j++ {
+				key := &vm.String{Value: fmt.Sprintf("key%d", j%10)}
+				_ = m.IndexSet(key, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	// readers
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 300; j++ {
+				key := &vm.String{Value: fmt.Sprintf("key%d", j%10)}
+				_, _ = m.IndexGet(key)
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// TestIssue25_ArrayCopyConcurrent verifies that Copy() can be called
+// concurrently with writes without data races.
+func TestIssue25_ArrayCopyConcurrent(t *testing.T) {
+	arr := &vm.Array{Value: []vm.Object{
+		&vm.Int{Value: 1}, &vm.Int{Value: 2}, &vm.Int{Value: 3},
+	}}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				_ = arr.Copy()
+			}
+		}(g)
+	}
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				_ = arr.IndexSet(&vm.Int{Value: int64(j % 3)}, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// TestIssue25_MapCopyConcurrent verifies that Map.Copy() can be called
+// concurrently with IndexSet without data races.
+func TestIssue25_MapCopyConcurrent(t *testing.T) {
+	m := &vm.Map{Value: map[string]vm.Object{
+		"x": &vm.Int{Value: 1},
+	}}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				_ = m.Copy()
+			}
+		}(g)
+	}
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				key := &vm.String{Value: fmt.Sprintf("k%d", j%5)}
+				_ = m.IndexSet(key, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// TestIssue25_ArrayIterateConcurrent verifies that creating an iterator from
+// a *Array concurrent with writes does not race.
+func TestIssue25_ArrayIterateConcurrent(t *testing.T) {
+	arr := &vm.Array{Value: []vm.Object{
+		&vm.Int{Value: 0}, &vm.Int{Value: 1}, &vm.Int{Value: 2},
+	}}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				it := arr.Iterate()
+				for it.Next() {
+					_ = it.Value()
+				}
+			}
+		}()
+	}
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				_ = arr.IndexSet(&vm.Int{Value: int64(j % 3)}, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	wg.Wait()
+}
+
+// TestIssue25_MapIterateConcurrent verifies that creating a map iterator
+// concurrently with map writes does not race or panic.
+func TestIssue25_MapIterateConcurrent(t *testing.T) {
+	m := &vm.Map{Value: map[string]vm.Object{
+		"a": &vm.Int{Value: 1},
+		"b": &vm.Int{Value: 2},
+	}}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				it := m.Iterate()
+				for it.Next() {
+					_ = it.Key()
+					_ = it.Value()
+				}
+			}
+		}()
+	}
+	for g := 0; g < 5; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				key := &vm.String{Value: fmt.Sprintf("k%d", j%5)}
+				_ = m.IndexSet(key, &vm.Int{Value: int64(j)})
+			}
+		}(g)
+	}
+	wg.Wait()
 }

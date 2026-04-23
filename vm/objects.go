@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/malivvan/rumo/vm/parser"
@@ -152,6 +153,7 @@ func (o *ObjectImpl) CanCall() bool {
 // Array represents an array of objects.
 type Array struct {
 	ObjectImpl
+	mu    sync.RWMutex
 	Value []Object
 }
 
@@ -161,6 +163,8 @@ func (o *Array) TypeName() string {
 }
 
 func (o *Array) String() string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	var elements []string
 	for _, e := range o.Value {
 		elements = append(elements, e.String())
@@ -174,10 +178,17 @@ func (o *Array) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if rhs, ok := rhs.(*Array); ok {
 		switch op {
 		case token.Add:
+			o.mu.RLock()
+			defer o.mu.RUnlock()
+			rhs.mu.RLock()
+			defer rhs.mu.RUnlock()
 			if len(rhs.Value) == 0 {
 				return o, nil
 			}
-			return &Array{Value: append(o.Value, rhs.Value...)}, nil
+			combined := make([]Object, len(o.Value)+len(rhs.Value))
+			copy(combined, o.Value)
+			copy(combined[len(o.Value):], rhs.Value)
+			return &Array{Value: combined}, nil
 		}
 	}
 	return nil, ErrInvalidOperator
@@ -185,6 +196,8 @@ func (o *Array) BinaryOp(op token.Token, rhs Object) (Object, error) {
 
 // Copy returns a copy of the type.
 func (o *Array) Copy() Object {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	var c []Object
 	for _, elem := range o.Value {
 		c = append(c, elem.Copy())
@@ -194,15 +207,21 @@ func (o *Array) Copy() Object {
 
 // IsFalsy returns true if the value of the type is falsy.
 func (o *Array) IsFalsy() bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	return len(o.Value) == 0
 }
 
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *Array) Equals(x Object) bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	var xVal []Object
 	switch x := x.(type) {
 	case *Array:
+		x.mu.RLock()
+		defer x.mu.RUnlock()
 		xVal = x.Value
 	case *ImmutableArray:
 		xVal = x.Value
@@ -227,6 +246,8 @@ func (o *Array) IndexGet(index Object) (res Object, err error) {
 		err = ErrInvalidIndexType
 		return
 	}
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	idxVal := int(intIdx.Value)
 	if idxVal < 0 || idxVal >= len(o.Value) {
 		res = UndefinedValue
@@ -243,6 +264,8 @@ func (o *Array) IndexSet(index, value Object) (err error) {
 		err = ErrInvalidIndexType
 		return
 	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	if intIdx < 0 || intIdx >= len(o.Value) {
 		err = ErrIndexOutOfBounds
 		return
@@ -251,11 +274,16 @@ func (o *Array) IndexSet(index, value Object) (err error) {
 	return nil
 }
 
-// Iterate creates an array iterator.
+// Iterate creates an array iterator. It snapshots the current slice so the
+// iterator is not affected by concurrent mutations.
 func (o *Array) Iterate() Iterator {
+	o.mu.RLock()
+	snapshot := make([]Object, len(o.Value))
+	copy(snapshot, o.Value)
+	o.mu.RUnlock()
 	return &ArrayIterator{
-		v: o.Value,
-		l: len(o.Value),
+		v: snapshot,
+		l: len(snapshot),
 	}
 }
 
@@ -1175,6 +1203,7 @@ func (o *Int) Equals(x Object) bool {
 // Map represents a map of objects.
 type Map struct {
 	ObjectImpl
+	mu    sync.RWMutex
 	Value map[string]Object
 }
 
@@ -1184,6 +1213,8 @@ func (o *Map) TypeName() string {
 }
 
 func (o *Map) String() string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	var pairs []string
 	for k, v := range o.Value {
 		pairs = append(pairs, fmt.Sprintf("%s: %s", k, v.String()))
@@ -1193,6 +1224,8 @@ func (o *Map) String() string {
 
 // Copy returns a copy of the type.
 func (o *Map) Copy() Object {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	c := make(map[string]Object)
 	for k, v := range o.Value {
 		c[k] = v.Copy()
@@ -1202,15 +1235,21 @@ func (o *Map) Copy() Object {
 
 // IsFalsy returns true if the value of the type is falsy.
 func (o *Map) IsFalsy() bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	return len(o.Value) == 0
 }
 
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *Map) Equals(x Object) bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	var xVal map[string]Object
 	switch x := x.(type) {
 	case *Map:
+		x.mu.RLock()
+		defer x.mu.RUnlock()
 		xVal = x.Value
 	case *ImmutableMap:
 		xVal = x.Value
@@ -1236,6 +1275,8 @@ func (o *Map) IndexGet(index Object) (res Object, err error) {
 		err = ErrInvalidIndexType
 		return
 	}
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	res, ok = o.Value[strIdx]
 	if !ok {
 		res = UndefinedValue
@@ -1250,19 +1291,27 @@ func (o *Map) IndexSet(index, value Object) (err error) {
 		err = ErrInvalidIndexType
 		return
 	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
 	o.Value[strIdx] = value
 	return nil
 }
 
-// Iterate creates a map iterator.
+// Iterate creates a map iterator. It snapshots the current keys and values so
+// the iterator is not affected by concurrent mutations.
 func (o *Map) Iterate() Iterator {
-	var keys []string
-	for k := range o.Value {
+	o.mu.RLock()
+	keys := make([]string, 0, len(o.Value))
+	vals := make([]Object, 0, len(o.Value))
+	for k, v := range o.Value {
 		keys = append(keys, k)
+		vals = append(vals, v)
 	}
+	o.mu.RUnlock()
 	return &MapIterator{
 		v: o.Value,
 		k: keys,
+		s: vals,
 		l: len(keys),
 	}
 }

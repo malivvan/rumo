@@ -506,7 +506,9 @@ func builtinDelete(ctx context.Context, args ...Object) (Object, error) {
 	switch arg := args[0].(type) {
 	case *Map:
 		if key, ok := args[1].(*String); ok {
+			arg.mu.Lock()
 			delete(arg.Value, key.Value)
+			arg.mu.Unlock()
 			return UndefinedValue, nil
 		}
 		return nil, ErrInvalidArgumentType{
@@ -540,8 +542,8 @@ func builtinSplice(ctx context.Context, args ...Object) (Object, error) {
 			Found:    args[0].TypeName(),
 		}
 	}
-	arrayLen := len(array.Value)
 
+	// Validate non-array arguments before acquiring the lock.
 	var startIdx int
 	if argsLen > 1 {
 		arg1, ok := args[1].(*Int)
@@ -553,12 +555,10 @@ func builtinSplice(ctx context.Context, args ...Object) (Object, error) {
 			}
 		}
 		startIdx = int(arg1.Value)
-		if startIdx < 0 || startIdx > arrayLen {
-			return nil, ErrIndexOutOfBounds
-		}
 	}
 
-	delCount := len(array.Value)
+	var hasDelCount bool
+	var delCount int
 	if argsLen > 2 {
 		arg2, ok := args[2].(*Int)
 		if !ok {
@@ -572,7 +572,32 @@ func builtinSplice(ctx context.Context, args ...Object) (Object, error) {
 		if delCount < 0 {
 			return nil, ErrIndexOutOfBounds
 		}
+		hasDelCount = true
 	}
+
+	var insertItems []Object
+	if argsLen > 3 {
+		insertItems = make([]Object, 0, argsLen-3)
+		for i := 3; i < argsLen; i++ {
+			insertItems = append(insertItems, args[i])
+		}
+	}
+
+	array.mu.Lock()
+	defer array.mu.Unlock()
+
+	arrayLen := len(array.Value)
+
+	if argsLen > 1 {
+		if startIdx < 0 || startIdx > arrayLen {
+			return nil, ErrIndexOutOfBounds
+		}
+	}
+
+	if !hasDelCount {
+		delCount = arrayLen
+	}
+
 	// if count of to be deleted items is bigger than expected, truncate it
 	if startIdx+delCount > arrayLen {
 		delCount = arrayLen - startIdx
@@ -582,14 +607,7 @@ func builtinSplice(ctx context.Context, args ...Object) (Object, error) {
 	deleted := append([]Object{}, array.Value[startIdx:endIdx]...)
 
 	head := array.Value[:startIdx]
-	var items []Object
-	if argsLen > 3 {
-		items = make([]Object, 0, argsLen-3)
-		for i := 3; i < argsLen; i++ {
-			items = append(items, args[i])
-		}
-	}
-	items = append(items, array.Value[endIdx:]...)
+	items := append(insertItems, array.Value[endIdx:]...)
 	array.Value = append(head, items...)
 
 	// return deleted items

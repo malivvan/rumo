@@ -112,6 +112,7 @@ type MapIterator struct {
 	ObjectImpl
 	v map[string]Object
 	k []string
+	s []Object // snapshot of values, parallel to k
 	i int
 	l int
 }
@@ -138,7 +139,7 @@ func (i *MapIterator) Equals(Object) bool {
 
 // Copy returns a copy of the type.
 func (i *MapIterator) Copy() Object {
-	return &MapIterator{v: i.v, k: i.k, i: i.i, l: i.l}
+	return &MapIterator{v: i.v, k: i.k, s: i.s, i: i.i, l: i.l}
 }
 
 // Next returns true if there are more elements to iterate.
@@ -155,6 +156,9 @@ func (i *MapIterator) Key() Object {
 
 // Value returns the value of the current element.
 func (i *MapIterator) Value() Object {
+	if i.s != nil {
+		return i.s[i.i-1]
+	}
 	k := i.k[i.i-1]
 	return i.v[k]
 }

@@ -13,17 +13,8 @@ define build
 	$(eval URL := $(shell if [ -z "$(VERSION)" ]; then echo -n "" ; else echo -n https://github.com/malivvan/rumo/releases/download/$(VERSION)/$(OUTPUT); fi))
 	$(eval SERIAL := $(shell if [ -z "$(VERSION)" ]; then uuidgen --random ; else uuidgen --sha1 --namespace @url --name $(URL); fi))
 	@echo "$(OUTPUT)"
-	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) GOFLAGS=-tags="$(4)" cyclonedx-gomod \
-      app -json -packages -licenses \
-      -serial=$(SERIAL) \
-      -output build/$(OUTPUT).json -main ./cmd > /dev/null 2>&1
-	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) go \
-	build -trimpath -tags="$(4)" \
-	  -ldflags="$(3) \
-	  -buildid=$(SERIAL) \
-	  -X github.com/malivvan/rumo.commit=$(COMMIT) \
-	  -X github.com/malivvan/rumo.version=$(VERSION)" \
-	  -o build/$(OUTPUT) ./cmd
+	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) GOFLAGS=-tags="$(4)" cyclonedx-gomod app -json -packages -licenses -serial=$(SERIAL) -output build/$(OUTPUT).json -main ./cmd > /dev/null 2>&1
+	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) go build -trimpath -tags="$(4)" -ldflags="$(3) -buildid=$(SERIAL) -X github.com/malivvan/rumo.commit=$(COMMIT) -X github.com/malivvan/rumo.version=$(VERSION)" -o build/$(OUTPUT) ./cmd
 	@if [ ! -f build/release.md ]; then \
 	  echo "| filename | serial |" > build/release.md; \
 	  echo "|----------|--------|" >> build/release.md; \
