@@ -1296,7 +1296,7 @@ func (p *Parser) parseTypeStmt() Stmt {
 	case token.Struct:
 		underlying = p.parseStructType()
 	case token.Func:
-		underlying = p.parseFuncType()
+		underlying = p.parseTypedFuncType()
 	case token.Ident:
 		// Named/alias value type. We accept a qualified or selector chain,
 		// e.g. `type MyInt int` or `type Time time.Time`, but no calls or
@@ -1316,8 +1316,9 @@ func (p *Parser) parseTypeStmt() Stmt {
 	}
 }
 
-// parseStructType parses a `struct { field; field; ... }` type literal.
-// Fields are a list of identifiers separated by semicolons or newlines.
+// parseStructType parses a `struct { name Type; name1, name2 Type; ... }`
+// type literal. Fields are Go-style: one or more names followed by a shared
+// type expression. Declarations are separated by semicolons or newlines.
 func (p *Parser) parseStructType() *StructType {
 	if p.trace {
 		defer untracep(tracep(p, "StructType"))
@@ -1326,7 +1327,7 @@ func (p *Parser) parseStructType() *StructType {
 	pos := p.expect(token.Struct)
 	lbrace := p.expect(token.LBrace)
 
-	var fields []*Ident
+	var fields []*StructField
 	seen := make(map[string]bool)
 	for p.token != token.RBrace && p.token != token.EOF {
 		if p.token == token.Semicolon {
@@ -1338,14 +1339,15 @@ func (p *Parser) parseStructType() *StructType {
 			p.advance(map[token.Token]bool{token.RBrace: true, token.Semicolon: true})
 			continue
 		}
-		// Accept a comma-separated field list (e.g. `x, y, z`).
+		// One or more comma-separated names, then the shared type.
+		var names []*Ident
 		for {
 			id := p.parseIdent()
 			if seen[id.Name] {
 				p.error(id.Pos(), "duplicate field name: "+id.Name)
 			} else {
 				seen[id.Name] = true
-				fields = append(fields, id)
+				names = append(names, id)
 			}
 			if p.token != token.Comma {
 				break
@@ -1356,6 +1358,12 @@ func (p *Parser) parseStructType() *StructType {
 				break
 			}
 		}
+		fieldType := p.parseTypeExpr()
+		if fieldType == nil {
+			break
+		}
+		fields = append(fields, &StructField{Names: names, Type: fieldType})
+
 		if p.token == token.Semicolon {
 			p.next()
 		} else if p.token != token.RBrace {
@@ -1371,6 +1379,120 @@ func (p *Parser) parseStructType() *StructType {
 		Fields:    fields,
 		RBrace:    rbrace,
 	}
+}
+
+// parseTypedFuncType parses a typed function signature:
+//
+//	func(a int, b int) int
+//	func(string) bool
+//	func(xs ...int) int
+//	func()
+func (p *Parser) parseTypedFuncType() *TypedFuncType {
+	if p.trace {
+		defer untracep(tracep(p, "TypedFuncType"))
+	}
+
+	pos := p.expect(token.Func)
+	lparen := p.expect(token.LParen)
+
+	var params []*FuncParam
+	varArgs := false
+	if p.token != token.RParen {
+		params, varArgs = p.parseTypedParamList()
+	}
+
+	rparen := p.expect(token.RParen)
+
+	// Optional single return type. Any token that could start a type expression
+	// (identifier, selector) is treated as a result. If the next token is a
+	// statement boundary or block opener, there is no return type.
+	var result Expr
+	if p.token == token.Ident {
+		result = p.parseTypeExpr()
+	}
+
+	return &TypedFuncType{
+		FuncPos: pos,
+		LParen:  lparen,
+		Params:  params,
+		VarArgs: varArgs,
+		RParen:  rparen,
+		Result:  result,
+	}
+}
+
+// parseTypedParamList parses a comma-separated list of typed function params.
+// Grammar accepted (per entry):
+//
+//	name Type           — named parameter
+//	Type                — unnamed (positional-only) parameter
+//	name ...Type        — named varargs (must be last)
+//	...Type             — unnamed varargs (must be last)
+//
+// Go allows `a, b int` (grouped names share a type); because this is
+// ambiguous without two-token lookahead in a dynamically-typed surface, we
+// require one name per type: `a int, b int`. This keeps parsing unambiguous
+// and still feels Go-like.
+func (p *Parser) parseTypedParamList() ([]*FuncParam, bool) {
+	var params []*FuncParam
+	varArgs := false
+
+	for {
+		// `...T` — unnamed varargs.
+		if p.token == token.Ellipsis {
+			p.next()
+			typ := p.parseTypeExpr()
+			params = append(params, &FuncParam{Type: typ})
+			varArgs = true
+			break
+		}
+
+		// First token must be an identifier, which is either the parameter
+		// name (followed by a type) or a type name (unnamed parameter).
+		if p.token != token.Ident {
+			p.errorExpected(p.pos, "parameter name or type")
+			return params, varArgs
+		}
+		first := p.parseIdent()
+
+		// Is there a type following the first identifier?
+		//   name ... Type
+		//   name Type
+		switch {
+		case p.token == token.Ellipsis:
+			p.next()
+			typ := p.parseTypeExpr()
+			params = append(params, &FuncParam{Name: first, Type: typ})
+			varArgs = true
+		case p.token == token.Ident || p.token == token.Func:
+			typ := p.parseTypeExpr()
+			params = append(params, &FuncParam{Name: first, Type: typ})
+		default:
+			// No type follows — `first` itself was the (unnamed) type.
+			params = append(params, &FuncParam{Type: first})
+		}
+
+		if varArgs || p.token != token.Comma {
+			break
+		}
+		p.next()
+	}
+
+	return params, varArgs
+}
+
+// parseTypeExpr parses a type expression used on the RHS of a type statement
+// or inside a struct / func signature. Currently supported:
+//   - Identifier chain: `int`, `pkg.Type`
+//
+// Composite types like maps, arrays and function types inside signatures are
+// not yet supported — keep the surface small and predictable.
+func (p *Parser) parseTypeExpr() Expr {
+	if p.token != token.Ident {
+		p.errorExpected(p.pos, "type name")
+		return &BadExpr{From: p.pos, To: p.pos}
+	}
+	return p.parseTypeName()
 }
 
 // parseTypeName parses an identifier used as a type (for `type X <name>`).

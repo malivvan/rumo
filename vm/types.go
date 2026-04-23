@@ -28,9 +28,10 @@ const (
 // declared type:
 //
 //   - struct: returns a *StructInstance whose fields are initialised from
-//     positional or keyword arguments.
-//   - func:   checks arity (with optional varargs) and returns the passed
-//     callable, effectively acting as a runtime type assertion.
+//     positional or keyword arguments, each value validated against the
+//     declared field type.
+//   - func:   wraps the given callable so subsequent invocations validate
+//     their arguments (and return value) against the declared signature.
 //   - value:  delegates to the underlying built-in converter (int, float,
 //     string, bool, bytes, array, map, ...).
 type UserType struct {
@@ -39,13 +40,16 @@ type UserType struct {
 	Name string
 	Kind UserTypeKind
 
-	// Struct metadata (UserTypeStruct).
-	Fields []string
+	// Struct metadata (UserTypeStruct). FieldTypes is parallel to Fields.
+	Fields     []string
+	FieldTypes []string
 
-	// Func metadata (UserTypeFunc).
-	Params     []string
+	// Func metadata (UserTypeFunc). ParamTypes is parallel to Params.
+	Params     []string // parameter names (may be empty strings for unnamed)
+	ParamTypes []string
 	VarArgs    bool
-	NumParams  int // number of fixed parameters (excluding varargs slot)
+	NumParams  int    // number of fixed parameters (excluding the varargs slot)
+	Result     string // return type name; "" = no return
 
 	// Value metadata (UserTypeValue). Underlying is the name of the base
 	// type (e.g. "int", "string"). The converter is resolved lazily.
@@ -68,17 +72,38 @@ func (t *UserType) TypeName() string {
 func (t *UserType) String() string {
 	switch t.Kind {
 	case UserTypeStruct:
-		return "type " + t.Name + " struct { " + strings.Join(t.Fields, "; ") + " }"
-	case UserTypeFunc:
-		params := append([]string(nil), t.Params...)
-		if t.VarArgs && len(params) > 0 {
-			params[len(params)-1] = "..." + params[len(params)-1]
+		var parts []string
+		for i, f := range t.Fields {
+			parts = append(parts, f+" "+t.FieldTypes[i])
 		}
-		return "type " + t.Name + " func(" + strings.Join(params, ", ") + ")"
+		return "type " + t.Name + " struct { " + strings.Join(parts, "; ") + " }"
+	case UserTypeFunc:
+		return "type " + t.Name + " " + t.funcSignature()
 	case UserTypeValue:
 		return "type " + t.Name + " " + t.Underlying
 	}
 	return "type " + t.Name
+}
+
+// funcSignature returns the `func(...) R` form for UserTypeFunc.
+func (t *UserType) funcSignature() string {
+	parts := make([]string, len(t.Params))
+	for i, p := range t.Params {
+		typ := t.ParamTypes[i]
+		if t.VarArgs && i == len(t.Params)-1 {
+			typ = "..." + typ
+		}
+		if p == "" {
+			parts[i] = typ
+		} else {
+			parts[i] = p + " " + typ
+		}
+	}
+	sig := "func(" + strings.Join(parts, ", ") + ")"
+	if t.Result != "" {
+		sig += " " + t.Result
+	}
+	return sig
 }
 
 // Copy returns the same UserType. Type definitions are immutable, so sharing
@@ -115,44 +140,61 @@ func (t *UserType) callStruct(args []Object) (Object, error) {
 		Type:   t,
 		Values: make(map[string]Object, len(t.Fields)),
 	}
-	// Default all fields to undefined.
-	for _, f := range t.Fields {
-		inst.Values[f] = UndefinedValue
-	}
-	switch len(args) {
-	case 0:
-		// zero value
-		return inst, nil
-	case 1:
-		// Single argument may be a map of field -> value for keyword-style
-		// initialisation, otherwise fall through to positional handling.
-		if m, ok := args[0].(*Map); ok {
+	// Keyword-style construction: a single map maps field -> value.
+	if len(args) == 1 {
+		switch m := args[0].(type) {
+		case *Map:
 			m.mu.RLock()
 			defer m.mu.RUnlock()
-			for k, v := range m.Value {
-				if _, known := inst.Values[k]; !known {
-					return nil, fmt.Errorf("type %s: unknown field %q", t.Name, k)
-				}
-				inst.Values[k] = v
-			}
-			return inst, nil
-		}
-		if m, ok := args[0].(*ImmutableMap); ok {
-			for k, v := range m.Value {
-				if _, known := inst.Values[k]; !known {
-					return nil, fmt.Errorf("type %s: unknown field %q", t.Name, k)
-				}
-				inst.Values[k] = v
-			}
-			return inst, nil
+			return t.fillFromMap(inst, m.Value)
+		case *ImmutableMap:
+			return t.fillFromMap(inst, m.Value)
 		}
 	}
+
 	if len(args) > len(t.Fields) {
 		return nil, fmt.Errorf("type %s: too many arguments (want %d, got %d)",
 			t.Name, len(t.Fields), len(args))
 	}
-	for i, v := range args {
-		inst.Values[t.Fields[i]] = v
+
+	// Positional initialisation with zero-filling.
+	for i, name := range t.Fields {
+		declared := t.FieldTypes[i]
+		if i < len(args) {
+			v, err := coerceToDeclared(t.Name+"."+name, declared, args[i])
+			if err != nil {
+				return nil, err
+			}
+			inst.Values[name] = v
+		} else {
+			inst.Values[name] = zeroForType(declared)
+		}
+	}
+	return inst, nil
+}
+
+func (t *UserType) fillFromMap(inst *StructInstance, src map[string]Object) (Object, error) {
+	// Fields not mentioned in src take their zero value.
+	for i, name := range t.Fields {
+		if v, ok := src[name]; ok {
+			vv, err := coerceToDeclared(t.Name+"."+name, t.FieldTypes[i], v)
+			if err != nil {
+				return nil, err
+			}
+			inst.Values[name] = vv
+		} else {
+			inst.Values[name] = zeroForType(t.FieldTypes[i])
+		}
+	}
+	// Reject keys that do not correspond to any field.
+	known := make(map[string]struct{}, len(t.Fields))
+	for _, f := range t.Fields {
+		known[f] = struct{}{}
+	}
+	for k := range src {
+		if _, ok := known[k]; !ok {
+			return nil, fmt.Errorf("type %s: unknown field %q", t.Name, k)
+		}
 	}
 	return inst, nil
 }
@@ -166,7 +208,7 @@ func (t *UserType) callFunc(args []Object) (Object, error) {
 	if !fn.CanCall() {
 		return nil, fmt.Errorf("type %s: argument is not callable (%s)", t.Name, fn.TypeName())
 	}
-	// For CompiledFunction we can eagerly validate the arity.
+	// Validate declared arity against known callables.
 	if cf, ok := fn.(*CompiledFunction); ok {
 		if t.VarArgs {
 			if cf.NumParameters < t.NumParams {
@@ -176,8 +218,6 @@ func (t *UserType) callFunc(args []Object) (Object, error) {
 		} else {
 			want := t.NumParams
 			if cf.VarArgs {
-				// A varargs callable with fewer fixed params can still accept
-				// our fixed-arity call; don't reject it.
 				if cf.NumParameters-1 > want {
 					return nil, fmt.Errorf("type %s: callable fixed arity %d exceeds declared %d",
 						t.Name, cf.NumParameters-1, want)
@@ -188,7 +228,74 @@ func (t *UserType) callFunc(args []Object) (Object, error) {
 			}
 		}
 	}
-	return fn, nil
+	// Return a wrapper that validates argument (and return) types on every
+	// invocation. The wrapper is a regular BuiltinFunction so it integrates
+	// with the VM's existing dispatch machinery.
+	typ := t
+	return &BuiltinFunction{
+		Name: t.Name,
+		Value: func(ctx context.Context, callArgs ...Object) (Object, error) {
+			if err := typ.validateCallArgs(callArgs); err != nil {
+				return nil, err
+			}
+			res, err := CallFunc(ctx, fn, callArgs...)
+			if err != nil {
+				return nil, err
+			}
+			if res == nil {
+				res = UndefinedValue
+			}
+			if typ.Result != "" {
+				if !isOfType(typ.Result, res) {
+					return nil, fmt.Errorf("type %s: return value type mismatch: want %s, got %s",
+						typ.Name, typ.Result, res.TypeName())
+				}
+			}
+			return res, nil
+		},
+	}, nil
+}
+
+func (t *UserType) validateCallArgs(args []Object) error {
+	if t.VarArgs {
+		if len(args) < t.NumParams {
+			return fmt.Errorf("type %s: not enough arguments: want at least %d, got %d",
+				t.Name, t.NumParams, len(args))
+		}
+		for i := 0; i < t.NumParams; i++ {
+			if !isOfType(t.ParamTypes[i], args[i]) {
+				return fmt.Errorf("type %s: arg %d (%s) type mismatch: want %s, got %s",
+					t.Name, i, paramLabel(t.Params, i), t.ParamTypes[i], args[i].TypeName())
+			}
+		}
+		tailType := t.ParamTypes[t.NumParams]
+		for i := t.NumParams; i < len(args); i++ {
+			if !isOfType(tailType, args[i]) {
+				return fmt.Errorf("type %s: varargs element %d type mismatch: want %s, got %s",
+					t.Name, i-t.NumParams, tailType, args[i].TypeName())
+			}
+		}
+		return nil
+	}
+
+	if len(args) != t.NumParams {
+		return fmt.Errorf("type %s: want %d argument(s), got %d",
+			t.Name, t.NumParams, len(args))
+	}
+	for i := 0; i < t.NumParams; i++ {
+		if !isOfType(t.ParamTypes[i], args[i]) {
+			return fmt.Errorf("type %s: arg %d (%s) type mismatch: want %s, got %s",
+				t.Name, i, paramLabel(t.Params, i), t.ParamTypes[i], args[i].TypeName())
+		}
+	}
+	return nil
+}
+
+func paramLabel(names []string, i int) string {
+	if i < len(names) && names[i] != "" {
+		return names[i]
+	}
+	return fmt.Sprintf("#%d", i)
 }
 
 func (t *UserType) callValue(ctx context.Context, args []Object) (Object, error) {
@@ -250,6 +357,156 @@ func valueTypeConverter(name string) (CallableFunc, bool) {
 		return builtinTime, true
 	}
 	return nil, false
+}
+
+// coerceToDeclared ensures that v is acceptable for a field/parameter of the
+// given declared type. Values already of the declared type pass through.
+// The special sentinel `undefined` is replaced with the declared zero value
+// so that `Point({y: 2})` leaves `x` as `0` (for `x int`). Anything else is
+// rejected with a precise error.
+func coerceToDeclared(label, typeName string, v Object) (Object, error) {
+	if typeName == "" {
+		return v, nil
+	}
+	if _, isUndef := v.(*Undefined); isUndef {
+		return zeroForType(typeName), nil
+	}
+	if isOfType(typeName, v) {
+		return v, nil
+	}
+	return nil, fmt.Errorf("field %s: type mismatch: want %s, got %s",
+		label, typeName, v.TypeName())
+}
+
+// isOfType returns true if v's runtime type matches the named declared type.
+// Unknown type names (including user-defined types not yet resolvable) are
+// treated permissively — anything goes.
+func isOfType(typeName string, v Object) bool {
+	switch typeName {
+	case "":
+		return true
+	case "int", "int64":
+		_, ok := v.(*Int)
+		return ok
+	case "int8":
+		_, ok := v.(*Int8)
+		return ok
+	case "int16":
+		_, ok := v.(*Int16)
+		return ok
+	case "uint":
+		_, ok := v.(*Uint)
+		return ok
+	case "uint8":
+		_, ok := v.(*Uint8)
+		return ok
+	case "uint16":
+		_, ok := v.(*Uint16)
+		return ok
+	case "uint64":
+		_, ok := v.(*Uint64)
+		return ok
+	case "byte":
+		_, ok := v.(*Byte)
+		return ok
+	case "bool":
+		_, ok := v.(*Bool)
+		return ok
+	case "float", "float64", "double":
+		_, ok := v.(*Float64)
+		return ok
+	case "float32":
+		_, ok := v.(*Float32)
+		return ok
+	case "char", "rune":
+		_, ok := v.(*Char)
+		return ok
+	case "string":
+		_, ok := v.(*String)
+		return ok
+	case "bytes":
+		_, ok := v.(*Bytes)
+		return ok
+	case "error":
+		_, ok := v.(*Error)
+		return ok
+	case "ptr":
+		_, ok := v.(*Ptr)
+		return ok
+	case "array":
+		_, ok := v.(*Array)
+		return ok
+	case "immutable_array":
+		_, ok := v.(*ImmutableArray)
+		return ok
+	case "map":
+		_, ok := v.(*Map)
+		return ok
+	case "immutable_map":
+		_, ok := v.(*ImmutableMap)
+		return ok
+	case "time":
+		_, ok := v.(*Time)
+		return ok
+	case "undefined":
+		_, ok := v.(*Undefined)
+		return ok
+	case "any", "object":
+		return true
+	}
+	// Unknown type (user-defined or unsupported): if it's a struct
+	// instance carrying that type's name, accept it.
+	if si, ok := v.(*StructInstance); ok {
+		if si.Type != nil && si.Type.Name == typeName {
+			return true
+		}
+	}
+	// Otherwise be permissive — we don't enforce unknown type names at runtime.
+	return true
+}
+
+// zeroForType returns the Go-like zero value for a named declared type.
+// Unknown types default to undefined.
+func zeroForType(typeName string) Object {
+	switch typeName {
+	case "int", "int64":
+		return &Int{}
+	case "int8":
+		return &Int8{}
+	case "int16":
+		return &Int16{}
+	case "uint":
+		return &Uint{}
+	case "uint8":
+		return &Uint8{}
+	case "uint16":
+		return &Uint16{}
+	case "uint64":
+		return &Uint64{}
+	case "byte":
+		return &Byte{}
+	case "bool":
+		return FalseValue
+	case "float", "float64", "double":
+		return &Float64{}
+	case "float32":
+		return &Float32{}
+	case "char", "rune":
+		return &Char{}
+	case "string":
+		return &String{}
+	case "bytes":
+		return &Bytes{}
+	case "array":
+		return &Array{}
+	case "immutable_array":
+		return &ImmutableArray{}
+	case "map":
+		return &Map{Value: make(map[string]Object)}
+	case "immutable_map":
+		return &ImmutableMap{Value: make(map[string]Object)}
+	}
+	return UndefinedValue
 }
 
 // StructInstance is a single value of a user-defined struct type. It supports
@@ -356,7 +613,8 @@ func (s *StructInstance) IndexGet(index Object) (Object, error) {
 	return v, nil
 }
 
-// IndexSet assigns a value to an existing field; unknown fields are rejected.
+// IndexSet assigns a value to an existing field, validating the declared
+// type. Unknown fields are rejected.
 func (s *StructInstance) IndexSet(index, value Object) error {
 	key, ok := ToString(index)
 	if !ok {
@@ -366,6 +624,18 @@ func (s *StructInstance) IndexSet(index, value Object) error {
 	defer s.mu.Unlock()
 	if _, known := s.Values[key]; !known {
 		return fmt.Errorf("type %s: no such field %q", s.TypeName(), key)
+	}
+	if s.Type != nil {
+		for i, f := range s.Type.Fields {
+			if f == key {
+				coerced, err := coerceToDeclared(s.Type.Name+"."+key, s.Type.FieldTypes[i], value)
+				if err != nil {
+					return err
+				}
+				s.Values[key] = coerced
+				return nil
+			}
+		}
 	}
 	s.Values[key] = value
 	return nil

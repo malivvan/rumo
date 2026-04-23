@@ -1,0 +1,6 @@
+fmt := import("fmt")
+
+type Person struct { Name string; Age int }
+
+p1 := Person("Alice", 30)
+fmt.printf("%v\n", p1)
