@@ -118,7 +118,10 @@ func ToInt(o Object) (v int, ok bool) {
 	case *Int:
 		v = int(o.Value)
 		ok = true
-	case *Float:
+	case *Float32:
+		v = int(o.Value)
+		ok = true
+	case *Float64:
 		v = int(o.Value)
 		ok = true
 	case *Char:
@@ -145,7 +148,10 @@ func ToInt64(o Object) (v int64, ok bool) {
 	case *Int:
 		v = o.Value
 		ok = true
-	case *Float:
+	case *Float32:
+		v = int64(o.Value)
+		ok = true
+	case *Float64:
 		v = int64(o.Value)
 		ok = true
 	case *Char:
@@ -172,7 +178,10 @@ func ToFloat64(o Object) (v float64, ok bool) {
 	case *Int:
 		v = float64(o.Value)
 		ok = true
-	case *Float:
+	case *Float32:
+		v = float64(o.Value)
+		ok = true
+	case *Float64:
 		v = o.Value
 		ok = true
 	case *String:
@@ -238,7 +247,9 @@ func ToInterface(o Object) (res interface{}) {
 		res = o.Value
 	case *String:
 		res = o.Value
-	case *Float:
+	case *Float32:
+		res = o.Value
+	case *Float64:
 		res = o.Value
 	case *Bool:
 		res = o == TrueValue
@@ -301,8 +312,10 @@ func FromInterface(v interface{}) (Object, error) {
 		return &Char{Value: v}, nil
 	case byte:
 		return &Char{Value: rune(v)}, nil
+	case float32:
+		return &Float32{Value: v}, nil
 	case float64:
-		return &Float{Value: v}, nil
+		return &Float64{Value: v}, nil
 	case []byte:
 		if len(v) > DefaultConfig.MaxBytesLen {
 			return nil, ErrBytesLimit

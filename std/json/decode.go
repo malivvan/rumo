@@ -221,7 +221,7 @@ func (d *decodeState) literal() (vm.Object, error) {
 			panic(phasePanicMsg)
 		}
 		n, _ := strconv.ParseFloat(string(item), 10)
-		return &vm.Float{Value: n}, nil
+			return &vm.Float64{Value: n}, nil
 	}
 }
 

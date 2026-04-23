@@ -201,7 +201,7 @@ func timesDurationHours(ctx context.Context, args ...vm.Object) (ret vm.Object, 
 		return
 	}
 
-	ret = &vm.Float{Value: time.Duration(i1).Hours()}
+	ret = &vm.Float64{Value: time.Duration(i1).Hours()}
 
 	return
 }
@@ -222,7 +222,7 @@ func timesDurationMinutes(ctx context.Context, args ...vm.Object) (ret vm.Object
 		return
 	}
 
-	ret = &vm.Float{Value: time.Duration(i1).Minutes()}
+	ret = &vm.Float64{Value: time.Duration(i1).Minutes()}
 
 	return
 }
@@ -264,7 +264,7 @@ func timesDurationSeconds(ctx context.Context, args ...vm.Object) (ret vm.Object
 		return
 	}
 
-	ret = &vm.Float{Value: time.Duration(i1).Seconds()}
+	ret = &vm.Float64{Value: time.Duration(i1).Seconds()}
 
 	return
 }

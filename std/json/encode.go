@@ -208,7 +208,29 @@ func Encode(o vm.Object) ([]byte, error) {
 		b = append(b, '"')
 	case *vm.Char:
 		b = strconv.AppendInt(b, int64(o.Value), 10)
-	case *vm.Float:
+	case *vm.Float32:
+		var y []byte
+		f := float64(o.Value)
+		if math.IsInf(f, 0) || math.IsNaN(f) {
+			return nil, errors.New("unsupported float value")
+		}
+		abs := math.Abs(f)
+		fmt := byte('f')
+		if abs != 0 {
+			if abs < 1e-6 || abs >= 1e21 {
+				fmt = 'e'
+			}
+		}
+		y = strconv.AppendFloat(y, f, fmt, -1, 32)
+		if fmt == 'e' {
+			n := len(y)
+			if n >= 4 && y[n-4] == 'e' && y[n-3] == '-' && y[n-2] == '0' {
+				y[n-2] = y[n-1]
+				y = y[:n-1]
+			}
+		}
+		b = append(b, y...)
+	case *vm.Float64:
 		var y []byte
 
 		f := o.Value

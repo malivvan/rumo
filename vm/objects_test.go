@@ -15,7 +15,9 @@ func TestObject_TypeName(t *testing.T) {
 	var o vm.Object = &vm.Int{}
 	require.Equal(t, "int", o.TypeName())
 	o = &vm.Float{}
-	require.Equal(t, "float", o.TypeName())
+	require.Equal(t, "float64", o.TypeName())
+	o = &vm.Float32{}
+	require.Equal(t, "float32", o.TypeName())
 	o = &vm.Char{}
 	require.Equal(t, "char", o.TypeName())
 	o = &vm.String{}

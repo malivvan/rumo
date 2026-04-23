@@ -70,7 +70,7 @@ func Const(val any) vm.Object {
 	case int:
 		return &vm.Int{Value: int64(v)}
 	case float64:
-		return &vm.Float{Value: float64(v)}
+		return &vm.Float64{Value: float64(v)}
 	case string:
 		return &vm.String{Value: v}
 	case bool:
@@ -340,7 +340,7 @@ func funcARF(fn func() float64) vm.CallableFunc {
 		if len(args) != 0 {
 			return nil, vm.ErrWrongNumArguments
 		}
-		return &vm.Float{Value: fn()}, nil
+		return &vm.Float64{Value: fn()}, nil
 	}
 }
 
@@ -420,7 +420,7 @@ func funcAFRF(fn func(float64) float64) vm.CallableFunc {
 				Found:    args[0].TypeName(),
 			}
 		}
-		return &vm.Float{Value: fn(f1)}, nil
+		return &vm.Float64{Value: fn(f1)}, nil
 	}
 }
 
@@ -458,7 +458,7 @@ func funcAIRF(fn func(int) float64) vm.CallableFunc {
 				Found:    args[0].TypeName(),
 			}
 		}
-		return &vm.Float{Value: fn(i1)}, nil
+		return &vm.Float64{Value: fn(i1)}, nil
 	}
 }
 
@@ -504,7 +504,7 @@ func funcAFFRF(fn func(float64, float64) float64) vm.CallableFunc {
 				Found:    args[1].TypeName(),
 			}
 		}
-		return &vm.Float{Value: fn(f1, f2)}, nil
+		return &vm.Float64{Value: fn(f1, f2)}, nil
 	}
 }
 
@@ -531,7 +531,7 @@ func funcAIFRF(fn func(int, float64) float64) vm.CallableFunc {
 				Found:    args[1].TypeName(),
 			}
 		}
-		return &vm.Float{Value: fn(i1, f2)}, nil
+		return &vm.Float64{Value: fn(i1, f2)}, nil
 	}
 }
 
@@ -558,7 +558,7 @@ func funcAFIRF(fn func(float64, int) float64) vm.CallableFunc {
 				Found:    args[1].TypeName(),
 			}
 		}
-		return &vm.Float{Value: fn(f1, i2)}, nil
+		return &vm.Float64{Value: fn(f1, i2)}, nil
 	}
 }
 

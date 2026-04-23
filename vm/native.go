@@ -26,10 +26,14 @@ const (
 	NativeInt                // int64  <=> intptr_t / long
 	NativeUInt               // uint64 <=> uintptr_t / unsigned long
 	NativeBool               // bool
-	NativeFloat              // float64 <=> double
+	NativeFloat64            // float64 <=> double
+	NativeFloat32            // float32 <=> float
 	NativeString             // string  <=> const char* (null-terminated)
 	NativePtr                // uintptr <=> void*
 	NativeBytes              // []byte  <=> void* (pointer to slice data)
+
+	// NativeFloat is a backward-compatible alias for NativeFloat64.
+	NativeFloat = NativeFloat64
 )
 
 // nativeKindByName resolves a user-facing type keyword such as "int" or
@@ -44,8 +48,10 @@ func nativeKindByName(name string) (NativeKind, bool) {
 		return NativeUInt, true
 	case "bool":
 		return NativeBool, true
-	case "float":
-		return NativeFloat, true
+	case "float", "float64":
+		return NativeFloat64, true
+	case "float32":
+		return NativeFloat32, true
 	case "string":
 		return NativeString, true
 	case "ptr":
@@ -66,8 +72,10 @@ func (k NativeKind) String() string {
 		return "uint"
 	case NativeBool:
 		return "bool"
-	case NativeFloat:
-		return "float"
+	case NativeFloat64:
+		return "float64"
+	case NativeFloat32:
+		return "float32"
 	case NativeString:
 		return "string"
 	case NativePtr:
@@ -88,8 +96,10 @@ func (k NativeKind) goType() reflect.Type {
 		return reflect.TypeOf(uint64(0))
 	case NativeBool:
 		return reflect.TypeOf(false)
-	case NativeFloat:
+	case NativeFloat64:
 		return reflect.TypeOf(float64(0))
+	case NativeFloat32:
+		return reflect.TypeOf(float32(0))
 	case NativeString:
 		return reflect.TypeOf("")
 	case NativePtr, NativeBytes:
@@ -330,12 +340,18 @@ func rumoToNativeArg(o Object, kind NativeKind) (reflect.Value, any, error) {
 			return reflect.Value{}, nil, fmt.Errorf("expected bool, got %s", o.TypeName())
 		}
 		return reflect.ValueOf(b), nil, nil
-	case NativeFloat:
+	case NativeFloat64:
 		f, ok := ToFloat64(o)
 		if !ok {
 			return reflect.Value{}, nil, fmt.Errorf("expected float, got %s", o.TypeName())
 		}
 		return reflect.ValueOf(f), nil, nil
+	case NativeFloat32:
+		f, ok := ToFloat64(o)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf("expected float, got %s", o.TypeName())
+		}
+		return reflect.ValueOf(float32(f)), nil, nil
 	case NativeString:
 		// purego copies non null-terminated strings into arena memory that
 		// is only valid for the call, so we don't need to keep them alive
@@ -396,8 +412,10 @@ func nativeResultToRumo(v reflect.Value, kind NativeKind) (Object, error) {
 			return TrueValue, nil
 		}
 		return FalseValue, nil
-	case NativeFloat:
-		return &Float{Value: v.Float()}, nil
+	case NativeFloat64:
+		return &Float64{Value: v.Float()}, nil
+	case NativeFloat32:
+		return &Float32{Value: float32(v.Float())}, nil
 	case NativeString:
 		// purego already copied the C string into Go memory.
 		return &String{Value: v.String()}, nil

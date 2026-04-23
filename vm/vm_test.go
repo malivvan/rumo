@@ -667,7 +667,7 @@ func TestBuiltinFunction(t *testing.T) {
 
 	// type_name
 	expectRun(t, `out = type_name(1)`, nil, "int")
-	expectRun(t, `out = type_name(1.1)`, nil, "float")
+	expectRun(t, `out = type_name(1.1)`, nil, "float64")
 	expectRun(t, `out = type_name("a")`, nil, "string")
 	expectRun(t, `out = type_name([1,2,3])`, nil, "array")
 	expectRun(t, `out = type_name({k:1})`, nil, "map")

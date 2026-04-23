@@ -20,11 +20,15 @@ func init() {
 	addBuiltinFunction("int", builtinInt)
 	addBuiltinFunction("bool", builtinBool)
 	addBuiltinFunction("float", builtinFloat)
+	addBuiltinFunction("float32", builtinFloat32)
+	addBuiltinFunction("float64", builtinFloat64)
 	addBuiltinFunction("char", builtinChar)
 	addBuiltinFunction("bytes", builtinBytes)
 	addBuiltinFunction("time", builtinTime)
 	addBuiltinFunction("is_int", builtinIsInt)
 	addBuiltinFunction("is_float", builtinIsFloat)
+	addBuiltinFunction("is_float32", builtinIsFloat32)
+	addBuiltinFunction("is_float64", builtinIsFloat64)
 	addBuiltinFunction("is_string", builtinIsString)
 	addBuiltinFunction("is_bool", builtinIsBool)
 	addBuiltinFunction("is_char", builtinIsChar)
@@ -81,7 +85,28 @@ func builtinIsFloat(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 1 {
 		return nil, ErrWrongNumArguments
 	}
-	if _, ok := args[0].(*Float); ok {
+	switch args[0].(type) {
+	case *Float32, *Float64:
+		return TrueValue, nil
+	}
+	return FalseValue, nil
+}
+
+func builtinIsFloat32(ctx context.Context, args ...Object) (Object, error) {
+	if len(args) != 1 {
+		return nil, ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*Float32); ok {
+		return TrueValue, nil
+	}
+	return FalseValue, nil
+}
+
+func builtinIsFloat64(ctx context.Context, args ...Object) (Object, error) {
+	if len(args) != 1 {
+		return nil, ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*Float64); ok {
 		return TrueValue, nil
 	}
 	return FalseValue, nil
@@ -403,12 +428,48 @@ func builtinFloat(ctx context.Context, args ...Object) (Object, error) {
 	if !(argsLen == 1 || argsLen == 2) {
 		return nil, ErrWrongNumArguments
 	}
-	if _, ok := args[0].(*Float); ok {
+	if _, ok := args[0].(*Float64); ok {
 		return args[0], nil
 	}
 	v, ok := ToFloat64(args[0])
 	if ok {
-		return &Float{Value: v}, nil
+		return &Float64{Value: v}, nil
+	}
+	if argsLen == 2 {
+		return args[1], nil
+	}
+	return UndefinedValue, nil
+}
+
+func builtinFloat32(ctx context.Context, args ...Object) (Object, error) {
+	argsLen := len(args)
+	if !(argsLen == 1 || argsLen == 2) {
+		return nil, ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*Float32); ok {
+		return args[0], nil
+	}
+	v, ok := ToFloat64(args[0])
+	if ok {
+		return &Float32{Value: float32(v)}, nil
+	}
+	if argsLen == 2 {
+		return args[1], nil
+	}
+	return UndefinedValue, nil
+}
+
+func builtinFloat64(ctx context.Context, args ...Object) (Object, error) {
+	argsLen := len(args)
+	if !(argsLen == 1 || argsLen == 2) {
+		return nil, ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*Float64); ok {
+		return args[0], nil
+	}
+	v, ok := ToFloat64(args[0])
+	if ok {
+		return &Float64{Value: v}, nil
 	}
 	if argsLen == 2 {
 		return args[1], nil

@@ -60,8 +60,10 @@ func Object(v interface{}) vm.Object {
 		return &vm.Char{Value: v}
 	case byte: // for convenience
 		return &vm.Char{Value: rune(v)}
+	case float32:
+		return &vm.Float32{Value: v}
 	case float64:
-		return &vm.Float{Value: v}
+		return &vm.Float64{Value: v}
 	case []byte:
 		return &vm.Bytes{Value: v}
 	case MAP:
@@ -306,8 +308,10 @@ func Equal(t *testing.T, expected, actual interface{}, msg ...interface{}) {
 		equalObjectSlice(t, expected, actual.([]vm.Object), msg...)
 	case *vm.Int:
 		Equal(t, expected.Value, actual.(*vm.Int).Value, msg...)
-	case *vm.Float:
-		Equal(t, expected.Value, actual.(*vm.Float).Value, msg...)
+	case *vm.Float32:
+		Equal(t, expected.Value, actual.(*vm.Float32).Value, msg...)
+	case *vm.Float64:
+		Equal(t, expected.Value, actual.(*vm.Float64).Value, msg...)
 	case *vm.String:
 		Equal(t, expected.Value, actual.(*vm.String).Value, msg...)
 	case *vm.Char:

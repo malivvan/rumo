@@ -25,6 +25,14 @@ var (
 	UndefinedValue Object = &Undefined{}
 )
 
+// boolObject returns TrueValue if b is true, FalseValue otherwise.
+func boolObject(b bool) Object {
+	if b {
+		return TrueValue
+	}
+	return FalseValue
+}
+
 // Object represents an object in the VM.
 type Object interface {
 	// TypeName should return the name of the type.
@@ -678,71 +686,197 @@ func (o *Error) IndexGet(index Object) (res Object, err error) {
 	return
 }
 
-// Float represents a floating point number value.
-type Float struct {
+// Float32 represents a 32-bit floating point number value (maps to C float).
+type Float32 struct {
 	ObjectImpl
-	Value float64
+	Value float32
 }
 
-func (o *Float) String() string {
-	return strconv.FormatFloat(o.Value, 'f', -1, 64)
+func (o *Float32) String() string {
+	return strconv.FormatFloat(float64(o.Value), 'f', -1, 32)
 }
 
 // TypeName returns the name of the type.
-func (o *Float) TypeName() string {
-	return "float"
+func (o *Float32) TypeName() string {
+	return "float32"
 }
 
 // BinaryOp returns another object that is the result of a given binary
 // operator and a right-hand side object.
-func (o *Float) BinaryOp(op token.Token, rhs Object) (Object, error) {
+func (o *Float32) BinaryOp(op token.Token, rhs Object) (Object, error) {
+	lv := float64(o.Value)
 	switch rhs := rhs.(type) {
-	case *Float:
+	case *Float32:
+		rv := float64(rhs.Value)
+		switch op {
+		case token.Add:
+			r := lv + rv
+			if r == lv {
+				return o, nil
+			}
+			return &Float32{Value: float32(r)}, nil
+		case token.Sub:
+			r := lv - rv
+			if r == lv {
+				return o, nil
+			}
+			return &Float32{Value: float32(r)}, nil
+		case token.Mul:
+			r := lv * rv
+			if r == lv {
+				return o, nil
+			}
+			return &Float32{Value: float32(r)}, nil
+		case token.Quo:
+			r := lv / rv
+			if r == lv {
+				return o, nil
+			}
+			return &Float32{Value: float32(r)}, nil
+		case token.Less:
+			return boolObject(lv < rv), nil
+		case token.Greater:
+			return boolObject(lv > rv), nil
+		case token.LessEq:
+			return boolObject(lv <= rv), nil
+		case token.GreaterEq:
+			return boolObject(lv >= rv), nil
+		}
+	case *Float64:
+		switch op {
+		case token.Add:
+			return &Float64{Value: lv + rhs.Value}, nil
+		case token.Sub:
+			return &Float64{Value: lv - rhs.Value}, nil
+		case token.Mul:
+			return &Float64{Value: lv * rhs.Value}, nil
+		case token.Quo:
+			return &Float64{Value: lv / rhs.Value}, nil
+		case token.Less:
+			return boolObject(lv < rhs.Value), nil
+		case token.Greater:
+			return boolObject(lv > rhs.Value), nil
+		case token.LessEq:
+			return boolObject(lv <= rhs.Value), nil
+		case token.GreaterEq:
+			return boolObject(lv >= rhs.Value), nil
+		}
+	case *Int:
+		rv := float64(rhs.Value)
+		switch op {
+		case token.Add:
+			return &Float32{Value: float32(lv + rv)}, nil
+		case token.Sub:
+			return &Float32{Value: float32(lv - rv)}, nil
+		case token.Mul:
+			return &Float32{Value: float32(lv * rv)}, nil
+		case token.Quo:
+			return &Float32{Value: float32(lv / rv)}, nil
+		case token.Less:
+			return boolObject(lv < rv), nil
+		case token.Greater:
+			return boolObject(lv > rv), nil
+		case token.LessEq:
+			return boolObject(lv <= rv), nil
+		case token.GreaterEq:
+			return boolObject(lv >= rv), nil
+		}
+	}
+	return nil, ErrInvalidOperator
+}
+
+// Copy returns a copy of the type.
+func (o *Float32) Copy() Object { return &Float32{Value: o.Value} }
+
+// IsFalsy returns true if the value of the type is falsy.
+func (o *Float32) IsFalsy() bool { return math.IsNaN(float64(o.Value)) }
+
+// Equals returns true if the value of the type is equal to the value of
+// another object.
+func (o *Float32) Equals(x Object) bool {
+	t, ok := x.(*Float32)
+	if !ok {
+		return false
+	}
+	return o.Value == t.Value
+}
+
+// Float64 represents a 64-bit floating point number value (maps to C double).
+type Float64 struct {
+	ObjectImpl
+	Value float64
+}
+
+// Float is a backward-compatible alias for Float64.
+type Float = Float64
+
+func (o *Float64) String() string {
+	return strconv.FormatFloat(o.Value, 'f', -1, 64)
+}
+
+// TypeName returns the name of the type.
+func (o *Float64) TypeName() string {
+	return "float64"
+}
+
+// BinaryOp returns another object that is the result of a given binary
+// operator and a right-hand side object.
+func (o *Float64) BinaryOp(op token.Token, rhs Object) (Object, error) {
+	switch rhs := rhs.(type) {
+	case *Float64:
 		switch op {
 		case token.Add:
 			r := o.Value + rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Sub:
 			r := o.Value - rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Mul:
 			r := o.Value * rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Quo:
 			r := o.Value / rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Less:
-			if o.Value < rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value < rhs.Value), nil
 		case token.Greater:
-			if o.Value > rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value > rhs.Value), nil
 		case token.LessEq:
-			if o.Value <= rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value <= rhs.Value), nil
 		case token.GreaterEq:
-			if o.Value >= rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value >= rhs.Value), nil
+		}
+	case *Float32:
+		rv := float64(rhs.Value)
+		switch op {
+		case token.Add:
+			return &Float64{Value: o.Value + rv}, nil
+		case token.Sub:
+			return &Float64{Value: o.Value - rv}, nil
+		case token.Mul:
+			return &Float64{Value: o.Value * rv}, nil
+		case token.Quo:
+			return &Float64{Value: o.Value / rv}, nil
+		case token.Less:
+			return boolObject(o.Value < rv), nil
+		case token.Greater:
+			return boolObject(o.Value > rv), nil
+		case token.LessEq:
+			return boolObject(o.Value <= rv), nil
+		case token.GreaterEq:
+			return boolObject(o.Value >= rv), nil
 		}
 	case *Int:
 		switch op {
@@ -751,64 +885,52 @@ func (o *Float) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Sub:
 			r := o.Value - float64(rhs.Value)
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Mul:
 			r := o.Value * float64(rhs.Value)
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Quo:
 			r := o.Value / float64(rhs.Value)
 			if r == o.Value {
 				return o, nil
 			}
-			return &Float{Value: r}, nil
+			return &Float64{Value: r}, nil
 		case token.Less:
-			if o.Value < float64(rhs.Value) {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value < float64(rhs.Value)), nil
 		case token.Greater:
-			if o.Value > float64(rhs.Value) {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value > float64(rhs.Value)), nil
 		case token.LessEq:
-			if o.Value <= float64(rhs.Value) {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value <= float64(rhs.Value)), nil
 		case token.GreaterEq:
-			if o.Value >= float64(rhs.Value) {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(o.Value >= float64(rhs.Value)), nil
 		}
 	}
 	return nil, ErrInvalidOperator
 }
 
 // Copy returns a copy of the type.
-func (o *Float) Copy() Object {
-	return &Float{Value: o.Value}
+func (o *Float64) Copy() Object {
+	return &Float64{Value: o.Value}
 }
 
 // IsFalsy returns true if the value of the type is falsy.
-func (o *Float) IsFalsy() bool {
+func (o *Float64) IsFalsy() bool {
 	return math.IsNaN(o.Value)
 }
 
 // Equals returns true if the value of the type is equal to the value of
 // another object.
-func (o *Float) Equals(x Object) bool {
-	t, ok := x.(*Float)
+func (o *Float64) Equals(x Object) bool {
+	t, ok := x.(*Float64)
 	if !ok {
 		return false
 	}
@@ -1118,36 +1240,45 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			}
 			return FalseValue, nil
 		}
-	case *Float:
+	case *Float32:
+		lv := float64(o.Value)
+		rv := float64(rhs.Value)
 		switch op {
 		case token.Add:
-			return &Float{Value: float64(o.Value) + rhs.Value}, nil
+			return &Float32{Value: float32(lv + rv)}, nil
 		case token.Sub:
-			return &Float{Value: float64(o.Value) - rhs.Value}, nil
+			return &Float32{Value: float32(lv - rv)}, nil
 		case token.Mul:
-			return &Float{Value: float64(o.Value) * rhs.Value}, nil
+			return &Float32{Value: float32(lv * rv)}, nil
 		case token.Quo:
-			return &Float{Value: float64(o.Value) / rhs.Value}, nil
+			return &Float32{Value: float32(lv / rv)}, nil
 		case token.Less:
-			if float64(o.Value) < rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(lv < rv), nil
 		case token.Greater:
-			if float64(o.Value) > rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(lv > rv), nil
 		case token.LessEq:
-			if float64(o.Value) <= rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(lv <= rv), nil
 		case token.GreaterEq:
-			if float64(o.Value) >= rhs.Value {
-				return TrueValue, nil
-			}
-			return FalseValue, nil
+			return boolObject(lv >= rv), nil
+		}
+	case *Float64:
+		switch op {
+		case token.Add:
+			return &Float64{Value: float64(o.Value) + rhs.Value}, nil
+		case token.Sub:
+			return &Float64{Value: float64(o.Value) - rhs.Value}, nil
+		case token.Mul:
+			return &Float64{Value: float64(o.Value) * rhs.Value}, nil
+		case token.Quo:
+			return &Float64{Value: float64(o.Value) / rhs.Value}, nil
+		case token.Less:
+			return boolObject(float64(o.Value) < rhs.Value), nil
+		case token.Greater:
+			return boolObject(float64(o.Value) > rhs.Value), nil
+		case token.LessEq:
+			return boolObject(float64(o.Value) <= rhs.Value), nil
+		case token.GreaterEq:
+			return boolObject(float64(o.Value) >= rhs.Value), nil
 		}
 	case *Char:
 		switch op {

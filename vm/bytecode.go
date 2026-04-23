@@ -142,7 +142,8 @@ func (b *Bytecode) RemoveDuplicates() {
 	fns := make(map[*CompiledFunction]int)
 	ints := make(map[int64]int)
 	strings := make(map[string]int)
-	floats := make(map[float64]int)
+	floats32 := make(map[float32]int)
+	floats64 := make(map[float64]int)
 	chars := make(map[rune]int)
 	immutableMaps := make(map[string]int) // for modules
 
@@ -186,12 +187,21 @@ func (b *Bytecode) RemoveDuplicates() {
 				indexMap[curIdx] = newIdx
 				deduped = append(deduped, c)
 			}
-		case *Float:
-			if newIdx, ok := floats[c.Value]; ok {
+		case *Float32:
+			if newIdx, ok := floats32[c.Value]; ok {
 				indexMap[curIdx] = newIdx
 			} else {
 				newIdx = len(deduped)
-				floats[c.Value] = newIdx
+				floats32[c.Value] = newIdx
+				indexMap[curIdx] = newIdx
+				deduped = append(deduped, c)
+			}
+		case *Float64:
+			if newIdx, ok := floats64[c.Value]; ok {
+				indexMap[curIdx] = newIdx
+			} else {
+				newIdx = len(deduped)
+				floats64[c.Value] = newIdx
 				indexMap[curIdx] = newIdx
 				deduped = append(deduped, c)
 			}

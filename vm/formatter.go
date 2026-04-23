@@ -947,7 +947,9 @@ func (p *pp) printArg(arg Object, verb rune) {
 	switch f := arg.(type) {
 	case *Bool:
 		p.fmtBool(!f.IsFalsy(), verb)
-	case *Float:
+	case *Float32:
+		p.fmtFloat(float64(f.Value), 32, verb)
+	case *Float64:
 		p.fmtFloat(f.Value, 64, verb)
 	case *Int:
 		p.fmtInteger(uint64(f.Value), signed, verb)

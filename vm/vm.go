@@ -491,8 +491,17 @@ func (v *VM) run() {
 				}
 				v.stack[v.sp] = res
 				v.sp++
-			case *Float:
-				var res Object = &Float{Value: -x.Value}
+			case *Float32:
+				var res Object = &Float32{Value: -x.Value}
+				v.allocs--
+				if v.allocs == 0 {
+					v.err = ErrObjectAllocLimit
+					return
+				}
+				v.stack[v.sp] = res
+				v.sp++
+			case *Float64:
+				var res Object = &Float64{Value: -x.Value}
 				v.allocs--
 				if v.allocs == 0 {
 					v.err = ErrObjectAllocLimit

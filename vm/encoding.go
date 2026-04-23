@@ -14,7 +14,9 @@ const (
 	_bytes            byte = 3
 	_char             byte = 4
 	_int              byte = 5
-	_float            byte = 6
+	_float            byte = 6  // legacy alias for _float64
+	_float64          byte = 6  // float64 / C double
+	_float32          byte = 16 // float32 / C float
 	_string           byte = 7
 	_time             byte = 8
 	_array            byte = 9
@@ -37,7 +39,8 @@ var _typeMap = map[byte]func() Object{
 	_bytes:            func() Object { return &Bytes{} },
 	_char:             func() Object { return &Char{} },
 	_int:              func() Object { return &Int{} },
-	_float:            func() Object { return &Float{} },
+	_float:            func() Object { return &Float64{} },
+	_float32:          func() Object { return &Float32{} },
 	_string:           func() Object { return &String{} },
 	_time:             func() Object { return &Time{} },
 	_array:            func() Object { return &Array{} },
@@ -77,8 +80,10 @@ func TypeOfObject(o Object) byte {
 		return _char
 	case *Int:
 		return _int
-	case *Float:
-		return _float
+	case *Float64:
+		return _float64
+	case *Float32:
+		return _float32
 	case *String:
 		return _string
 	case *Time:
@@ -120,8 +125,10 @@ func SizeOfObject(o Object) int {
 		return codec.SizeByte() + codec.SizeInt32()
 	case _int:
 		return codec.SizeByte() + codec.SizeInt64()
-	case _float:
+	case _float64:
 		return codec.SizeByte() + codec.SizeFloat64()
+	case _float32:
+		return codec.SizeByte() + codec.SizeFloat32()
 	case _string:
 		return codec.SizeByte() + codec.SizeString(o.(*String).Value)
 	case _time:
@@ -178,9 +185,12 @@ func MarshalObject(n int, b []byte, o Object) int {
 	case _int:
 		n = codec.MarshalByte(n, b, _int)
 		n = codec.MarshalInt64(n, b, o.(*Int).Value)
-	case _float:
-		n = codec.MarshalByte(n, b, _float)
-		n = codec.MarshalFloat64(n, b, o.(*Float).Value)
+	case _float64:
+		n = codec.MarshalByte(n, b, _float64)
+		n = codec.MarshalFloat64(n, b, o.(*Float64).Value)
+	case _float32:
+		n = codec.MarshalByte(n, b, _float32)
+		n = codec.MarshalFloat32(n, b, o.(*Float32).Value)
 	case _string:
 		n = codec.MarshalByte(n, b, _string)
 		n = codec.MarshalString(n, b, o.(*String).Value)
@@ -265,8 +275,14 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 			return nn, nil, err
 		}
 		return n, o, nil
-	case _float:
-		n, o.(*Float).Value, err = codec.UnmarshalFloat64(n, b)
+	case _float64:
+		n, o.(*Float64).Value, err = codec.UnmarshalFloat64(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _float32:
+		n, o.(*Float32).Value, err = codec.UnmarshalFloat32(n, b)
 		if err != nil {
 			return nn, nil, err
 		}

@@ -702,8 +702,13 @@ func textFormatFloat(ctx context.Context, args ...vm.Object) (ret vm.Object, err
 		return
 	}
 
-	f1, ok := args[0].(*vm.Float)
-	if !ok {
+	var f1v float64
+	switch f := args[0].(type) {
+	case *vm.Float32:
+		f1v = float64(f.Value)
+	case *vm.Float64:
+		f1v = f.Value
+	default:
 		err = vm.ErrInvalidArgumentType{
 			Name:     "first",
 			Expected: "float",
@@ -742,7 +747,7 @@ func textFormatFloat(ctx context.Context, args ...vm.Object) (ret vm.Object, err
 		return
 	}
 
-	ret = &vm.String{Value: strconv.FormatFloat(f1.Value, s2[0], i3, i4)}
+	ret = &vm.String{Value: strconv.FormatFloat(f1v, s2[0], i3, i4)}
 
 	return
 }
@@ -841,7 +846,7 @@ func textParseFloat(ctx context.Context, args ...vm.Object) (ret vm.Object, err 
 		return
 	}
 
-	ret = &vm.Float{Value: parsed}
+		ret = &vm.Float64{Value: parsed}
 
 	return
 }
