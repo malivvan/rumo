@@ -260,6 +260,20 @@ func Encode(o vm.Object) ([]byte, error) {
 		b = append(b, y...)
 	case *vm.Int:
 		b = strconv.AppendInt(b, o.Value, 10)
+	case *vm.Int8:
+		b = strconv.AppendInt(b, int64(o.Value), 10)
+	case *vm.Int16:
+		b = strconv.AppendInt(b, int64(o.Value), 10)
+	case *vm.Byte:
+		b = strconv.AppendInt(b, int64(int8(o.Value)), 10)
+	case *vm.Uint8:
+		b = strconv.AppendUint(b, uint64(o.Value), 10)
+	case *vm.Uint16:
+		b = strconv.AppendUint(b, uint64(o.Value), 10)
+	case *vm.Uint:
+		b = strconv.AppendUint(b, uint64(o.Value), 10)
+	case *vm.Uint64:
+		b = strconv.AppendUint(b, o.Value, 10)
 	case *vm.String:
 		// string encoding bug is fixed with newly introduced function
 		// encodeString(). See: https://github.com/malivvan/rumo/issues/268

@@ -69,6 +69,24 @@ func Const(val any) vm.Object {
 		return &vm.Int{Value: int64(v)}
 	case int:
 		return &vm.Int{Value: int64(v)}
+	case int8:
+		return &vm.Int8{Value: v}
+	case int16:
+		return &vm.Int16{Value: v}
+	case int32:
+		return &vm.Char{Value: v}
+	case uint:
+		return &vm.Uint{Value: uint32(v)}
+	case uint8:
+		return &vm.Uint8{Value: v}
+	case uint16:
+		return &vm.Uint16{Value: v}
+	case uint32:
+		return &vm.Uint{Value: v}
+	case uint64:
+		return &vm.Uint64{Value: v}
+	case float32:
+		return &vm.Float32{Value: v}
 	case float64:
 		return &vm.Float64{Value: float64(v)}
 	case string:

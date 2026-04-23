@@ -110,8 +110,8 @@ func buildTestNativeLib(t *testing.T, csrc string) string {
 func TestNative_ParseRoundTrip(t *testing.T) {
 	src := `
 native libm = "libm.so.6" {
-    sqrt: func(float) float
-    pow: func(float, float) float
+    sqrt: func(double) double
+    pow: func(double, double) double
     atoi(string) int
     free(ptr)
     exit(int) void
@@ -236,7 +236,7 @@ func TestNative_EndToEnd(t *testing.T) {
 	src := fmt.Sprintf(`
 native lib = %q {
     rumo_add(int, int) int
-    rumo_scale(float, float) float
+    rumo_scale(double, double) double
     rumo_truthy(int) bool
     rumo_strlen(string) int
     rumo_bump() int

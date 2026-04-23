@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+	"unsafe"
 )
 
 
@@ -114,30 +115,9 @@ func ToString(o Object) (v string, ok bool) {
 
 // ToInt will try to convert object o to int value.
 func ToInt(o Object) (v int, ok bool) {
-	switch o := o.(type) {
-	case *Int:
-		v = int(o.Value)
-		ok = true
-	case *Float32:
-		v = int(o.Value)
-		ok = true
-	case *Float64:
-		v = int(o.Value)
-		ok = true
-	case *Char:
-		v = int(o.Value)
-		ok = true
-	case *Bool:
-		if o == TrueValue {
-			v = 1
-		}
-		ok = true
-	case *String:
-		c, err := strconv.ParseInt(o.Value, 10, 64)
-		if err == nil {
-			v = int(c)
-			ok = true
-		}
+	n, ok := ToInt64(o)
+	if ok {
+		v = int(n)
 	}
 	return
 }
@@ -147,6 +127,27 @@ func ToInt64(o Object) (v int64, ok bool) {
 	switch o := o.(type) {
 	case *Int:
 		v = o.Value
+		ok = true
+	case *Int8:
+		v = int64(o.Value)
+		ok = true
+	case *Int16:
+		v = int64(o.Value)
+		ok = true
+	case *Byte:
+		v = int64(int8(o.Value))
+		ok = true
+	case *Uint8:
+		v = int64(o.Value)
+		ok = true
+	case *Uint16:
+		v = int64(o.Value)
+		ok = true
+	case *Uint:
+		v = int64(o.Value)
+		ok = true
+	case *Uint64:
+		v = int64(o.Value)
 		ok = true
 	case *Float32:
 		v = int64(o.Value)
@@ -172,10 +173,91 @@ func ToInt64(o Object) (v int64, ok bool) {
 	return
 }
 
+// ToUint64 will try to convert object o to uint64 value.
+func ToUint64(o Object) (v uint64, ok bool) {
+	switch o := o.(type) {
+	case *Uint64:
+		v = o.Value
+		ok = true
+	case *Uint:
+		v = uint64(o.Value)
+		ok = true
+	case *Uint16:
+		v = uint64(o.Value)
+		ok = true
+	case *Uint8:
+		v = uint64(o.Value)
+		ok = true
+	case *Int:
+		v = uint64(o.Value)
+		ok = true
+	case *Int8:
+		v = uint64(o.Value)
+		ok = true
+	case *Int16:
+		v = uint64(o.Value)
+		ok = true
+	case *Byte:
+		v = uint64(o.Value)
+		ok = true
+	case *Float32:
+		v = uint64(o.Value)
+		ok = true
+	case *Float64:
+		v = uint64(o.Value)
+		ok = true
+	case *Char:
+		v = uint64(o.Value)
+		ok = true
+	case *Bool:
+		if o == TrueValue {
+			v = 1
+		}
+		ok = true
+	case *String:
+		c, err := strconv.ParseUint(o.Value, 10, 64)
+		if err == nil {
+			v = c
+			ok = true
+		}
+	}
+	return
+}
+
+// ToFloat32 will try to convert object o to float32 value.
+func ToFloat32(o Object) (v float32, ok bool) {
+	f, ok := ToFloat64(o)
+	if ok {
+		v = float32(f)
+	}
+	return
+}
+
 // ToFloat64 will try to convert object o to float64 value.
 func ToFloat64(o Object) (v float64, ok bool) {
 	switch o := o.(type) {
 	case *Int:
+		v = float64(o.Value)
+		ok = true
+	case *Int8:
+		v = float64(o.Value)
+		ok = true
+	case *Int16:
+		v = float64(o.Value)
+		ok = true
+	case *Byte:
+		v = float64(int8(o.Value))
+		ok = true
+	case *Uint8:
+		v = float64(o.Value)
+		ok = true
+	case *Uint16:
+		v = float64(o.Value)
+		ok = true
+	case *Uint:
+		v = float64(o.Value)
+		ok = true
+	case *Uint64:
 		v = float64(o.Value)
 		ok = true
 	case *Float32:
@@ -190,6 +272,42 @@ func ToFloat64(o Object) (v float64, ok bool) {
 			v = c
 			ok = true
 		}
+	}
+	return
+}
+
+// ToPtr tries to convert object o to an unsafe.Pointer value. Integer-like
+// types are treated as addresses; Bytes and String surface the backing data
+// pointer.
+func ToPtr(o Object) (v unsafe.Pointer, ok bool) {
+	switch o := o.(type) {
+	case *Ptr:
+		v = o.Value
+		ok = true
+	case *Undefined:
+		v = nil
+		ok = true
+	case *Int:
+		v = unsafe.Pointer(uintptr(o.Value))
+		ok = true
+	case *Uint64:
+		v = unsafe.Pointer(uintptr(o.Value))
+		ok = true
+	case *Uint:
+		v = unsafe.Pointer(uintptr(o.Value))
+		ok = true
+	case *Bytes:
+		if len(o.Value) == 0 {
+			return nil, true
+		}
+		v = unsafe.Pointer(&o.Value[0])
+		ok = true
+	case *String:
+		if o.Value == "" {
+			return nil, true
+		}
+		v = unsafe.Pointer(unsafe.StringData(o.Value))
+		ok = true
 	}
 	return
 }
@@ -245,6 +363,20 @@ func ToInterface(o Object) (res interface{}) {
 	switch o := o.(type) {
 	case *Int:
 		res = o.Value
+	case *Int8:
+		res = o.Value
+	case *Int16:
+		res = o.Value
+	case *Byte:
+		res = o.Value
+	case *Uint8:
+		res = o.Value
+	case *Uint16:
+		res = o.Value
+	case *Uint:
+		res = o.Value
+	case *Uint64:
+		res = o.Value
 	case *String:
 		res = o.Value
 	case *Float32:
@@ -256,6 +388,8 @@ func ToInterface(o Object) (res interface{}) {
 	case *Char:
 		res = o.Value
 	case *Bytes:
+		res = o.Value
+	case *Ptr:
 		res = o.Value
 	case *Array:
 		res = make([]interface{}, len(o.Value))
@@ -303,6 +437,24 @@ func FromInterface(v interface{}) (Object, error) {
 		return &Int{Value: v}, nil
 	case int:
 		return &Int{Value: int64(v)}, nil
+	case int8:
+		return &Int8{Value: v}, nil
+	case int16:
+		return &Int16{Value: v}, nil
+	case uint:
+		return &Uint{Value: uint32(v)}, nil
+	case uint8:
+		return &Uint8{Value: v}, nil
+	case uint16:
+		return &Uint16{Value: v}, nil
+	case uint32:
+		return &Uint{Value: v}, nil
+	case uint64:
+		return &Uint64{Value: v}, nil
+	case uintptr:
+		return &Ptr{Value: unsafe.Pointer(v)}, nil
+	case unsafe.Pointer:
+		return &Ptr{Value: v}, nil
 	case bool:
 		if v {
 			return TrueValue, nil
@@ -310,8 +462,6 @@ func FromInterface(v interface{}) (Object, error) {
 		return FalseValue, nil
 	case rune:
 		return &Char{Value: v}, nil
-	case byte:
-		return &Char{Value: rune(v)}, nil
 	case float32:
 		return &Float32{Value: v}, nil
 	case float64:

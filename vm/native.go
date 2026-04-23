@@ -18,22 +18,43 @@ import (
 // ----------------------------------------------------------------------------
 
 // NativeKind identifies a rumo <-> C type mapping used by the native runtime.
+// Each kind corresponds to exactly one C ABI type per the rumo Type Mapping
+// table in doc/types.md.
 type NativeKind int
 
 const (
 	NativeInvalid NativeKind = iota
 	NativeVoid               // no value (return only)
-	NativeInt                // int64  <=> intptr_t / long
-	NativeUInt               // uint64 <=> uintptr_t / unsigned long
-	NativeBool               // bool
-	NativeFloat64            // float64 <=> double
-	NativeFloat32            // float32 <=> float
-	NativeString             // string  <=> const char* (null-terminated)
-	NativePtr                // uintptr <=> void*
-	NativeBytes              // []byte  <=> void* (pointer to slice data)
 
-	// NativeFloat is a backward-compatible alias for NativeFloat64.
-	NativeFloat = NativeFloat64
+	NativeByte   // signed char / Go byte (treated as signed 8-bit)
+	NativeInt8   // signed char / int8
+	NativeUint8  // unsigned char / uint8
+	NativeInt16  // short int / int16
+	NativeUint16 // short unsigned int / uint16
+	NativeInt32  // int / int32 (used for rumo Int)
+	NativeUint32 // unsigned int / uint32 (used for rumo Uint)
+	NativeInt64  // long long int / int64
+	NativeUint64 // long long unsigned int / uint64
+
+	NativeBool    // bool
+	NativeFloat32 // float <=> float32
+	NativeFloat64 // double <=> float64
+	NativeRune    // wchar_t / int32 character
+	NativeString  // const char* (null-terminated)
+	NativePtr     // void*
+	NativeBytes   // void* (pointer to slice data) + length
+
+	// NativeInt is the rumo "int" which is implementation-defined as 32- or
+	// 64-bit. We treat it as a C long (64-bit on modern targets) for ABI
+	// convenience, matching the previous behavior.
+	NativeInt = NativeInt64
+	// NativeUInt is the rumo "uint" equivalent of NativeInt.
+	NativeUInt = NativeUint64
+	// NativeFloat is a backward-compatible alias for NativeFloat32 per the
+	// new Type Mapping where "float" denotes a 32-bit IEEE 754 value.
+	NativeFloat = NativeFloat32
+	// NativeDouble is the explicit 64-bit floating-point kind.
+	NativeDouble = NativeFloat64
 )
 
 // nativeKindByName resolves a user-facing type keyword such as "int" or
@@ -42,16 +63,34 @@ func nativeKindByName(name string) (NativeKind, bool) {
 	switch name {
 	case "void":
 		return NativeVoid, true
+	case "byte":
+		return NativeByte, true
+	case "int8":
+		return NativeInt8, true
+	case "uint8":
+		return NativeUint8, true
+	case "int16":
+		return NativeInt16, true
+	case "uint16":
+		return NativeUint16, true
 	case "int":
 		return NativeInt, true
 	case "uint":
 		return NativeUInt, true
+	case "int64":
+		return NativeInt64, true
+	case "uint64":
+		return NativeUint64, true
 	case "bool":
 		return NativeBool, true
-	case "float", "float64":
+	case "float":
+		return NativeFloat32, true
+	case "double", "float64":
 		return NativeFloat64, true
 	case "float32":
 		return NativeFloat32, true
+	case "rune":
+		return NativeRune, true
 	case "string":
 		return NativeString, true
 	case "ptr":
@@ -66,16 +105,28 @@ func (k NativeKind) String() string {
 	switch k {
 	case NativeVoid:
 		return "void"
-	case NativeInt:
+	case NativeByte:
+		return "byte"
+	case NativeInt8:
+		return "int8"
+	case NativeUint8:
+		return "uint8"
+	case NativeInt16:
+		return "int16"
+	case NativeUint16:
+		return "uint16"
+	case NativeInt64:
 		return "int"
-	case NativeUInt:
+	case NativeUint64:
 		return "uint"
 	case NativeBool:
 		return "bool"
 	case NativeFloat64:
-		return "float64"
+		return "double"
 	case NativeFloat32:
-		return "float32"
+		return "float"
+	case NativeRune:
+		return "rune"
 	case NativeString:
 		return "string"
 	case NativePtr:
@@ -90,9 +141,19 @@ func (k NativeKind) String() string {
 // function signature with purego.
 func (k NativeKind) goType() reflect.Type {
 	switch k {
-	case NativeInt:
+	case NativeByte:
+		return reflect.TypeOf(byte(0))
+	case NativeInt8:
+		return reflect.TypeOf(int8(0))
+	case NativeUint8:
+		return reflect.TypeOf(uint8(0))
+	case NativeInt16:
+		return reflect.TypeOf(int16(0))
+	case NativeUint16:
+		return reflect.TypeOf(uint16(0))
+	case NativeInt64:
 		return reflect.TypeOf(int64(0))
-	case NativeUInt:
+	case NativeUint64:
 		return reflect.TypeOf(uint64(0))
 	case NativeBool:
 		return reflect.TypeOf(false)
@@ -100,6 +161,8 @@ func (k NativeKind) goType() reflect.Type {
 		return reflect.TypeOf(float64(0))
 	case NativeFloat32:
 		return reflect.TypeOf(float32(0))
+	case NativeRune:
+		return reflect.TypeOf(int32(0))
 	case NativeString:
 		return reflect.TypeOf("")
 	case NativePtr, NativeBytes:
@@ -322,18 +385,54 @@ func buildNativeBinding(handle uintptr, spec NativeFuncSpec) (*BuiltinFunction, 
 // call — callers are responsible for doing so.
 func rumoToNativeArg(o Object, kind NativeKind) (reflect.Value, any, error) {
 	switch kind {
-	case NativeInt:
+	case NativeByte:
+		n, ok := ToInt64(o)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf("expected byte, got %s", o.TypeName())
+		}
+		return reflect.ValueOf(byte(n)), nil, nil
+	case NativeInt8:
+		n, ok := ToInt64(o)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf("expected int8, got %s", o.TypeName())
+		}
+		return reflect.ValueOf(int8(n)), nil, nil
+	case NativeUint8:
+		n, ok := ToUint64(o)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf("expected uint8, got %s", o.TypeName())
+		}
+		return reflect.ValueOf(uint8(n)), nil, nil
+	case NativeInt16:
+		n, ok := ToInt64(o)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf("expected int16, got %s", o.TypeName())
+		}
+		return reflect.ValueOf(int16(n)), nil, nil
+	case NativeUint16:
+		n, ok := ToUint64(o)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf("expected uint16, got %s", o.TypeName())
+		}
+		return reflect.ValueOf(uint16(n)), nil, nil
+	case NativeInt64:
 		n, ok := ToInt64(o)
 		if !ok {
 			return reflect.Value{}, nil, fmt.Errorf("expected int, got %s", o.TypeName())
 		}
 		return reflect.ValueOf(n), nil, nil
-	case NativeUInt:
-		n, ok := ToInt64(o)
+	case NativeUint64:
+		n, ok := ToUint64(o)
 		if !ok {
 			return reflect.Value{}, nil, fmt.Errorf("expected uint/int, got %s", o.TypeName())
 		}
-		return reflect.ValueOf(uint64(n)), nil, nil
+		return reflect.ValueOf(n), nil, nil
+	case NativeRune:
+		r, ok := ToRune(o)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf("expected rune, got %s", o.TypeName())
+		}
+		return reflect.ValueOf(r), nil, nil
 	case NativeBool:
 		b, ok := ToBool(o)
 		if !ok {
@@ -343,7 +442,7 @@ func rumoToNativeArg(o Object, kind NativeKind) (reflect.Value, any, error) {
 	case NativeFloat64:
 		f, ok := ToFloat64(o)
 		if !ok {
-			return reflect.Value{}, nil, fmt.Errorf("expected float, got %s", o.TypeName())
+			return reflect.Value{}, nil, fmt.Errorf("expected double, got %s", o.TypeName())
 		}
 		return reflect.ValueOf(f), nil, nil
 	case NativeFloat32:
@@ -400,13 +499,22 @@ func rumoToNativeArg(o Object, kind NativeKind) (reflect.Value, any, error) {
 // matching rumo Object.
 func nativeResultToRumo(v reflect.Value, kind NativeKind) (Object, error) {
 	switch kind {
-	case NativeInt:
+	case NativeByte:
+		return &Byte{Value: byte(v.Uint())}, nil
+	case NativeInt8:
+		return &Int8{Value: int8(v.Int())}, nil
+	case NativeUint8:
+		return &Uint8{Value: uint8(v.Uint())}, nil
+	case NativeInt16:
+		return &Int16{Value: int16(v.Int())}, nil
+	case NativeUint16:
+		return &Uint16{Value: uint16(v.Uint())}, nil
+	case NativeInt64:
 		return &Int{Value: v.Int()}, nil
-	case NativeUInt:
-		// rumo does not ship a dedicated unsigned integer type by default;
-		// fall back to signed Int.  Callers can still round-trip 64-bit
-		// patterns but sign bit semantics apply.
-		return &Int{Value: int64(v.Uint())}, nil
+	case NativeUint64:
+		return &Uint64{Value: v.Uint()}, nil
+	case NativeRune:
+		return &Char{Value: rune(v.Int())}, nil
 	case NativeBool:
 		if v.Bool() {
 			return TrueValue, nil
@@ -420,10 +528,10 @@ func nativeResultToRumo(v reflect.Value, kind NativeKind) (Object, error) {
 		// purego already copied the C string into Go memory.
 		return &String{Value: v.String()}, nil
 	case NativePtr:
-		return &Int{Value: int64(v.Uint())}, nil
+		return &Ptr{Value: unsafe.Pointer(uintptr(v.Uint()))}, nil
 	case NativeBytes:
 		// Bytes return is ambiguous (length unknown) - expose as a raw ptr.
-		return &Int{Value: int64(v.Uint())}, nil
+		return &Ptr{Value: unsafe.Pointer(uintptr(v.Uint()))}, nil
 	}
 	return nil, fmt.Errorf("unsupported native return kind %s", kind)
 }

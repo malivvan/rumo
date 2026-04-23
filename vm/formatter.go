@@ -953,6 +953,22 @@ func (p *pp) printArg(arg Object, verb rune) {
 		p.fmtFloat(f.Value, 64, verb)
 	case *Int:
 		p.fmtInteger(uint64(f.Value), signed, verb)
+	case *Int8:
+		p.fmtInteger(uint64(f.Value), signed, verb)
+	case *Int16:
+		p.fmtInteger(uint64(f.Value), signed, verb)
+	case *Byte:
+		p.fmtInteger(uint64(int8(f.Value)), signed, verb)
+	case *Uint8:
+		p.fmtInteger(uint64(f.Value), unsigned, verb)
+	case *Uint16:
+		p.fmtInteger(uint64(f.Value), unsigned, verb)
+	case *Uint:
+		p.fmtInteger(uint64(f.Value), unsigned, verb)
+	case *Uint64:
+		p.fmtInteger(f.Value, unsigned, verb)
+	case *Char:
+		p.fmtInteger(uint64(f.Value), signed, verb)
 	case *String:
 		p.fmtString(f.Value, verb)
 	case *Bytes:

@@ -3,6 +3,7 @@ package vm
 import (
 	"errors"
 	"time"
+	"unsafe"
 
 	"github.com/malivvan/rumo/vm/codec"
 	"github.com/malivvan/rumo/vm/parser"
@@ -26,6 +27,14 @@ const (
 	_objectPtr        byte = 13
 	_compiledFunction byte = 14
 	_error            byte = 15
+	_byte             byte = 17
+	_int8             byte = 18
+	_uint8            byte = 19
+	_int16            byte = 20
+	_uint16           byte = 21
+	_uint             byte = 22
+	_uint64           byte = 23
+	_ptr              byte = 24
 	_arrayIterator    byte = 100
 	_mapIterator      byte = 101
 	_stringIterator   byte = 102
@@ -39,6 +48,14 @@ var _typeMap = map[byte]func() Object{
 	_bytes:            func() Object { return &Bytes{} },
 	_char:             func() Object { return &Char{} },
 	_int:              func() Object { return &Int{} },
+	_int8:             func() Object { return &Int8{} },
+	_int16:            func() Object { return &Int16{} },
+	_byte:             func() Object { return &Byte{} },
+	_uint8:            func() Object { return &Uint8{} },
+	_uint16:           func() Object { return &Uint16{} },
+	_uint:             func() Object { return &Uint{} },
+	_uint64:           func() Object { return &Uint64{} },
+	_ptr:              func() Object { return &Ptr{} },
 	_float:            func() Object { return &Float64{} },
 	_float32:          func() Object { return &Float32{} },
 	_string:           func() Object { return &String{} },
@@ -80,6 +97,22 @@ func TypeOfObject(o Object) byte {
 		return _char
 	case *Int:
 		return _int
+	case *Int8:
+		return _int8
+	case *Int16:
+		return _int16
+	case *Byte:
+		return _byte
+	case *Uint8:
+		return _uint8
+	case *Uint16:
+		return _uint16
+	case *Uint:
+		return _uint
+	case *Uint64:
+		return _uint64
+	case *Ptr:
+		return _ptr
 	case *Float64:
 		return _float64
 	case *Float32:
@@ -125,6 +158,20 @@ func SizeOfObject(o Object) int {
 		return codec.SizeByte() + codec.SizeInt32()
 	case _int:
 		return codec.SizeByte() + codec.SizeInt64()
+	case _int8:
+		return codec.SizeByte() + codec.SizeByte()
+	case _int16:
+		return codec.SizeByte() + codec.SizeInt16()
+	case _byte, _uint8:
+		return codec.SizeByte() + codec.SizeByte()
+	case _uint16:
+		return codec.SizeByte() + codec.SizeUint16()
+	case _uint:
+		return codec.SizeByte() + codec.SizeUint32()
+	case _uint64:
+		return codec.SizeByte() + codec.SizeUint64()
+	case _ptr:
+		return codec.SizeByte() + codec.SizeUint64()
 	case _float64:
 		return codec.SizeByte() + codec.SizeFloat64()
 	case _float32:
@@ -185,6 +232,30 @@ func MarshalObject(n int, b []byte, o Object) int {
 	case _int:
 		n = codec.MarshalByte(n, b, _int)
 		n = codec.MarshalInt64(n, b, o.(*Int).Value)
+	case _int8:
+		n = codec.MarshalByte(n, b, _int8)
+		n = codec.MarshalByte(n, b, byte(o.(*Int8).Value))
+	case _int16:
+		n = codec.MarshalByte(n, b, _int16)
+		n = codec.MarshalInt16(n, b, o.(*Int16).Value)
+	case _byte:
+		n = codec.MarshalByte(n, b, _byte)
+		n = codec.MarshalByte(n, b, o.(*Byte).Value)
+	case _uint8:
+		n = codec.MarshalByte(n, b, _uint8)
+		n = codec.MarshalByte(n, b, o.(*Uint8).Value)
+	case _uint16:
+		n = codec.MarshalByte(n, b, _uint16)
+		n = codec.MarshalUint16(n, b, o.(*Uint16).Value)
+	case _uint:
+		n = codec.MarshalByte(n, b, _uint)
+		n = codec.MarshalUint32(n, b, o.(*Uint).Value)
+	case _uint64:
+		n = codec.MarshalByte(n, b, _uint64)
+		n = codec.MarshalUint64(n, b, o.(*Uint64).Value)
+	case _ptr:
+		n = codec.MarshalByte(n, b, _ptr)
+		n = codec.MarshalUint64(n, b, uint64(uintptr(o.(*Ptr).Value)))
 	case _float64:
 		n = codec.MarshalByte(n, b, _float64)
 		n = codec.MarshalFloat64(n, b, o.(*Float64).Value)
@@ -274,6 +345,58 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		if err != nil {
 			return nn, nil, err
 		}
+		return n, o, nil
+	case _int8:
+		var u byte
+		n, u, err = codec.UnmarshalByte(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		o.(*Int8).Value = int8(u)
+		return n, o, nil
+	case _int16:
+		n, o.(*Int16).Value, err = codec.UnmarshalInt16(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _byte:
+		n, o.(*Byte).Value, err = codec.UnmarshalByte(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _uint8:
+		n, o.(*Uint8).Value, err = codec.UnmarshalByte(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _uint16:
+		n, o.(*Uint16).Value, err = codec.UnmarshalUint16(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _uint:
+		n, o.(*Uint).Value, err = codec.UnmarshalUint32(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _uint64:
+		n, o.(*Uint64).Value, err = codec.UnmarshalUint64(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _ptr:
+		var u uint64
+		n, u, err = codec.UnmarshalUint64(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		o.(*Ptr).Value = unsafe.Pointer(uintptr(u))
 		return n, o, nil
 	case _float64:
 		n, o.(*Float64).Value, err = codec.UnmarshalFloat64(n, b)

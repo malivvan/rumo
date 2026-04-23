@@ -210,7 +210,7 @@ a += b * 2
 
 arr := [a, b, c]
 arrstr := string(arr)
-map := {a: a, b: b, c: c}
+m := {a: a, b: b, c: c}
 
 d := a + b + c
 s := 0
