@@ -10,7 +10,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/malivvan/rumo/vm/purego"
+	"github.com/ebitengine/purego"
 )
 
 // ----------------------------------------------------------------------------
@@ -409,4 +409,3 @@ func nativeResultToRumo(v reflect.Value, kind NativeKind) (Object, error) {
 	}
 	return nil, fmt.Errorf("unsupported native return kind %s", kind)
 }
-
