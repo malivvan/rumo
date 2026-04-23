@@ -262,7 +262,7 @@ func TestNewVMDoesNotDefaultToOSArgs(t *testing.T) {
 		MainFunction: &vm.CompiledFunction{},
 		Constants:    nil,
 	}
-	v := vm.NewVM(context.Background(), bytecode, nil, -1)
+	v := vm.NewVM(context.Background(), bytecode, nil, -1, nil)
 	if len(v.Args) > 0 {
 		t.Errorf("NewVM should default Args to empty, got %v", v.Args)
 	}

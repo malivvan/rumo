@@ -210,7 +210,7 @@ func (s *Script) prepCompile() (symbolTable *vm.SymbolTable, globals []vm.Object
 		symbolTable.DefineBuiltin(idx, fn.Name)
 	}
 
-	globals = make([]vm.Object, vm.GlobalsSize)
+	globals = make([]vm.Object, vm.DefaultConfig.GlobalsSize)
 
 	for idx, name := range names {
 		symbol := symbolTable.Define(name)
@@ -370,7 +370,7 @@ func (p *Program) Run() error {
 	args := p.args
 	p.lock.RUnlock()
 
-	v := vm.NewVM(context.Background(), bytecode, globals, maxAllocs)
+	v := vm.NewVM(context.Background(), bytecode, globals, maxAllocs, nil)
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {
@@ -398,7 +398,7 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 	args := p.args
 	p.lock.RUnlock()
 
-	v := vm.NewVM(ctx, bytecode, globals, maxAllocs)
+	v := vm.NewVM(ctx, bytecode, globals, maxAllocs, nil)
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {

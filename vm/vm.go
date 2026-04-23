@@ -67,6 +67,7 @@ type VM struct {
 	allocs        int64
 	err           error
 	childCtl      vmChildCtl
+	config        *Config
 	In            io.Reader
 	Out           io.Writer
 	Args          []string
@@ -77,10 +78,14 @@ const (
 	initialFrames    = 16
 )
 
-// NewVM creates a VM.
-func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, maxAllocs int64) *VM {
+// NewVM creates a VM. cfg sets limits (GlobalsSize, StackSize, MaxFrames);
+// pass nil to use DefaultConfig.
+func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, maxAllocs int64, cfg *Config) *VM {
+	if cfg == nil {
+		cfg = DefaultConfig
+	}
 	if globals == nil {
-		globals = make([]Object, GlobalsSize)
+		globals = make([]Object, cfg.GlobalsSize)
 	}
 	v := &VM{
 		constants:   bytecode.Constants,
@@ -92,6 +97,7 @@ func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, maxAllocs 
 		ip:          -1,
 		maxAllocs:   maxAllocs,
 		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{})},
+		config:      cfg,
 		In:          os.Stdin,
 		Out:         os.Stdout,
 		Args:        nil, // callers must set Args explicitly; do not default to os.Args
@@ -147,6 +153,7 @@ func (v *VM) ShallowClone() *VM {
 		ip:          -1,
 		maxAllocs:   v.maxAllocs,
 		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{})},
+		config:      v.config,
 		In:          v.In,
 		Out:         v.Out,
 		Args:        v.Args,
@@ -895,12 +902,12 @@ func (v *VM) run() {
 						continue
 					}
 				}
-				if v.framesIndex >= MaxFrames {
-					v.err = ErrStackOverflow
-					return
-				}
+			if v.framesIndex >= v.config.MaxFrames {
+				v.err = ErrStackOverflow
+				return
+			}
 
-				// update call frame
+			// update call frame
 				v.curFrame.ip = v.ip // store current ip before call
 				if v.framesIndex >= len(v.frames) {
 					v.frames = append(v.frames, &frame{})
@@ -1384,12 +1391,12 @@ func (v *VM) runNextDefer(f *frame) bool {
 				return false
 			}
 
-			if v.framesIndex >= MaxFrames {
-				v.err = ErrStackOverflow
-				return false
-			}
+		if v.framesIndex >= v.config.MaxFrames {
+			v.err = ErrStackOverflow
+			return false
+		}
 
-			v.curFrame.ip = v.ip
+		v.curFrame.ip = v.ip
 			if v.framesIndex >= len(v.frames) {
 				v.frames = append(v.frames, &frame{})
 			}
@@ -1421,7 +1428,7 @@ func (v *VM) checkGrowStack(added int) bool {
 	if should < len(v.stack) {
 		return true
 	}
-	if should >= StackSize {
+	if should >= v.config.StackSize {
 		v.err = ErrStackOverflow
 		return false
 	}

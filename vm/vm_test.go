@@ -3806,7 +3806,7 @@ func traceCompileRun(file *parser.File, symbols map[string]vm.Object, modules *v
 		}
 	}()
 
-	globals := make([]vm.Object, vm.GlobalsSize)
+	globals := make([]vm.Object, vm.DefaultConfig.GlobalsSize)
 
 	symTable := vm.NewSymbolTable()
 	for name, value := range symbols {
@@ -3838,7 +3838,7 @@ func traceCompileRun(file *parser.File, symbols map[string]vm.Object, modules *v
 	trace = append(trace, fmt.Sprintf("\n[Compiled Instructions]\n\n%s\n",
 		strings.Join(bytecode.FormatInstructions(), "\n")))
 
-	v = vm.NewVM(context.Background(), bytecode, globals, maxAllocs)
+	v = vm.NewVM(context.Background(), bytecode, globals, maxAllocs, nil)
 
 	err = v.Run()
 	{

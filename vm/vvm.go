@@ -18,16 +18,25 @@ var (
 	MaxBytesLen = 2147483647
 )
 
-const (
+// Config holds the VM limits. Pass a *Config to NewVM to override the
+// defaults. Passing nil selects DefaultConfig.
+type Config struct {
 	// GlobalsSize is the maximum number of global variables for a VM.
-	GlobalsSize = 1024
+	GlobalsSize int
 
 	// StackSize is the maximum stack size for a VM.
-	StackSize = 2048
+	StackSize int
 
 	// MaxFrames is the maximum number of function frames for a VM.
-	MaxFrames = 1024
-)
+	MaxFrames int
+}
+
+// DefaultConfig is the Config used when nil is passed to NewVM.
+var DefaultConfig = &Config{
+	GlobalsSize: 1024,
+	StackSize:   2048,
+	MaxFrames:   1024,
+}
 
 // CallableFunc is a function signature for the callable functions.
 type CallableFunc = func(ctx context.Context, args ...Object) (ret Object, err error)

@@ -49,7 +49,7 @@ func bigLocalsFn(numLocals int) *CompiledFunction {
 // sp value.  After the fix it must return a wrapped ErrStackOverflow
 // error without panicking.
 func TestStackOverflowFromLargeNumLocalsDoesNotPanic(t *testing.T) {
-	fn := bigLocalsFn(StackSize) // one call: sp → ~StackSize+5 (overflow)
+	fn := bigLocalsFn(DefaultConfig.StackSize) // one call: sp → ~StackSize+5 (overflow)
 
 	v := makeTestVM()
 
@@ -93,7 +93,7 @@ func TestStackOverflowFromLargeNumLocalsDoesNotPanic(t *testing.T) {
 // clean error.  This guards against any stale sp value leaking between
 // runs.
 func TestStackOverflowFromLargeNumLocalsIsIdempotent(t *testing.T) {
-	fn := bigLocalsFn(StackSize)
+	fn := bigLocalsFn(DefaultConfig.StackSize)
 	v := makeTestVM()
 
 	for i := 0; i < 3; i++ {

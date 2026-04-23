@@ -205,7 +205,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 	}
 
 	fileSet := parser.NewFileSet()
-	globals := make([]vm.Object, vm.GlobalsSize)
+	globals := make([]vm.Object, vm.DefaultConfig.GlobalsSize)
 	symbolTable := vm.NewSymbolTable()
 	for idx, fn := range vm.GetAllBuiltinFunctions() {
 		symbolTable.DefineBuiltin(idx, fn.Name)
@@ -297,7 +297,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		}
 
 		bytecode := c.Bytecode()
-		machine := vm.NewVM(ctx, bytecode, globals, -1)
+		machine := vm.NewVM(ctx, bytecode, globals, -1, nil)
 		// Propagate the custom In/Out streams so that stdlib modules (e.g.
 		// fmt.print/println) write to the provided writer instead of os.Stdout.
 		machine.In = in
