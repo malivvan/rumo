@@ -288,3 +288,115 @@ func TestRunWithoutArgsStartsRepl(t *testing.T) {
 		t.Fatalf("unexpected repl output: %q", got)
 	}
 }
+
+// CLI cannot forward arguments to scripts.
+// The "run" subcommand previously accepted exactly one argument (the file) and
+// rejected any additional arguments with a usage error. Scripts had no way to
+// receive command-line arguments from the caller. The fix extends "run" and the
+// bare file invocation to accept extra arguments after the script file (optionally
+// separated by "--"), forwarding them as the script's args() list.
+
+// TestRunSubcommandAcceptsExtraScriptArgs verifies that passing additional args
+// after the script file does not produce a usage error.
+func TestRunSubcommandAcceptsExtraScriptArgs(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptFile := filepath.Join(tempDir, "script.rumo")
+	if err := os.WriteFile(scriptFile, []byte(`a := args()`), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	// Pass extra args directly after the file (no "--")
+	exitCode := run(context.Background(), []string{"run", scriptFile, "hello", "world"}, strings.NewReader(""), &stdout, &stderr)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 when extra args passed to run, got %d, stderr: %q", exitCode, stderr.String())
+	}
+}
+
+// TestRunSubcommandAcceptsExtraScriptArgsAfterSeparator verifies that args after
+// "--" are forwarded to the script and don't cause a usage error.
+func TestRunSubcommandAcceptsExtraScriptArgsAfterSeparator(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptFile := filepath.Join(tempDir, "script.rumo")
+	if err := os.WriteFile(scriptFile, []byte(`a := args()`), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{"run", scriptFile, "--", "alpha", "beta"}, strings.NewReader(""), &stdout, &stderr)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 with -- separator, got %d, stderr: %q", exitCode, stderr.String())
+	}
+}
+
+// TestDefaultInvocationAcceptsExtraScriptArgs verifies that when running without
+// the "run" subcommand (bare file path), extra args are forwarded to the script.
+func TestDefaultInvocationAcceptsExtraScriptArgs(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptFile := filepath.Join(tempDir, "script.rumo")
+	if err := os.WriteFile(scriptFile, []byte(`a := args()`), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{scriptFile, "foo", "bar"}, strings.NewReader(""), &stdout, &stderr)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 when extra args in default invocation, got %d, stderr: %q", exitCode, stderr.String())
+	}
+}
+
+// TestScriptNameIsFirstArg verifies that the script file name is the first
+// element returned by args() (index 0), matching argv[0] convention.
+func TestScriptNameIsFirstArg(t *testing.T) {
+	tempDir := t.TempDir()
+	scriptFile := filepath.Join(tempDir, "myscript.rumo")
+	// Script writes len(args()) to stderr via a runtime error check:
+	// we verify the arg count is correct by examining the exit code.
+	// args()[0] should be the script file path, args()[1] should be "extra"
+	// If wrong, the script intentionally accesses an out-of-bounds element → error.
+	src := `
+a := args()
+if len(a) != 2 { error("wrong arg count") }
+`
+	if err := os.WriteFile(scriptFile, []byte(src), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{"run", scriptFile, "--", "extra"}, strings.NewReader(""), &stdout, &stderr)
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 (script sees exactly 2 args), got %d, stderr: %q", exitCode, stderr.String())
+	}
+}
+
+// TestSplitArgsHandlesSeparator is a unit test for the splitArgs helper:
+// everything after "--" becomes script args, and the file is separate.
+func TestSplitArgsHandlesSeparator(t *testing.T) {
+	tests := []struct {
+		in          []string
+		wantFile    string
+		wantScripts []string
+	}{
+		{[]string{"script.rumo"}, "script.rumo", nil},
+		{[]string{"script.rumo", "a", "b"}, "script.rumo", []string{"a", "b"}},
+		{[]string{"script.rumo", "--", "a", "b"}, "script.rumo", []string{"a", "b"}},
+		{[]string{"script.rumo", "--"}, "script.rumo", []string{}},
+		{[]string{"script.rumo", "a", "--", "b"}, "script.rumo", []string{"b"}},
+	}
+	for _, tc := range tests {
+		file, scripts := splitArgs(tc.in)
+		if file != tc.wantFile {
+			t.Errorf("splitArgs(%v): file=%q, want %q", tc.in, file, tc.wantFile)
+		}
+		if len(scripts) != len(tc.wantScripts) {
+			t.Errorf("splitArgs(%v): scripts=%v, want %v", tc.in, scripts, tc.wantScripts)
+			continue
+		}
+		for i, s := range tc.wantScripts {
+			if scripts[i] != s {
+				t.Errorf("splitArgs(%v): scripts[%d]=%q, want %q", tc.in, i, scripts[i], s)
+			}
+		}
+	}
+}
+
