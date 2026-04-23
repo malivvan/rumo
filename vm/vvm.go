@@ -19,7 +19,8 @@ var (
 )
 
 // Config holds the VM limits. Pass a *Config to NewVM to override the
-// defaults. Passing nil selects DefaultConfig.
+// defaults. Passing nil selects DefaultConfig. Zero values in a non-nil
+// Config are filled in from DefaultConfig by the eval method.
 type Config struct {
 	// GlobalsSize is the maximum number of global variables for a VM.
 	GlobalsSize int
@@ -29,6 +30,9 @@ type Config struct {
 
 	// MaxFrames is the maximum number of function frames for a VM.
 	MaxFrames int
+
+	// MaxAllocs is the maximum number of object allocations (-1 = unlimited).
+	MaxAllocs int64
 }
 
 // DefaultConfig is the Config used when nil is passed to NewVM.
@@ -36,6 +40,25 @@ var DefaultConfig = &Config{
 	GlobalsSize: 1024,
 	StackSize:   2048,
 	MaxFrames:   1024,
+	MaxAllocs:   -1,
+}
+
+// eval replaces every zero-valued field with the corresponding value from
+// DefaultConfig. Called internally by NewVM on a private copy of the caller's
+// Config so that the original is never mutated.
+func (c *Config) eval() {
+	if c.GlobalsSize == 0 {
+		c.GlobalsSize = DefaultConfig.GlobalsSize
+	}
+	if c.StackSize == 0 {
+		c.StackSize = DefaultConfig.StackSize
+	}
+	if c.MaxFrames == 0 {
+		c.MaxFrames = DefaultConfig.MaxFrames
+	}
+	if c.MaxAllocs == 0 {
+		c.MaxAllocs = DefaultConfig.MaxAllocs
+	}
 }
 
 // CallableFunc is a function signature for the callable functions.

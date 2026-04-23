@@ -297,7 +297,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		}
 
 		bytecode := c.Bytecode()
-		machine := vm.NewVM(ctx, bytecode, globals, -1, nil)
+		machine := vm.NewVM(ctx, bytecode, globals, nil)
 		// Propagate the custom In/Out streams so that stdlib modules (e.g.
 		// fmt.print/println) write to the provided writer instead of os.Stdout.
 		machine.In = in

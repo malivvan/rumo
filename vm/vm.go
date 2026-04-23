@@ -78,12 +78,16 @@ const (
 	initialFrames    = 16
 )
 
-// NewVM creates a VM. cfg sets limits (GlobalsSize, StackSize, MaxFrames);
-// pass nil to use DefaultConfig.
-func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, maxAllocs int64, cfg *Config) *VM {
-	if cfg == nil {
-		cfg = DefaultConfig
+// NewVM creates a VM. cfg sets limits (GlobalsSize, StackSize, MaxFrames,
+// MaxAllocs); pass nil to use DefaultConfig. Zero fields in a non-nil cfg are
+// filled from DefaultConfig.
+func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, cfg *Config) *VM {
+	var cfgCopy Config
+	if cfg != nil {
+		cfgCopy = *cfg
 	}
+	cfgCopy.eval()
+	cfg = &cfgCopy
 	if globals == nil {
 		globals = make([]Object, cfg.GlobalsSize)
 	}
@@ -95,7 +99,7 @@ func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, maxAllocs 
 		frames:      make([]*frame, 0, initialFrames),
 		framesIndex: 1,
 		ip:          -1,
-		maxAllocs:   maxAllocs,
+		maxAllocs:   cfg.MaxAllocs,
 		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{})},
 		config:      cfg,
 		In:          os.Stdin,

@@ -30,7 +30,7 @@ func makeTestVM() *VM {
 		MainFunction: emptyEntry,
 		FileSet:      fs,
 	}
-	return NewVM(context.Background(), bytecode, make([]Object, DefaultConfig.GlobalsSize), -1, nil)
+	return NewVM(context.Background(), bytecode, make([]Object, DefaultConfig.GlobalsSize), nil)
 }
 
 func TestIssue8_AbortDoesNotCancelNonCompiledRoutine(t *testing.T) {

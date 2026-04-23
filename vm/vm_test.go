@@ -3838,7 +3838,7 @@ func traceCompileRun(file *parser.File, symbols map[string]vm.Object, modules *v
 	trace = append(trace, fmt.Sprintf("\n[Compiled Instructions]\n\n%s\n",
 		strings.Join(bytecode.FormatInstructions(), "\n")))
 
-	v = vm.NewVM(context.Background(), bytecode, globals, maxAllocs, nil)
+	v = vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs})
 
 	err = v.Run()
 	{
