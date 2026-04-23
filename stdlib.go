@@ -4,13 +4,11 @@ import (
 	"sort"
 
 	"github.com/malivvan/rumo/std/base64"
-	"github.com/malivvan/rumo/std/cui"
 	"github.com/malivvan/rumo/std/fmt"
 	"github.com/malivvan/rumo/std/hex"
 	"github.com/malivvan/rumo/std/json"
 	"github.com/malivvan/rumo/std/math"
 	"github.com/malivvan/rumo/std/rand"
-	"github.com/malivvan/rumo/std/shell"
 	"github.com/malivvan/rumo/std/text"
 	"github.com/malivvan/rumo/std/times"
 	"github.com/malivvan/rumo/vm"
@@ -20,13 +18,11 @@ import (
 // BuiltinModules are builtin type standard library modules.
 var BuiltinModules = map[string]*module.BuiltinModule{
 	"base64":   base64.Module,
-	"cui":   cui.Module,
 	"fmt":   fmt.Module,
 	"hex":   hex.Module,
 	"json":   json.Module,
 	"math":   math.Module,
 	"rand":   rand.Module,
-	"shell":   shell.Module,
 	"text":   text.Module,
 	"times":   times.Module,
 }

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/malivvan/rumo/std/shell"
-	"github.com/malivvan/rumo/std/shell/term"
+	"github.com/malivvan/readline"
+	"github.com/malivvan/readline/term"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
 	"github.com/malivvan/rumo/vm/parser"
@@ -218,7 +218,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		}
 	}
 
-	rl, err := shell.NewFromConfig(&shell.Config{
+	rl, err := readline.NewFromConfig(&readline.Config{
 		Prompt:          prompt,
 		Stdin:           in,
 		Stdout:          out,
@@ -266,7 +266,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		}
 		line, readErr := rl.ReadLine()
 		if readErr != nil {
-			if readErr == shell.ErrInterrupt {
+			if readErr == readline.ErrInterrupt {
 				continue
 			}
 			return // io.EOF or other error, exit REPL

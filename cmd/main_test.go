@@ -81,9 +81,8 @@ func TestRunShortInputDoesNotPanic(t *testing.T) {
 // The CLI's execute() function passes context.Background() with no
 // SIGINT/SIGTERM handler. When a signal arrives, the Go runtime's default
 // handler terminates the process immediately — bypassing all deferred
-// cleanup (e.g. terminal restore in cui/shell modules). The fix is to use
-// signal.NotifyContext so that signals cancel the context, allowing the VM
-// to abort gracefully and run deferred cleanup.
+// cleanup. The fix is to use signal.NotifyContext so that signals cancel
+// the context, allowing the VM to abort gracefully and run deferred cleanup.
 func TestSignalCausesGracefulShutdown(t *testing.T) {
 	// When running as a subprocess, act as the CLI and run a script.
 	if scriptFile := os.Getenv("RUMO_SIGNAL_TEST_SCRIPT"); scriptFile != "" {

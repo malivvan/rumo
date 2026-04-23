@@ -315,8 +315,7 @@ func (v *VM) postRun() (err error) {
 		err = nil
 	}
 	if err != nil {
-		var e ErrPanic
-		if errors.As(err, &e) {
+		if e, ok := errors.AsType[ErrPanic](err); ok {
 			err = fmt.Errorf("\nRuntime Panic: %v%s\n%s", e.perr, v.callStack(nil), e.stack)
 		} else {
 			err = fmt.Errorf("\nRuntime Error: %w%s", err, v.callStack(nil))

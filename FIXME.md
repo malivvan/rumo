@@ -2,7 +2,7 @@
 
 Systemic issues in the root `rumo` package (public API: `Script`, `Program`, `Variable`, REPL, compile/run entry points) and the `cmd` CLI binary, with focus on cross-package interactions, embedding API correctness, and how the application exposes itself as a whole.
 
-Issues already documented in sub-package reviews (`vm/FIXME.md`, `std/FIXME.md`, `std/cli/FIXME.md`, `std/cui/FIXME.md`, `std/shell/FIXME.md`) are **not** repeated here. This review focuses on **emergent** problems at the integration boundary — where the root package, the CLI, the VM, and the stdlib modules meet.
+Issues already documented in sub-package reviews (`vm/FIXME.md`, `std/FIXME.md`) are **not** repeated here. This review focuses on **emergent** problems at the integration boundary — where the root package, the CLI, the VM, and the stdlib modules meet.
 
 Severity: **critical** (will cause crashes, data races, or incorrect behaviour under normal use), **high** (likely to cause subtle bugs or silently break embedding contracts), **medium** (performance/maintainability/usability concern), **low** (minor improvement).
 
@@ -12,11 +12,11 @@ Severity: **critical** (will cause crashes, data races, or incorrect behaviour u
 
 Three systemic themes dominate:
 
-1. **Eager global initialization** — The `Modules` and `Exports` package-level vars force all stdlib modules (including `cli`, `cui`, `shell` with their heavy transitive dependencies) to be initialized at Go import time. Every binary that imports `rumo` pays the full cost regardless of which modules are used.
+1. **Eager global initialization** — The `Modules` and `Exports` package-level vars force all stdlib modules to be initialized at Go import time. Every binary that imports `rumo` pays the full cost regardless of which modules are used.
 
 2. **`Program`-level locking blocks the entire execution** — `Program.Run()` and `RunContext()` hold a write lock for the entire script execution lifetime, making the embedding API effectively single-threaded and causing `Get()`/`Set()`/`IsDefined()` to block until the script finishes.
 
-3. **CLI binary lacks signal handling, argument forwarding, and context propagation** — Ctrl-C kills the process without cleanup (critical for `cui`/`shell` terminal raw mode), scripts cannot receive arguments, and the REPL ignores context cancellation.
+3. **CLI binary lacks signal handling, argument forwarding, and context propagation** — Ctrl-C kills the process without cleanup, scripts cannot receive arguments, and the REPL ignores context cancellation.
 
 ---
 
@@ -37,7 +37,7 @@ func (p *Program) Run() error {
 Both `Run()` and `RunContext()` acquire `p.lock.Lock()` (write lock) before creating the VM and hold it until execution completes. This means:
 
 - `p.Get()`, `p.Set()`, `p.IsDefined()`, `p.GetAll()` all acquire `p.lock.RLock()` — they block for the **entire duration** of the script.
-- For long-running or infinite scripts (event loops, servers, `cui.run()`, `cli.run()`), these accessors are effectively deadlocked.
+- For long-running or infinite scripts (event loops, servers), these accessors are effectively deadlocked.
 - `RunContext()` spawns a goroutine (script.go:344) that inherits the write lock via the deferred unlock — the lock is held until the goroutine finishes, not until `RunContext` returns.
 - `Program.Clone()` also takes a write lock, so cloning a running program blocks.
 
@@ -118,22 +118,15 @@ var Modules = GetModuleMap(AllModuleNames()...)
 var Exports = GetExportMap(AllModuleNames()...)
 ```
 
-These package-level variables are initialized at import time via `init()`. `GetModuleMap` calls `mod.Objects()` on every `BuiltinModule`, which triggers `init()` in every stdlib package (`cli`, `cui`, `shell`, `fmt`, `json`, etc.). This means:
+These package-level variables are initialized at import time via `init()`. `GetModuleMap` calls `mod.Objects()` on every `BuiltinModule`, which triggers `init()` in every stdlib package (`fmt`, `json`, etc.). This means:
 
-- **Binary size:** Every binary that imports `rumo` (even for a one-line script using only `math`) links `cli` (cobra/pflag), `cui` (tcell), `shell` (terminal handling), and all their transitive dependencies.
-- **Init-time side effects:** `cli/cli.go:init()` creates a module, `cui/cui.go:init()` creates a module — these allocate non-trivial state at program startup.
-- **WASI/browser compat:** `shell` imports `syscall` and `term` which may not compile on all targets, making the entire `rumo` package non-portable even if the script doesn't use shell features.
+- **Binary size:** Every binary that imports `rumo` (even for a one-line script using only `math`) links and all their transitive dependencies.
 
 **Fix direction:** Make `Modules` and `Exports` lazy — either compute on first access (`sync.Once`) or remove the global entirely and require callers to explicitly construct the module map. Consider using Go build tags to exclude heavy modules on constrained platforms.
 
 **Performance impact (see also §5.2 below):**
-- **Binary size:** `cui` (tcell) and `cli` (cobra/pflag) add significant code to the binary even when unused.
 - **Startup time:** All module `init()` functions run at program start, including those for unused modules.
 - **Memory:** All module objects (function tables, constant maps) are allocated at program start.
-
-For a minimal rumo embedder that only needs `math` and `text`, the overhead from `cui`, `cli`, and `shell` is pure waste. Consider splitting the stdlib into separate Go packages that can be independently imported (e.g., `rumo/stdlib/math`, `rumo/stdlib/cli`) with a convenience `rumo/stdlib/all` that registers everything.
-
-> **Related:** §8.1 (WASI/JS compilation impossible — the eager import chain is the root cause).
 
 ---
 
@@ -229,14 +222,11 @@ func main() {
 
 The CLI binary passes `context.Background()` to `run()`. There is no SIGINT/SIGTERM handler that cancels the context. When a rumo script is running:
 
-- **`cui` module:** The terminal is in raw mode (tcell). Ctrl-C kills the process, skipping `App.Stop()` and `finalizeScreen()`. The terminal is left in a broken state (no echo, no line buffering, no cursor).
-- **`shell` module:** The terminal is in raw mode (MakeRaw). Same issue — `Restore()` is never called.
-- **`cli` module:** Long-running commands hang with no way to abort gracefully.
 - **Any script:** Child routines (`start()`) are not aborted, goroutines leak into the ether.
 
 The `os.Exit(run(...))` call bypasses all deferred functions, compounding the problem.
 
-**Affected:** `cmd/main.go:16`, every script using `cui`, `shell`, or long-running operations.
+**Affected:** `cmd/main.go:16`, every script with long-running operations.
 
 **Fix direction:** Install a signal handler that cancels a context:
 
@@ -434,51 +424,6 @@ Security concern has been consolidated into §2.3 (`Unmarshal` hardcoded to glob
 
 ---
 
-## 8. Cross-Cutting Issues
-
-### 8.1 WASI/JS compilation impossible via root import chain — critical
-
-Importing the root `rumo` package (even just `import "github.com/malivvan/rumo"`) triggers `stdlib.go` which statically imports:
-- `std/cli` → depends on `github.com/spf13/cobra`, `github.com/spf13/pflag`
-- `std/cui` → depends on `github.com/gdamore/tcell/v2` (terminal manipulation via syscall)
-- `std/shell` → depends on `syscall.Stdin`, `golang.org/x/sys/unix` via `term/`, and platform-specific signal handling
-
-None of these compile on `GOOS=js` or `GOOS=wasip1`. Because `stdlib.go` is auto-generated and unconditionally imports all modules, **any Go program that imports `rumo` fails to compile on WASI/JS targets**, even if it only uses `math` or `text`.
-
-This is more severe than the individual module-level WASI issues (documented in `cli/FIXME.md` §1.8 and `shell/FIXME.md` §1.2) because the root package makes the entire project non-portable.
-
-**Impact:** Complete build failure on WASI/JS — the entire rumo ecosystem is confined to native OS targets.
-
-**Fix direction:** This is a consequence of §2.1 (eager init). The fix must combine:
-1. Make `stdlib.go` use lazy/conditional imports (build tags or plugin-style registration)
-2. Split into `rumo/core` (no stdlib, portable) and `rumo` (full stdlib, native-only)
-3. Add `//go:build !js && !wasip1` guards to `stdlib.go` at minimum
-
-> **Related:** §2.1 (eager init), `cli/FIXME.md` §1.8 (no WASI build tags), `shell/FIXME.md` §1.2 (no WASI build tag).
-
----
-
-### 8.2 End-to-end context/abort propagation gap — high
-
-The `abort()` mechanism and context cancellation are systematically broken across all interactive standard library modules. The chain of failures:
-
-1. **CLI binary has no signal handler** (§3.1) — `context.Background()` is never cancelled by Ctrl-C/SIGTERM
-2. **`cli` module's `run()` ignores its context parameter** (`cli/FIXME.md` §3.3) — `cmd.Execute()` is called instead of `cmd.ExecuteContext(ctx)`
-3. **`cui` module's `app.run()` doesn't watch context** (`cui/FIXME.md` §2.1) — `App.Run()` blocks in the tcell event loop with no `ctx.Done()` observer
-4. **`shell` module's `readline()` doesn't accept or propagate context** (`shell/FIXME.md` §6.2–§6.3) — blocking `ReadLine()` has no cancellation mechanism
-
-The result: a rumo script that calls `abort()` while `cli.run()`, `cui.run()`, or `shell.readline()` is executing has **no effect**. The blocking call continues indefinitely. Combined with §3.1 (no signal handler), the user has no way to gracefully stop any interactive rumo application — Ctrl-C kills the process without cleanup, leaving terminals in raw mode.
-
-**Impact:** `abort()` is a no-op for all interactive modules; graceful shutdown is impossible.
-
-**Fix direction:** Fix all four links in the chain:
-1. Install `signal.NotifyContext` in `cmd/main.go` (§3.1)
-2. Use `cmd.ExecuteContext(ctx)` in `cli` module
-3. Add a `ctx.Done()` watcher goroutine to `cui`'s `app.run()` wrapper
-4. Add `ReadLineContext(ctx)` to `shell` and wire through in bindings
-
----
-
 ## Summary
 
 | # | Issue | Severity | Category |
@@ -518,4 +463,3 @@ The result: a rumo script that calls `abort()` while `cli.run()`, `cui.run()`, o
 9. **Fix `Equals()` locking** — acquire `other.lock.RLock()`.
 10. **Check context in REPL loop** — add `ctx.Err()` check.
 11. **Fix error message for runtime failures** — distinguish compile vs. run errors in `cmd/main.go`.
-

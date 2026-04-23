@@ -8,15 +8,6 @@ import (
 	"github.com/malivvan/rumo/vm"
 )
 
-// Issue #14: callFunc duplicated in cli/cui — inherits ShallowClone data races.
-//
-// Identical callFunc implementations exist in both std/cli/cli.go and
-// std/cui/cui.go. Both invoke parentVM.ShallowClone() to run compiled
-// callbacks, duplicating the same logic (and any associated data-race
-// hazards from ShallowClone). Any fix applied to one copy must be
-// manually propagated to the other. The fix extracts the function into
-// vm.CallFunc as a single shared helper that both packages import.
-
 // TestCallFuncWithBuiltinFunction verifies that CallFunc correctly
 // dispatches to a BuiltinFunction's Call method.
 func TestCallFuncWithBuiltinFunction(t *testing.T) {
