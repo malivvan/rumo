@@ -5,6 +5,7 @@ import (
 	"io"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/malivvan/rumo/vm/token"
 )
@@ -92,18 +93,19 @@ func (p ErrorList) Err() error {
 // Parser parses the rumo source files. It's based on Go's parser
 // implementation.
 type Parser struct {
-	file      *SourceFile
-	errors    ErrorList
-	scanner   *Scanner
-	pos       Pos
-	token     token.Token
-	tokenLit  string
-	exprLevel int // < 0: in control clause, >= 0: in expression
-	syncPos   Pos // last sync position
-	syncCount int // number of advance calls without progress
-	trace     bool
-	indent    int
-	traceOut  io.Writer
+	file         *SourceFile
+	errors       ErrorList
+	scanner      *Scanner
+	pos          Pos
+	token        token.Token
+	tokenLit     string
+	exprLevel    int // < 0: in control clause, >= 0: in expression
+	syncPos      Pos // last sync position
+	syncCount    int // number of advance calls without progress
+	trace        bool
+	indent       int
+	traceOut     io.Writer
+	pendingEmbed []string // patterns from the most recent //embed directive
 }
 
 // NewParser creates a Parser.
@@ -116,7 +118,7 @@ func NewParser(file *SourceFile, src []byte, trace io.Writer) *Parser {
 	p.scanner = NewScanner(p.file, src,
 		func(pos SourceFilePos, msg string) {
 			p.errors.Add(pos, msg)
-		}, 0)
+		}, ScanComments)
 	p.next()
 	return p
 }
@@ -931,6 +933,11 @@ func (p *Parser) parseSimpleStmt(forIn bool) Stmt {
 		defer untracep(tracep(p, "SimpleStmt"))
 	}
 
+	// Consume any pending embed directive (it may be cleared below if
+	// the statement is not a := definition).
+	pendingEmbed := p.pendingEmbed
+	p.pendingEmbed = nil
+
 	x := p.parseExprList()
 
 	switch p.token {
@@ -938,12 +945,16 @@ func (p *Parser) parseSimpleStmt(forIn bool) Stmt {
 		pos, tok := p.pos, p.token
 		p.next()
 		y := p.parseExprList()
-		return &AssignStmt{
+		stmt := &AssignStmt{
 			LHS:      x,
 			RHS:      y,
 			Token:    tok,
 			TokenPos: pos,
 		}
+		if tok == token.Define && pendingEmbed != nil {
+			return &EmbedStmt{Patterns: pendingEmbed, Assign: stmt}
+		}
+		return stmt
 	case token.In:
 		if forIn {
 			p.next()
@@ -1158,7 +1169,16 @@ func (p *Parser) next() {
 			p.printTrace(s)
 		}
 	}
-	p.token, p.tokenLit, p.pos = p.scanner.Scan()
+	for {
+		p.token, p.tokenLit, p.pos = p.scanner.Scan()
+		if p.token != token.Comment {
+			break
+		}
+		// Capture //embed directives; discard all other comments.
+		if strings.HasPrefix(p.tokenLit, "//embed ") {
+			p.pendingEmbed = strings.Fields(p.tokenLit[len("//embed "):])
+		}
+	}
 }
 
 func (p *Parser) printTrace(a ...interface{}) {

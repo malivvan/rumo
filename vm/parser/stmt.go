@@ -44,6 +44,23 @@ func (s *AssignStmt) String() string {
 		" " + strings.Join(rhs, ", ")
 }
 
+// EmbedStmt represents a file embed statement (produced when an //embed
+// directive comment precedes a := assignment).
+type EmbedStmt struct {
+	Patterns []string
+	Assign   *AssignStmt
+}
+
+func (s *EmbedStmt) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *EmbedStmt) Pos() Pos { return s.Assign.Pos() }
+
+// End returns the position of first character immediately after the node.
+func (s *EmbedStmt) End() Pos { return s.Assign.End() }
+
+func (s *EmbedStmt) String() string { return s.Assign.String() }
+
 // BadStmt represents a bad statement.
 type BadStmt struct {
 	From Pos

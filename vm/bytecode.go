@@ -204,6 +204,17 @@ func (b *Bytecode) RemoveDuplicates() {
 				indexMap[curIdx] = newIdx
 				deduped = append(deduped, c)
 			}
+		case *Bytes:
+			// Bytes constants (from embed directives) cannot be deduplicated by
+			// value without an expensive comparison; pass them through as-is.
+			newIdx := len(deduped)
+			indexMap[curIdx] = newIdx
+			deduped = append(deduped, c)
+		case *Map:
+			// Map constants (from embed directives) are always unique; pass through.
+			newIdx := len(deduped)
+			indexMap[curIdx] = newIdx
+			deduped = append(deduped, c)
 		default:
 			panic(fmt.Errorf("unsupported top-level constant type: %s",
 				c.TypeName()))

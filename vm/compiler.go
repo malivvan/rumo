@@ -315,6 +315,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 		if err != nil {
 			return err
 		}
+	case *parser.EmbedStmt:
+		return c.compileEmbed(node)
 	case *parser.Ident:
 		symbol, _, ok := c.symbolTable.Resolve(node.Name, false)
 		if !ok {
@@ -754,6 +756,160 @@ func (c *Compiler) compileAssign(
 	default:
 		panic(fmt.Errorf("invalid assignment variable scope: %s",
 			symbol.Scope))
+	}
+	return nil
+}
+
+// compileEmbed handles //embed directive statements. It resolves glob patterns,
+// reads file contents at compile time, and emits a constant for the result.
+// Supported placeholder types on the RHS of the := statement:
+//
+//	""          → single file embedded as string
+//	bytes("")   → single file embedded as bytes
+//	{}          → multiple files embedded as map[string]string
+//	bytes({})   → multiple files embedded as map[string]bytes
+func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
+	if c.importDir == "" {
+		return c.errorf(node, "embed: file embed is not available (no source directory)")
+	}
+	if len(node.Patterns) == 0 {
+		return c.errorf(node, "embed: no patterns specified")
+	}
+	if len(node.Assign.LHS) != 1 {
+		return c.errorf(node, "embed: exactly one variable must be on the left-hand side")
+	}
+	if len(node.Assign.RHS) != 1 {
+		return c.errorf(node, "embed: exactly one expression must be on the right-hand side")
+	}
+
+	// Determine desired output type from the RHS placeholder expression.
+	type embedKind int
+	const (
+		embedString      embedKind = iota // single file as string
+		embedBytes                        // single file as bytes
+		embedMapString                    // multi-file as map[string]string
+		embedMapBytes                     // multi-file as map[string]bytes
+	)
+
+	kind := embedString
+	rhs := node.Assign.RHS[0]
+	switch rhs := rhs.(type) {
+	case *parser.StringLit:
+		// x := ""
+		kind = embedString
+	case *parser.MapLit:
+		// x := {}
+		if len(rhs.Elements) != 0 {
+			return c.errorf(node, "embed: map placeholder must be empty ({})")
+		}
+		kind = embedMapString
+	case *parser.CallExpr:
+		// x := bytes("") or x := bytes({})
+		fn, ok := rhs.Func.(*parser.Ident)
+		if !ok || fn.Name != "bytes" {
+			return c.errorf(node, "embed: unsupported placeholder expression; use \"\", bytes(\"\"), {}, or bytes({})")
+		}
+		if len(rhs.Args) != 1 {
+			return c.errorf(node, "embed: bytes() placeholder must have exactly one argument")
+		}
+		switch rhs.Args[0].(type) {
+		case *parser.StringLit:
+			kind = embedBytes
+		case *parser.MapLit:
+			kind = embedMapBytes
+		default:
+			return c.errorf(node, "embed: bytes() placeholder argument must be \"\" or {}")
+		}
+	default:
+		return c.errorf(node, "embed: unsupported placeholder expression; use \"\", bytes(\"\"), {}, or bytes({})")
+	}
+
+	// Resolve glob patterns.
+	var matchedPaths []string
+	for _, pattern := range node.Patterns {
+		var globPattern string
+		if filepath.IsAbs(pattern) {
+			return c.errorf(node, "embed: absolute paths are not allowed: %s", pattern)
+		}
+		globPattern = filepath.Join(c.importDir, filepath.FromSlash(pattern))
+		matches, err := filepath.Glob(globPattern)
+		if err != nil {
+			return c.errorf(node, "embed: invalid glob pattern %q: %s", pattern, err.Error())
+		}
+		if len(matches) == 0 {
+			return c.errorf(node, "embed: no files matched pattern %q", pattern)
+		}
+		matchedPaths = append(matchedPaths, matches...)
+	}
+
+	// For single-file embeds, require exactly one file match.
+	if kind == embedString || kind == embedBytes {
+		if len(matchedPaths) != 1 {
+			return c.errorf(node, "embed: single-file embed matched %d files (expected 1)", len(matchedPaths))
+		}
+		data, err := os.ReadFile(matchedPaths[0])
+		if err != nil {
+			return c.errorf(node, "embed: failed to read file %q: %s", matchedPaths[0], err.Error())
+		}
+		var obj Object
+		if kind == embedString {
+			if len(data) > MaxStringLen {
+				return c.error(node, ErrStringLimit)
+			}
+			obj = &String{Value: string(data)}
+		} else {
+			if len(data) > MaxBytesLen {
+				return c.error(node, ErrBytesLimit)
+			}
+			obj = &Bytes{Value: data}
+		}
+		c.emit(node, parser.OpConstant, c.addConstant(obj))
+	} else {
+		// Multi-file embed: build a Map constant.
+		mapObj := &Map{Value: make(map[string]Object, len(matchedPaths))}
+		for _, path := range matchedPaths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return c.errorf(node, "embed: failed to read file %q: %s", path, err.Error())
+			}
+			// Use the path relative to importDir as the map key.
+			rel, err := filepath.Rel(c.importDir, path)
+			if err != nil {
+				rel = path
+			}
+			rel = filepath.ToSlash(rel) // normalize to forward slashes
+			var valObj Object
+			if kind == embedMapString {
+				if len(data) > MaxStringLen {
+					return c.error(node, ErrStringLimit)
+				}
+				valObj = &String{Value: string(data)}
+			} else {
+				if len(data) > MaxBytesLen {
+					return c.error(node, ErrBytesLimit)
+				}
+				valObj = &Bytes{Value: data}
+			}
+			mapObj.Value[rel] = valObj
+		}
+		c.emit(node, parser.OpConstant, c.addConstant(mapObj))
+	}
+
+	// Now define and assign the LHS variable (reuse the logic from compileAssign).
+	ident, _ := resolveAssignLHS(node.Assign.LHS[0])
+	symbol, depth, exists := c.symbolTable.Resolve(ident, false)
+	if depth == 0 && exists {
+		return c.errorf(node, "'%s' redeclared in this block", ident)
+	}
+	symbol = c.symbolTable.Define(ident)
+	switch symbol.Scope {
+	case ScopeGlobal:
+		c.emit(node, parser.OpSetGlobal, symbol.Index)
+	case ScopeLocal:
+		c.emit(node, parser.OpDefineLocal, symbol.Index)
+		symbol.LocalAssigned = true
+	default:
+		panic(fmt.Errorf("embed: unexpected symbol scope: %s", symbol.Scope))
 	}
 	return nil
 }
