@@ -231,6 +231,12 @@ func (b *Bytecode) RemoveDuplicates() {
 			newIdx := len(deduped)
 			indexMap[curIdx] = newIdx
 			deduped = append(deduped, c)
+		case *UserType:
+			// User-defined types are introduced once per `type` statement and
+			// referenced by pointer identity; always pass through.
+			newIdx := len(deduped)
+			indexMap[curIdx] = newIdx
+			deduped = append(deduped, c)
 		default:
 			panic(fmt.Errorf("unsupported top-level constant type: %s",
 				c.TypeName()))

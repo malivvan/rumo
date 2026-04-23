@@ -22,6 +22,7 @@ var stmtStart = map[token.Token]bool{
 	token.Return:   true,
 	token.Export:   true,
 	token.Native:   true,
+	token.Type:     true,
 }
 
 // Error represents a parser error.
@@ -715,6 +716,8 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return p.parseBranchStmt(p.token)
 	case token.Native:
 		return p.parseNativeStmt()
+	case token.Type:
+		return p.parseTypeStmt()
 	case token.Semicolon:
 		s := &EmptyStmt{Semicolon: p.pos, Implicit: p.tokenLit == "\n"}
 		p.next()
@@ -1267,4 +1270,125 @@ func tracep(p *Parser, msg string) *Parser {
 func untracep(p *Parser) {
 	p.indent--
 	p.printTrace(")")
+}
+
+// parseTypeStmt parses a Go-style `type Name <underlying>` statement.
+// The underlying may be one of:
+//   - `struct { ... }`      -> *StructType
+//   - `func(p1, p2, ...)`   -> *FuncType
+//   - any identifier chain  -> alias / named value type (kept as-is)
+func (p *Parser) parseTypeStmt() Stmt {
+	if p.trace {
+		defer untracep(tracep(p, "TypeStmt"))
+	}
+
+	pos := p.expect(token.Type)
+
+	if p.token != token.Ident {
+		p.errorExpected(p.pos, "type name")
+		p.advance(stmtStart)
+		return &BadStmt{From: pos, To: p.pos}
+	}
+	name := p.parseIdent()
+
+	var underlying Expr
+	switch p.token {
+	case token.Struct:
+		underlying = p.parseStructType()
+	case token.Func:
+		underlying = p.parseFuncType()
+	case token.Ident:
+		// Named/alias value type. We accept a qualified or selector chain,
+		// e.g. `type MyInt int` or `type Time time.Time`, but no calls or
+		// indices — those are not type expressions.
+		underlying = p.parseTypeName()
+	default:
+		p.errorExpected(p.pos, "type expression (struct, func, or identifier)")
+		p.advance(stmtStart)
+		return &BadStmt{From: pos, To: p.pos}
+	}
+
+	p.expectSemi()
+	return &TypeStmt{
+		TypePos: pos,
+		Name:    name,
+		Type:    underlying,
+	}
+}
+
+// parseStructType parses a `struct { field; field; ... }` type literal.
+// Fields are a list of identifiers separated by semicolons or newlines.
+func (p *Parser) parseStructType() *StructType {
+	if p.trace {
+		defer untracep(tracep(p, "StructType"))
+	}
+
+	pos := p.expect(token.Struct)
+	lbrace := p.expect(token.LBrace)
+
+	var fields []*Ident
+	seen := make(map[string]bool)
+	for p.token != token.RBrace && p.token != token.EOF {
+		if p.token == token.Semicolon {
+			p.next()
+			continue
+		}
+		if p.token != token.Ident {
+			p.errorExpected(p.pos, "field name")
+			p.advance(map[token.Token]bool{token.RBrace: true, token.Semicolon: true})
+			continue
+		}
+		// Accept a comma-separated field list (e.g. `x, y, z`).
+		for {
+			id := p.parseIdent()
+			if seen[id.Name] {
+				p.error(id.Pos(), "duplicate field name: "+id.Name)
+			} else {
+				seen[id.Name] = true
+				fields = append(fields, id)
+			}
+			if p.token != token.Comma {
+				break
+			}
+			p.next()
+			if p.token != token.Ident {
+				p.errorExpected(p.pos, "field name")
+				break
+			}
+		}
+		if p.token == token.Semicolon {
+			p.next()
+		} else if p.token != token.RBrace {
+			p.errorExpected(p.pos, "';' or newline")
+			break
+		}
+	}
+
+	rbrace := p.expect(token.RBrace)
+	return &StructType{
+		StructPos: pos,
+		LBrace:    lbrace,
+		Fields:    fields,
+		RBrace:    rbrace,
+	}
+}
+
+// parseTypeName parses an identifier used as a type (for `type X <name>`).
+// Selector chains like `pkg.Type` are accepted for future use.
+func (p *Parser) parseTypeName() Expr {
+	var x Expr = p.parseIdent()
+	for p.token == token.Period {
+		p.next()
+		if p.token != token.Ident {
+			p.errorExpected(p.pos, "selector")
+			return x
+		}
+		sel := p.parseIdent()
+		x = &SelectorExpr{Expr: x, Sel: &StringLit{
+			Value:    sel.Name,
+			ValuePos: sel.NamePos,
+			Literal:  sel.Name,
+		}}
+	}
+	return x
 }

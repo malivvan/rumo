@@ -319,6 +319,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 		return c.compileEmbed(node)
 	case *parser.NativeStmt:
 		return c.compileNative(node)
+	case *parser.TypeStmt:
+		return c.compileType(node)
 	case *parser.Ident:
 		symbol, _, ok := c.symbolTable.Resolve(node.Name, false)
 		if !ok {

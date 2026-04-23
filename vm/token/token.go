@@ -87,6 +87,8 @@ const (
 	Go
 	Defer
 	Native
+	Type
+	Struct
 	_keywordEnd
 )
 
@@ -164,6 +166,8 @@ var tokens = [...]string{
 	Go:           "go",
 	Defer:        "defer",
 	Native:       "native",
+	Type:         "type",
+	Struct:       "struct",
 }
 
 func (tok Token) String() string {
