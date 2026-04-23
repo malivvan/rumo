@@ -61,6 +61,10 @@ var (
 
 	// ErrSendOnClosedChannel is returned when send() is called on a closed channel.
 	ErrSendOnClosedChannel = errors.New("send on closed channel")
+
+	// ErrDivisionByZero is returned when an integer division or modulo
+	// operation has a zero right-hand operand.
+	ErrDivisionByZero = errors.New("division by zero")
 )
 
 // ErrInvalidArgumentType represents an invalid argument value type error.

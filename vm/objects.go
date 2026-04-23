@@ -1045,7 +1045,7 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			return &Int{Value: r}, nil
 		case token.Quo:
 			if rhs.Value == 0 {
-				return nil, fmt.Errorf("division by zero")
+				return nil, ErrDivisionByZero
 			}
 			r := o.Value / rhs.Value
 			if r == o.Value {
@@ -1054,7 +1054,7 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			return &Int{Value: r}, nil
 		case token.Rem:
 			if rhs.Value == 0 {
-				return nil, fmt.Errorf("division by zero")
+				return nil, ErrDivisionByZero
 			}
 			r := o.Value % rhs.Value
 			if r == o.Value {

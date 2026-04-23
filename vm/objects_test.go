@@ -1,6 +1,7 @@
 package vm_test
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -733,6 +734,102 @@ func boolValue(b bool) vm.Object {
 		return vm.TrueValue
 	}
 	return vm.FalseValue
+}
+
+// Integer division and modulo by zero produce a clean, matchable sentinel error.
+//
+// When an integer division (/) or modulo (%) operation is performed with a
+// zero right-hand operand, the Go runtime would normally panic with
+// "runtime error: integer divide by zero". That panic is caught by the VM's
+// top-level recover(), which converts it into an ErrPanic — a confusing
+// multi-line message containing a full goroutine stack trace rather than a
+// clean, actionable error.
+//
+// The fix checks for zero divisor in Int.BinaryOp (for both token.Quo and
+// token.Rem) and returns vm.ErrDivisionByZero — a sentinel error that callers
+// can match with errors.Is and that produces a clear "division by zero"
+// message without any stack trace noise.
+
+// TestIntDivisionByZeroSentinel verifies that Int / 0 returns the sentinel
+// error ErrDivisionByZero, not an opaque fmt.Errorf or an ErrPanic.
+func TestIntDivisionByZeroSentinel(t *testing.T) {
+	a := &vm.Int{Value: 10}
+	zero := &vm.Int{Value: 0}
+
+	_, err := a.BinaryOp(token.Quo, zero)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, vm.ErrDivisionByZero),
+		"expected errors.Is(err, ErrDivisionByZero) to be true, got: %v (type %T)", err, err)
+}
+
+// TestIntModuloByZeroSentinel verifies that Int % 0 returns ErrDivisionByZero.
+func TestIntModuloByZeroSentinel(t *testing.T) {
+	a := &vm.Int{Value: 10}
+	zero := &vm.Int{Value: 0}
+
+	_, err := a.BinaryOp(token.Rem, zero)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, vm.ErrDivisionByZero),
+		"expected errors.Is(err, ErrDivisionByZero) to be true, got: %v (type %T)", err, err)
+}
+
+// TestIntDivisionByZeroNotPanic verifies that Int / 0 does NOT produce a
+// runtime panic; the error is returned cleanly, not via Go's panic mechanism.
+func TestIntDivisionByZeroNotPanic(t *testing.T) {
+	a := &vm.Int{Value: 10}
+	zero := &vm.Int{Value: 0}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Int / 0 must not panic, but got: %v", r)
+		}
+	}()
+
+	_, err := a.BinaryOp(token.Quo, zero)
+	require.Error(t, err)
+}
+
+// TestIntModuloByZeroNotPanic verifies that Int % 0 does NOT produce a
+// runtime panic.
+func TestIntModuloByZeroNotPanic(t *testing.T) {
+	a := &vm.Int{Value: 10}
+	zero := &vm.Int{Value: 0}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Int %% 0 must not panic, but got: %v", r)
+		}
+	}()
+
+	_, err := a.BinaryOp(token.Rem, zero)
+	require.Error(t, err)
+}
+
+// TestIntNegativeDivisionByZeroSentinel verifies negative dividend / 0 also
+// returns ErrDivisionByZero (not a panic).
+func TestIntNegativeDivisionByZeroSentinel(t *testing.T) {
+	a := &vm.Int{Value: -42}
+	zero := &vm.Int{Value: 0}
+
+	_, err := a.BinaryOp(token.Quo, zero)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, vm.ErrDivisionByZero),
+		"expected ErrDivisionByZero, got: %v", err)
+
+	_, err = a.BinaryOp(token.Rem, zero)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, vm.ErrDivisionByZero),
+		"expected ErrDivisionByZero, got: %v", err)
+}
+
+// TestIntZeroDivisionByZeroSentinel verifies 0 / 0 also returns ErrDivisionByZero.
+func TestIntZeroDivisionByZeroSentinel(t *testing.T) {
+	zero := &vm.Int{Value: 0}
+
+	_, err := zero.BinaryOp(token.Quo, zero)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, vm.ErrDivisionByZero),
+		"expected ErrDivisionByZero, got: %v", err)
 }
 
 // Issue #25: Map and Array mutations are not thread-safe.
