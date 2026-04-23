@@ -113,8 +113,17 @@ func CompileAndRun(ctx context.Context, data []byte, inputFile string, args []st
 
 // RunCompiled reads the compiled binary from file and executes it.
 func RunCompiled(ctx context.Context, data []byte, args []string) (err error) {
+	return RunCompiledWithModules(ctx, data, args, Modules())
+}
+
+// RunCompiledWithModules reads the compiled binary and executes it using the
+// provided module map for deserialization.  Use this variant when the compiled
+// script imports custom builtin modules that are not part of the standard
+// library; pass a ModuleMap that contains both the standard modules and any
+// custom ones required by the bytecode.
+func RunCompiledWithModules(ctx context.Context, data []byte, args []string, modules *vm.ModuleMap) (err error) {
 	p := &Program{}
-	err = p.Unmarshal(data)
+	err = p.UnmarshalWithModules(data, modules)
 	if err != nil {
 		return
 	}

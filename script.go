@@ -242,7 +242,19 @@ func (p *Program) Bytecode() *vm.Bytecode {
 }
 
 // Unmarshal deserializes the Program from a byte slice.
-func (p *Program) Unmarshal(b []byte) (err error) {
+// The global Modules() map is used to resolve imported builtin modules.
+// Use UnmarshalWithModules to supply a custom module map (e.g. when the
+// compiled script imports modules not present in the standard library).
+func (p *Program) Unmarshal(b []byte) error {
+	return p.UnmarshalWithModules(b, Modules())
+}
+
+// UnmarshalWithModules deserializes the Program from a byte slice using the
+// provided module map to resolve imported builtin modules.  Pass a ModuleMap
+// that contains every builtin module referenced by the compiled bytecode;
+// the global Modules() map is a sensible starting point for standard-library
+// modules, and custom modules can be added via ModuleMap.AddBuiltinModule.
+func (p *Program) UnmarshalWithModules(b []byte, modules *vm.ModuleMap) (err error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -284,8 +296,11 @@ func (p *Program) Unmarshal(b []byte) (err error) {
 		return err
 	}
 
+	if modules == nil {
+		modules = vm.NewModuleMap()
+	}
 	p.bytecode = &vm.Bytecode{}
-	err = p.bytecode.Unmarshal(body[n:], Modules())
+	err = p.bytecode.Unmarshal(body[n:], modules)
 	if err != nil {
 		return err
 	}
