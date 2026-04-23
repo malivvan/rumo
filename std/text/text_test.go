@@ -174,9 +174,9 @@ func TestText(t *testing.T) {
 }
 
 func TestReplaceLimit(t *testing.T) {
-	curMaxStringLen := vm.MaxStringLen
-	defer func() { vm.MaxStringLen = curMaxStringLen }()
-	vm.MaxStringLen = 12
+	curMaxStringLen := vm.DefaultConfig.MaxStringLen
+	defer func() { vm.DefaultConfig.MaxStringLen = curMaxStringLen }()
+	vm.DefaultConfig.MaxStringLen = 12
 
 	require.Module(t, "text").Call("replace", "123456789012", "1", "x", -1).Expect("x234567890x2")
 	require.Module(t, "text").Call("replace", "123456789012", "12", "x", -1).Expect("x34567890x")
@@ -194,9 +194,9 @@ func TestReplaceLimit(t *testing.T) {
 }
 
 func TestTextRepeat(t *testing.T) {
-	curMaxStringLen := vm.MaxStringLen
-	defer func() { vm.MaxStringLen = curMaxStringLen }()
-	vm.MaxStringLen = 12
+	curMaxStringLen := vm.DefaultConfig.MaxStringLen
+	defer func() { vm.DefaultConfig.MaxStringLen = curMaxStringLen }()
+	vm.DefaultConfig.MaxStringLen = 12
 
 	require.Module(t, "text").Call("repeat", "1234", "3").Expect("123412341234")
 	require.Module(t, "text").Call("repeat", "1234", "4").ExpectError()

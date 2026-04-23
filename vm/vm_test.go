@@ -723,10 +723,10 @@ func TestBuiltinFunction(t *testing.T) {
 	expectRun(t, `out = format("%v", [1, [2, [3, 4]]])`,
 		nil, `[1, [2, [3, 4]]]`)
 
-	vm.MaxStringLen = 9
+	vm.DefaultConfig.MaxStringLen = 9
 	expectError(t, `format("%s", "1234567890")`,
 		nil, "exceeding string size limit")
-	vm.MaxStringLen = 2147483647
+	vm.DefaultConfig.MaxStringLen = 2147483647
 
 	// delete
 	expectError(t, `delete()`, nil, vm.ErrWrongNumArguments.Error())
@@ -897,15 +897,15 @@ func TestBuiltinFunction(t *testing.T) {
 }
 
 func TestBytesN(t *testing.T) {
-	curMaxBytesLen := vm.MaxBytesLen
-	defer func() { vm.MaxBytesLen = curMaxBytesLen }()
-	vm.MaxBytesLen = 10
+	curMaxBytesLen := vm.DefaultConfig.MaxBytesLen
+	defer func() { vm.DefaultConfig.MaxBytesLen = curMaxBytesLen }()
+	vm.DefaultConfig.MaxBytesLen = 10
 
 	expectRun(t, `out = bytes(0)`, nil, make([]byte, 0))
 	expectRun(t, `out = bytes(10)`, nil, make([]byte, 10))
 	expectError(t, `bytes(11)`, nil, "bytes size limit")
 
-	vm.MaxBytesLen = 1000
+	vm.DefaultConfig.MaxBytesLen = 1000
 	expectRun(t, `out = bytes(1000)`, nil, make([]byte, 1000))
 	expectError(t, `bytes(1001)`, nil, "bytes size limit")
 }

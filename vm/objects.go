@@ -409,7 +409,7 @@ func (o *Bytes) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	case token.Add:
 		switch rhs := rhs.(type) {
 		case *Bytes:
-			if len(o.Value)+len(rhs.Value) > MaxBytesLen {
+			if len(o.Value)+len(rhs.Value) > DefaultConfig.MaxBytesLen {
 				return nil, ErrBytesLimit
 			}
 			return &Bytes{Value: append(o.Value, rhs.Value...)}, nil
@@ -1375,13 +1375,13 @@ func (o *String) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	case token.Add:
 		switch rhs := rhs.(type) {
 		case *String:
-			if len(o.Value)+len(rhs.Value) > MaxStringLen {
+			if len(o.Value)+len(rhs.Value) > DefaultConfig.MaxStringLen {
 				return nil, ErrStringLimit
 			}
 			return &String{Value: o.Value + rhs.Value}, nil
 		default:
 			rhsStr := rhs.String()
-			if len(o.Value)+len(rhsStr) > MaxStringLen {
+			if len(o.Value)+len(rhsStr) > DefaultConfig.MaxStringLen {
 				return nil, ErrStringLimit
 			}
 			return &String{Value: o.Value + rhsStr}, nil

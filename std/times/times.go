@@ -888,7 +888,7 @@ func timesTimeFormat(ctx context.Context, args ...vm.Object) (ret vm.Object, err
 	}
 
 	s := t1.Format(s2)
-	if len(s) > vm.MaxStringLen {
+	if len(s) > vm.DefaultConfig.MaxStringLen {
 
 		return nil, vm.ErrStringLimit
 	}

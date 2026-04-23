@@ -95,7 +95,7 @@ func getPrintArgs(args ...vm.Object) ([]interface{}, error) {
 		s, _ := vm.ToString(arg)
 		slen := len(s)
 		// make sure length does not exceed the limit
-		if l+slen > vm.MaxStringLen {
+		if l+slen > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		l += slen

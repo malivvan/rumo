@@ -483,7 +483,7 @@ func textPadLeft(ctx context.Context, args ...vm.Object) (ret vm.Object, err err
 		return
 	}
 
-	if i2 > vm.MaxStringLen {
+	if i2 > vm.DefaultConfig.MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -546,7 +546,7 @@ func textPadRight(ctx context.Context, args ...vm.Object) (ret vm.Object, err er
 		return
 	}
 
-	if i2 > vm.MaxStringLen {
+	if i2 > vm.DefaultConfig.MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -605,7 +605,7 @@ func textRepeat(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 		}
 	}
 
-	if len(s1)*i2 > vm.MaxStringLen {
+	if len(s1)*i2 > vm.DefaultConfig.MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -664,7 +664,7 @@ func textJoin(ctx context.Context, args ...vm.Object) (ret vm.Object, err error)
 	}
 
 	// make sure output length does not exceed the limit
-	if slen+len(s2)*(len(ss1)-1) > vm.MaxStringLen {
+	if slen+len(s2)*(len(ss1)-1) > vm.DefaultConfig.MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -923,7 +923,7 @@ func doTextReplace(s, old, new string, n int) (string, bool) {
 		}
 
 		ssj := s[start:j]
-		if w+len(ssj)+len(new) > vm.MaxStringLen {
+		if w+len(ssj)+len(new) > vm.DefaultConfig.MaxStringLen {
 			return "", false
 		}
 
@@ -933,7 +933,7 @@ func doTextReplace(s, old, new string, n int) (string, bool) {
 	}
 
 	ss := s[start:]
-	if w+len(ss) > vm.MaxStringLen {
+	if w+len(ss) > vm.DefaultConfig.MaxStringLen {
 		return "", false
 	}
 
@@ -1161,14 +1161,14 @@ func doTextRegexpReplace(re *regexp.Regexp, src, repl string) (string, bool) {
 	for _, m := range re.FindAllStringSubmatchIndex(src, -1) {
 		var exp []byte
 		exp = re.ExpandString(exp, repl, src, m)
-		if len(out)+m[0]-idx+len(exp) > vm.MaxStringLen {
+		if len(out)+m[0]-idx+len(exp) > vm.DefaultConfig.MaxStringLen {
 			return "", false
 		}
 		out += src[idx:m[0]] + string(exp)
 		idx = m[1]
 	}
 	if idx < len(src) {
-		if len(out)+len(src)-idx > vm.MaxStringLen {
+		if len(out)+len(src)-idx > vm.DefaultConfig.MaxStringLen {
 			return "", false
 		}
 		out += src[idx:]

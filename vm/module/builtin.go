@@ -290,7 +290,7 @@ func funcARS(fn func() string) vm.CallableFunc {
 			return nil, vm.ErrWrongNumArguments
 		}
 		s := fn()
-		if len(s) > vm.MaxStringLen {
+		if len(s) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: s}, nil
@@ -308,7 +308,7 @@ func funcARSE(fn func() (string, error)) vm.CallableFunc {
 		if err != nil {
 			return wrapError(err), nil
 		}
-		if len(res) > vm.MaxStringLen {
+		if len(res) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: res}, nil
@@ -326,7 +326,7 @@ func funcARYE(fn func() ([]byte, error)) vm.CallableFunc {
 		if err != nil {
 			return wrapError(err), nil
 		}
-		if len(res) > vm.MaxBytesLen {
+		if len(res) > vm.DefaultConfig.MaxBytesLen {
 			return nil, vm.ErrBytesLimit
 		}
 		return &vm.Bytes{Value: res}, nil
@@ -353,7 +353,7 @@ func funcARSs(fn func() []string) vm.CallableFunc {
 		}
 		arr := &vm.Array{}
 		for _, elem := range fn() {
-			if len(elem) > vm.MaxStringLen {
+			if len(elem) > vm.DefaultConfig.MaxStringLen {
 				return nil, vm.ErrStringLimit
 			}
 			arr.Value = append(arr.Value, &vm.String{Value: elem})
@@ -631,7 +631,7 @@ func funcASRS(fn func(string) string) vm.CallableFunc {
 			}
 		}
 		s := fn(s1)
-		if len(s) > vm.MaxStringLen {
+		if len(s) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: s}, nil
@@ -656,7 +656,7 @@ func funcASRSs(fn func(string) []string) vm.CallableFunc {
 		res := fn(s1)
 		arr := &vm.Array{}
 		for _, elem := range res {
-			if len(elem) > vm.MaxStringLen {
+			if len(elem) > vm.DefaultConfig.MaxStringLen {
 				return nil, vm.ErrStringLimit
 			}
 			arr.Value = append(arr.Value, &vm.String{Value: elem})
@@ -685,7 +685,7 @@ func funcASRSE(fn func(string) (string, error)) vm.CallableFunc {
 		if err != nil {
 			return wrapError(err), nil
 		}
-		if len(res) > vm.MaxStringLen {
+		if len(res) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: res}, nil
@@ -765,7 +765,7 @@ func funcASSRSs(fn func(string, string) []string) vm.CallableFunc {
 		}
 		arr := &vm.Array{}
 		for _, res := range fn(s1, s2) {
-			if len(res) > vm.MaxStringLen {
+			if len(res) > vm.DefaultConfig.MaxStringLen {
 				return nil, vm.ErrStringLimit
 			}
 			arr.Value = append(arr.Value, &vm.String{Value: res})
@@ -807,7 +807,7 @@ func funcASSIRSs(fn func(string, string, int) []string) vm.CallableFunc {
 		}
 		arr := &vm.Array{}
 		for _, res := range fn(s1, s2, i3) {
-			if len(res) > vm.MaxStringLen {
+			if len(res) > vm.DefaultConfig.MaxStringLen {
 				return nil, vm.ErrStringLimit
 			}
 			arr.Value = append(arr.Value, &vm.String{Value: res})
@@ -867,7 +867,7 @@ func funcASSRS(fn func(string, string) string) vm.CallableFunc {
 			}
 		}
 		s := fn(s1, s2)
-		if len(s) > vm.MaxStringLen {
+		if len(s) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: s}, nil
@@ -953,7 +953,7 @@ func funcASsSRS(fn func([]string, string) string) vm.CallableFunc {
 			}
 		}
 		s := fn(ss1, s2)
-		if len(s) > vm.MaxStringLen {
+		if len(s) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: s}, nil
@@ -1038,7 +1038,7 @@ func funcASIRS(fn func(string, int) string) vm.CallableFunc {
 			}
 		}
 		s := fn(s1, i2)
-		if len(s) > vm.MaxStringLen {
+		if len(s) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: s}, nil
@@ -1165,7 +1165,7 @@ func funcASRYE(fn func(string) ([]byte, error)) vm.CallableFunc {
 		if err != nil {
 			return wrapError(err), nil
 		}
-		if len(res) > vm.MaxBytesLen {
+		if len(res) > vm.DefaultConfig.MaxBytesLen {
 			return nil, vm.ErrBytesLimit
 		}
 		return &vm.Bytes{Value: res}, nil
@@ -1193,7 +1193,7 @@ func funcAIRSsE(fn func(int) ([]string, error)) vm.CallableFunc {
 		}
 		arr := &vm.Array{}
 		for _, r := range res {
-			if len(r) > vm.MaxStringLen {
+			if len(r) > vm.DefaultConfig.MaxStringLen {
 				return nil, vm.ErrStringLimit
 			}
 			arr.Value = append(arr.Value, &vm.String{Value: r})
@@ -1218,7 +1218,7 @@ func funcAIRS(fn func(int) string) vm.CallableFunc {
 			}
 		}
 		s := fn(i1)
-		if len(s) > vm.MaxStringLen {
+		if len(s) > vm.DefaultConfig.MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		return &vm.String{Value: s}, nil

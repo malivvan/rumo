@@ -204,7 +204,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 			c.emit(node, parser.OpFalse)
 		}
 	case *parser.StringLit:
-		if len(node.Value) > MaxStringLen {
+		if len(node.Value) > DefaultConfig.MaxStringLen {
 			return c.error(node, ErrStringLimit)
 		}
 		c.emit(node, parser.OpConstant,
@@ -343,7 +343,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 	case *parser.MapLit:
 		for _, elt := range node.Elements {
 			// key
-			if len(elt.Key) > MaxStringLen {
+			if len(elt.Key) > DefaultConfig.MaxStringLen {
 				return c.error(node, ErrStringLimit)
 			}
 			c.emit(node, parser.OpConstant,
@@ -884,12 +884,12 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 		}
 		var obj Object
 		if kind == embedString {
-			if len(data) > MaxStringLen {
+			if len(data) > DefaultConfig.MaxStringLen {
 				return c.error(node, ErrStringLimit)
 			}
 			obj = &String{Value: string(data)}
 		} else {
-			if len(data) > MaxBytesLen {
+			if len(data) > DefaultConfig.MaxBytesLen {
 				return c.error(node, ErrBytesLimit)
 			}
 			obj = &Bytes{Value: data}
@@ -911,12 +911,12 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 			rel = filepath.ToSlash(rel) // normalize to forward slashes
 			var valObj Object
 			if kind == embedMapString {
-				if len(data) > MaxStringLen {
+				if len(data) > DefaultConfig.MaxStringLen {
 					return c.error(node, ErrStringLimit)
 				}
 				valObj = &String{Value: string(data)}
 			} else {
-				if len(data) > MaxBytesLen {
+				if len(data) > DefaultConfig.MaxBytesLen {
 					return c.error(node, ErrBytesLimit)
 				}
 				valObj = &Bytes{Value: data}

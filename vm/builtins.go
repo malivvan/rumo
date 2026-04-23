@@ -369,7 +369,7 @@ func builtinString(ctx context.Context, args ...Object) (Object, error) {
 	}
 	v, ok := ToString(args[0])
 	if ok {
-		if len(v) > MaxStringLen {
+		if len(v) > DefaultConfig.MaxStringLen {
 			return nil, ErrStringLimit
 		}
 		return &String{Value: v}, nil
@@ -459,14 +459,14 @@ func builtinBytes(ctx context.Context, args ...Object) (Object, error) {
 
 	// bytes(N) => create a new bytes with given size N
 	if n, ok := args[0].(*Int); ok {
-		if n.Value > int64(MaxBytesLen) {
+		if n.Value > int64(DefaultConfig.MaxBytesLen) {
 			return nil, ErrBytesLimit
 		}
 		return &Bytes{Value: make([]byte, int(n.Value))}, nil
 	}
 	v, ok := ToByteSlice(args[0])
 	if ok {
-		if len(v) > MaxBytesLen {
+		if len(v) > DefaultConfig.MaxBytesLen {
 			return nil, ErrBytesLimit
 		}
 		return &Bytes{Value: v}, nil

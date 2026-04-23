@@ -8,15 +8,7 @@ import (
 	"time"
 )
 
-var (
-	// MaxStringLen is the maximum byte-length for string value. Note this
-	// limit applies to all compiler/VM instances in the process.
-	MaxStringLen = 2147483647
 
-	// MaxBytesLen is the maximum length for bytes value. Note this limit
-	// applies to all compiler/VM instances in the process.
-	MaxBytesLen = 2147483647
-)
 
 // Config holds the VM limits. Pass a *Config to NewVM to override the
 // defaults. Passing nil selects DefaultConfig. Zero values in a non-nil
@@ -33,14 +25,22 @@ type Config struct {
 
 	// MaxAllocs is the maximum number of object allocations (-1 = unlimited).
 	MaxAllocs int64
+
+	// MaxStringLen is the maximum byte-length for string values.
+	MaxStringLen int
+
+	// MaxBytesLen is the maximum length for bytes values.
+	MaxBytesLen int
 }
 
 // DefaultConfig is the Config used when nil is passed to NewVM.
 var DefaultConfig = &Config{
-	GlobalsSize: 1024,
-	StackSize:   2048,
-	MaxFrames:   1024,
-	MaxAllocs:   -1,
+	GlobalsSize:  1024,
+	StackSize:    2048,
+	MaxFrames:    1024,
+	MaxAllocs:    -1,
+	MaxStringLen: 2147483647,
+	MaxBytesLen:  2147483647,
 }
 
 // eval replaces every zero-valued field with the corresponding value from
@@ -58,6 +58,12 @@ func (c *Config) eval() {
 	}
 	if c.MaxAllocs == 0 {
 		c.MaxAllocs = DefaultConfig.MaxAllocs
+	}
+	if c.MaxStringLen == 0 {
+		c.MaxStringLen = DefaultConfig.MaxStringLen
+	}
+	if c.MaxBytesLen == 0 {
+		c.MaxBytesLen = DefaultConfig.MaxBytesLen
 	}
 }
 
@@ -278,7 +284,7 @@ func FromInterface(v interface{}) (Object, error) {
 	case nil:
 		return UndefinedValue, nil
 	case string:
-		if len(v) > MaxStringLen {
+		if len(v) > DefaultConfig.MaxStringLen {
 			return nil, ErrStringLimit
 		}
 		return &String{Value: v}, nil
@@ -298,7 +304,7 @@ func FromInterface(v interface{}) (Object, error) {
 	case float64:
 		return &Float{Value: v}, nil
 	case []byte:
-		if len(v) > MaxBytesLen {
+		if len(v) > DefaultConfig.MaxBytesLen {
 			return nil, ErrBytesLimit
 		}
 		return &Bytes{Value: v}, nil
