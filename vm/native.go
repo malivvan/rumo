@@ -1,3 +1,5 @@
+//go:build native
+
 package vm
 
 import (
