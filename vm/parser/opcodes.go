@@ -48,6 +48,7 @@ const (
 	OpBinaryOp                    // Binary operation
 	OpSuspend                     // Suspend VM
 	OpRoutine                     // Start routine (go statement)
+	OpDefer                       // Defer function call
 )
 
 // OpcodeNames are string representation of opcodes.
@@ -95,6 +96,7 @@ var OpcodeNames = [...]string{
 	OpBinaryOp:      "BINARYOP",
 	OpSuspend:       "SUSPEND",
 	OpRoutine:       "ROUTINE",
+	OpDefer:         "DEFER",
 }
 
 // OpcodeOperands is the number of operands.
@@ -142,6 +144,7 @@ var OpcodeOperands = [...][]int{
 	OpBinaryOp:      {1},
 	OpSuspend:       {},
 	OpRoutine:       {1, 1},
+	OpDefer:         {1, 1},
 }
 
 // ReadOperands reads operands from the bytecode.

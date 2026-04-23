@@ -506,6 +506,23 @@ func (c *Compiler) Compile(node parser.Node) error {
 			ellipsis = 1
 		}
 		c.emit(node, parser.OpCall, len(node.Args), ellipsis)
+	case *parser.DeferStmt:
+		if c.symbolTable.Parent(true) == nil {
+			return c.errorf(node, "defer not allowed outside function")
+		}
+		if err := c.Compile(node.Call.Func); err != nil {
+			return err
+		}
+		for _, arg := range node.Call.Args {
+			if err := c.Compile(arg); err != nil {
+				return err
+			}
+		}
+		ellipsis := 0
+		if node.Call.Ellipsis.IsValid() {
+			ellipsis = 1
+		}
+		c.emit(node, parser.OpDefer, len(node.Call.Args), ellipsis)
 	case *parser.GoExpr:
 		if err := c.Compile(node.Call.Func); err != nil {
 			return err

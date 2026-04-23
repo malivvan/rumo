@@ -337,6 +337,28 @@ func (s *IncDecStmt) String() string {
 	return s.Expr.String() + s.Token.String()
 }
 
+// DeferStmt represents a defer statement.
+type DeferStmt struct {
+	DeferPos Pos
+	Call     *CallExpr
+}
+
+func (s *DeferStmt) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *DeferStmt) Pos() Pos {
+	return s.DeferPos
+}
+
+// End returns the position of first character immediately after the node.
+func (s *DeferStmt) End() Pos {
+	return s.Call.End()
+}
+
+func (s *DeferStmt) String() string {
+	return "defer " + s.Call.String()
+}
+
 // ReturnStmt represents a return statement.
 type ReturnStmt struct {
 	ReturnPos Pos

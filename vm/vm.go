@@ -22,12 +22,21 @@ func (c ContextKey) String() string {
 	return string(c)
 }
 
+// deferredCall holds a captured function and its arguments for a defer statement.
+type deferredCall struct {
+	fn   Object
+	args []Object
+}
+
 // frame represents a function call frame.
 type frame struct {
 	fn          *CompiledFunction
 	freeVars    []*ObjectPtr
 	ip          int
 	basePointer int
+	defers      []deferredCall // deferred calls (executed LIFO on return)
+	deferRetVal Object         // saved return value while executing defers
+	inDefer     bool           // true when executing deferred calls
 }
 
 type vmChildCtl struct {
@@ -191,6 +200,8 @@ func (v *VM) RunCompiled(fn *CompiledFunction, args ...Object) (val Object, err 
 	}
 
 	v.curFrame = v.frames[0]
+	v.curFrame.defers = v.curFrame.defers[:0]
+	v.curFrame.inDefer = false
 	v.curInsts = v.curFrame.fn.Instructions
 	v.framesIndex = 1
 	v.ip = -1
@@ -854,8 +865,8 @@ func (v *VM) run() {
 					return
 				}
 
-				// test if it's tail-call
-				if callee == v.curFrame.fn { // recursion
+				// test if it's tail-call (disabled when defers are pending)
+				if callee == v.curFrame.fn && len(v.curFrame.defers) == 0 { // recursion
 					nextOp := v.curInsts[v.ip+1]
 					if nextOp == parser.OpReturn ||
 						(nextOp == parser.OpPop &&
@@ -883,6 +894,8 @@ func (v *VM) run() {
 				v.curFrame.fn = callee
 				v.curFrame.freeVars = callee.Free
 				v.curFrame.basePointer = v.sp - numArgs
+				v.curFrame.defers = v.curFrame.defers[:0]
+				v.curFrame.inDefer = false
 				v.curInsts = callee.Instructions
 				v.ip = -1
 				v.framesIndex++
@@ -979,6 +992,56 @@ func (v *VM) run() {
 			}
 			v.stack[v.sp] = result
 			v.sp++
+		case parser.OpDefer:
+			numArgs := int(v.curInsts[v.ip+1])
+			spread := int(v.curInsts[v.ip+2])
+			v.ip += 2
+
+			callee := v.stack[v.sp-1-numArgs]
+			if !callee.CanCall() {
+				v.err = fmt.Errorf("not callable: %s", callee.TypeName())
+				return
+			}
+
+			if spread == 1 {
+				v.sp--
+				switch arr := v.stack[v.sp].(type) {
+				case *Array:
+					if !v.checkGrowStack(len(arr.Value)) {
+						return
+					}
+					for _, item := range arr.Value {
+						v.stack[v.sp] = item
+						v.sp++
+					}
+					numArgs += len(arr.Value) - 1
+				case *ImmutableArray:
+					if !v.checkGrowStack(len(arr.Value)) {
+						return
+					}
+					for _, item := range arr.Value {
+						v.stack[v.sp] = item
+						v.sp++
+					}
+					numArgs += len(arr.Value) - 1
+				default:
+					v.err = fmt.Errorf("not an array: %s", arr.TypeName())
+					return
+				}
+			}
+
+			// Capture function and arguments
+			args := make([]Object, numArgs)
+			for i := 0; i < numArgs; i++ {
+				args[i] = v.stack[v.sp-numArgs+i]
+			}
+			v.curFrame.defers = append(v.curFrame.defers, deferredCall{
+				fn:   callee,
+				args: args,
+			})
+
+			// Pop function and args from stack (defer produces no value)
+			v.sp -= numArgs + 1
 		case parser.OpReturn:
 			v.ip++
 			var retVal Object
@@ -987,16 +1050,10 @@ func (v *VM) run() {
 			} else {
 				retVal = UndefinedValue
 			}
-			//v.sp--
-			v.framesIndex--
-			v.curFrame = v.frames[v.framesIndex-1]
-			v.curInsts = v.curFrame.fn.Instructions
-			v.ip = v.curFrame.ip
-			//v.sp = lastFrame.basePointer - 1
-			v.sp = v.frames[v.framesIndex].basePointer
-			// skip stack overflow check because (newSP) <= (oldSP)
+			if v.handleReturn(&retVal) {
+				continue
+			}
 			v.stack[v.sp-1] = retVal
-			//v.sp++
 		case parser.OpDefineLocal:
 			v.ip++
 			localIndex := int(v.curInsts[v.ip])
@@ -1189,6 +1246,135 @@ func (v *VM) run() {
 			return
 		}
 	}
+}
+
+// handleReturn processes the return from the current frame, executing any
+// deferred calls. Returns true if a compiled deferred function frame was
+// set up and the caller should continue the run loop. Returns false when
+// the return is complete and retVal has been updated with the final value.
+func (v *VM) handleReturn(retVal *Object) bool {
+	thisFrame := v.frames[v.framesIndex-1]
+
+	// Start executing defers for this frame if it has any
+	if len(thisFrame.defers) > 0 {
+		thisFrame.deferRetVal = *retVal
+		thisFrame.inDefer = true
+		v.sp = thisFrame.basePointer
+		if v.runNextDefer(thisFrame) {
+			return true // compiled deferred function frame set up
+		}
+		if v.err != nil {
+			return false
+		}
+		*retVal = thisFrame.deferRetVal
+		thisFrame.inDefer = false
+		thisFrame.deferRetVal = nil
+	}
+
+	// Pop frames, handling any parent defer chains
+	for {
+		v.framesIndex--
+		v.curFrame = v.frames[v.framesIndex-1]
+		v.curInsts = v.curFrame.fn.Instructions
+		v.ip = v.curFrame.ip
+		v.sp = v.frames[v.framesIndex].basePointer
+
+		if !v.curFrame.inDefer {
+			return false
+		}
+
+		// Parent is in defer mode - we just returned from a deferred call
+		if len(v.curFrame.defers) > 0 {
+			if v.runNextDefer(v.curFrame) {
+				return true
+			}
+			if v.err != nil {
+				return false
+			}
+		}
+		// All defers for this frame are done
+		*retVal = v.curFrame.deferRetVal
+		v.curFrame.inDefer = false
+		v.curFrame.deferRetVal = nil
+	}
+}
+
+// runNextDefer pops the last deferred call from f and executes it.
+// For compiled functions, it sets up a new frame and returns true.
+// For builtins, it calls them directly and recurses for remaining defers,
+// returning false when done. Sets v.err on errors.
+func (v *VM) runNextDefer(f *frame) bool {
+	for len(f.defers) > 0 {
+		d := f.defers[len(f.defers)-1]
+		f.defers = f.defers[:len(f.defers)-1]
+
+		if callee, ok := d.fn.(*CompiledFunction); ok {
+			// Push args on stack
+			for _, arg := range d.args {
+				v.stack[v.sp] = arg
+				v.sp++
+			}
+			numArgs := len(d.args)
+
+			// Handle varargs
+			if callee.VarArgs {
+				realArgs := callee.NumParameters - 1
+				varArgs := numArgs - realArgs
+				if varArgs >= 0 {
+					numArgs = realArgs + 1
+					args := make([]Object, varArgs)
+					spStart := v.sp - varArgs
+					for i := spStart; i < v.sp; i++ {
+						args[i-spStart] = v.stack[i]
+					}
+					v.stack[spStart] = &Array{Value: args}
+					v.sp = spStart + 1
+				}
+			}
+
+			if numArgs != callee.NumParameters {
+				if callee.VarArgs {
+					v.err = fmt.Errorf(
+						"wrong number of arguments: want>=%d, got=%d",
+						callee.NumParameters-1, numArgs)
+				} else {
+					v.err = fmt.Errorf(
+						"wrong number of arguments: want=%d, got=%d",
+						callee.NumParameters, numArgs)
+				}
+				return false
+			}
+
+			if v.framesIndex >= MaxFrames {
+				v.err = ErrStackOverflow
+				return false
+			}
+
+			v.curFrame.ip = v.ip
+			if v.framesIndex >= len(v.frames) {
+				v.frames = append(v.frames, &frame{})
+			}
+			v.curFrame = v.frames[v.framesIndex]
+			v.curFrame.fn = callee
+			v.curFrame.freeVars = callee.Free
+			v.curFrame.basePointer = v.sp - numArgs
+			v.curFrame.defers = v.curFrame.defers[:0]
+			v.curFrame.inDefer = false
+			v.curInsts = callee.Instructions
+			v.ip = -1
+			v.framesIndex++
+			v.sp = v.sp - numArgs + callee.NumLocals
+			return true
+		}
+
+		// Non-compiled callable: call directly, discard return value
+		_, e := d.fn.Call(v.ctx, d.args...)
+		if e != nil {
+			v.err = e
+			return false
+		}
+	}
+	return false
 }
 
 func (v *VM) checkGrowStack(added int) bool {

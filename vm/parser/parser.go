@@ -17,6 +17,7 @@ var stmtStart = map[token.Token]bool{
 	token.Continue: true,
 	token.For:      true,
 	token.Go:       true,
+	token.Defer:    true,
 	token.If:       true,
 	token.Return:   true,
 	token.Export:   true,
@@ -701,6 +702,8 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return s
 	case token.Return:
 		return p.parseReturnStmt()
+	case token.Defer:
+		return p.parseDeferStmt()
 	case token.Export:
 		return p.parseExportStmt()
 	case token.If:
@@ -931,6 +934,27 @@ func (p *Parser) parseReturnStmt() Stmt {
 	return &ReturnStmt{
 		ReturnPos: pos,
 		Result:    x,
+	}
+}
+
+func (p *Parser) parseDeferStmt() Stmt {
+	if p.trace {
+		defer untracep(tracep(p, "DeferStmt"))
+	}
+
+	pos := p.expect(token.Defer)
+
+	x := p.parsePrimaryExpr()
+	callExpr, ok := x.(*CallExpr)
+	if !ok {
+		p.error(pos, "expression in defer must be a function call")
+		p.advance(stmtStart)
+		return &BadStmt{From: pos, To: p.pos}
+	}
+	p.expectSemi()
+	return &DeferStmt{
+		DeferPos: pos,
+		Call:     callExpr,
 	}
 }
 
