@@ -230,6 +230,13 @@ func fixDecodedObject(
 	modules *ModuleMap,
 ) (Object, error) {
 	switch o := o.(type) {
+	case *BuiltinFunction:
+		for _, bf := range builtinFuncs {
+			if bf.Name == o.Name {
+				return bf, nil
+			}
+		}
+		return nil, fmt.Errorf("unknown builtin function: %q", o.Name)
 	case *Bool:
 		if o.IsFalsy() {
 			return FalseValue, nil
@@ -268,10 +275,6 @@ func fixDecodedObject(
 		}
 
 		for k, v := range o.Value {
-			// encoding of user function not supported
-			if _, isBuiltinFunction := v.(*BuiltinFunction); isBuiltinFunction {
-				return nil, fmt.Errorf("user function not decodable")
-			}
 
 			fv, err := fixDecodedObject(v, modules)
 			if err != nil {

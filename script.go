@@ -18,8 +18,15 @@ import (
 )
 
 // Magic is a magic number every encoded Program starts with.
-// format: [4]MAGIC [4]SIZE [N]DATA [8]CRC64(ECMA)
-const Magic = "VVC\x00"
+// format: [4]MAGIC [2]VERSION [4]SIZE [N]DATA [8]CRC64(ECMA)
+const Magic = "RUMO"
+
+// FormatVersion is the current bytecode format version.
+// It is stored as a little-endian uint16 in bytes [4:6] of the header.
+// Increment this constant whenever the on-disk format changes in an
+// incompatible way so that old compiled files produce a clear error
+// ("incompatible bytecode version") instead of cryptic decode failures.
+const FormatVersion uint16 = 1
 
 // Script can simplify compilation and execution of embedded scripts.
 type Script struct {
@@ -258,17 +265,22 @@ func (p *Program) UnmarshalWithModules(b []byte, modules *vm.ModuleMap) (err err
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	if len(b) < 16 {
+	// header: [4]MAGIC [2]VERSION [4]SIZE = 10 bytes; tail: [8]CRC64
+	if len(b) < 18 {
 		return fmt.Errorf("invalid byte slice length: %d", len(b))
 	}
-	head := b[:8]
-	body := b[8 : len(b)-8]
+	head := b[:10]
+	body := b[10 : len(b)-8]
 	tail := b[len(b)-8:]
 
 	if string(head[:4]) != Magic {
-		return fmt.Errorf("invalid magic number: %s", head[:4])
+		return fmt.Errorf("invalid magic number: %q", string(head[:4]))
 	}
-	size := binary.LittleEndian.Uint32(head[4:8])
+	ver := binary.LittleEndian.Uint16(head[4:6])
+	if ver != FormatVersion {
+		return fmt.Errorf("incompatible bytecode version: got %d, want %d", ver, FormatVersion)
+	}
+	size := binary.LittleEndian.Uint32(head[6:10])
 	if size != uint32(len(body)) {
 		return fmt.Errorf("invalid size: %d != %d", size, len(body))
 	}
@@ -332,12 +344,10 @@ func (p *Program) Marshal() ([]byte, error) {
 
 	body := append(data, code...)
 
-	var head [8]byte
-	head[0] = Magic[0]
-	head[1] = Magic[1]
-	head[2] = Magic[2]
-	head[3] = Magic[3]
-	binary.LittleEndian.PutUint32(head[4:], uint32(len(body)))
+	var head [10]byte
+	copy(head[0:4], Magic)
+	binary.LittleEndian.PutUint16(head[4:6], FormatVersion)
+	binary.LittleEndian.PutUint32(head[6:10], uint32(len(body)))
 
 	var tail [8]byte
 	crc := crc64.New(crc64.MakeTable(crc64.ECMA))

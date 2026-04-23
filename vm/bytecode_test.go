@@ -1,6 +1,7 @@
 package vm_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -294,3 +295,69 @@ func testBytecodeSerialization(t *testing.T, b *vm.Bytecode) {
 	require.Equal(t, b.MainFunction, r.MainFunction)
 	require.Equal(t, b.Constants, r.Constants)
 }
+
+// TestBuiltinFunctionRoundTrip verifies that a BuiltinFunction serialized into
+// bytecode constants is fully restored after unmarshal — including its callable
+// Value field.  Before the fix, UnmarshalObject only restored the Name; the Go
+// function pointer (Value) was left nil, causing a nil-pointer panic on the
+// first Call.
+func TestBuiltinFunctionRoundTrip(t *testing.T) {
+	// Pick a known builtin to round-trip.
+	builtins := vm.GetAllBuiltinFunctions()
+	require.True(t, len(builtins) > 0, "expected at least one builtin function")
+
+	for _, original := range builtins {
+		t.Run(original.Name, func(t *testing.T) {
+			// Build minimal bytecode that holds the builtin as a constant.
+			b := &vm.Bytecode{
+				FileSet:      parser.NewFileSet(),
+				MainFunction: &vm.CompiledFunction{Instructions: []byte{}},
+				Constants:    []vm.Object{original},
+			}
+
+			data, err := b.Marshal()
+			require.NoError(t, err)
+
+			restored := &vm.Bytecode{}
+			err = restored.Unmarshal(data, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, 1, len(restored.Constants),
+				"expected one constant after unmarshal")
+
+			bf, ok := restored.Constants[0].(*vm.BuiltinFunction)
+			require.True(t, ok, "expected *BuiltinFunction constant")
+			require.Equal(t, original.Name, bf.Name)
+			require.True(t, bf.CanCall(), "deserialized builtin must be callable")
+
+			// The Value field must be non-nil; before the fix it was always nil
+			// after deserialization, causing a nil-pointer panic on Call.
+			require.True(t, bf.Value != nil,
+				"deserialized builtin Value must not be nil")
+		})
+	}
+}
+
+// TestBuiltinFunctionRoundTripUnknownName verifies that unmarshaling bytecode
+// containing a BuiltinFunction with an unrecognised name returns an error
+// rather than silently producing a non-functional object.
+func TestBuiltinFunctionRoundTripUnknownName(t *testing.T) {
+	// Manually construct bytes that encode a BuiltinFunction with a bogus name.
+	b := &vm.Bytecode{
+		FileSet:      parser.NewFileSet(),
+		MainFunction: &vm.CompiledFunction{Instructions: []byte{}},
+		Constants: []vm.Object{
+			&vm.BuiltinFunction{Name: "__no_such_builtin__", Value: func(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+				return vm.UndefinedValue, nil
+			}},
+		},
+	}
+
+	data, err := b.Marshal()
+	require.NoError(t, err)
+
+	restored := &vm.Bytecode{}
+	err = restored.Unmarshal(data, nil)
+	require.Error(t, err, "expected error for unknown builtin name")
+}
+
