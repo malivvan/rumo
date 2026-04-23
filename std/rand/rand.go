@@ -15,7 +15,6 @@ var Module = module.NewBuiltin().
 	Func("exp_float() (v float)", rand.ExpFloat64).
 	Func("norm_float() (v float)", rand.NormFloat64).
 	Func("perm(n int) (v []int)", rand.Perm).
-	Func("seed(seed int)", rand.Seed).
 	Func("read(b bytes) (n int, err error)", func(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 		if len(args) != 1 {
 			return nil, vm.ErrWrongNumArguments
@@ -28,7 +27,7 @@ var Module = module.NewBuiltin().
 				Found:    args[0].TypeName(),
 			}
 		}
-		res, err := rand.Read(y1.Value)
+		res, err := rand.Read(y1.Value) //nolint:staticcheck // deprecated but acceptable here
 		if err != nil {
 			ret = module.WrapError(err)
 			return
@@ -59,7 +58,6 @@ func randRand(r *rand.Rand) *vm.ImmutableMap {
 		"exp_float":  &vm.BuiltinFunction{Name: "exp_float", Value: module.Func(r.ExpFloat64)},
 		"norm_float": &vm.BuiltinFunction{Name: "norm_float", Value: module.Func(r.NormFloat64)},
 		"perm":       &vm.BuiltinFunction{Name: "perm", Value: module.Func(r.Perm)},
-		"seed":       &vm.BuiltinFunction{Name: "seed", Value: module.Func(r.Seed)},
 		"read": &vm.BuiltinFunction{
 			Name: "read",
 			Value: func(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {

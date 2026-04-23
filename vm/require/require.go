@@ -184,6 +184,11 @@ func (c CallRes) ExpectError() {
 	Error(c.T, c.E)
 }
 
+// ExpectNoError asserts that the previous call did not result in an error.
+func (c CallRes) ExpectNoError() {
+	NoError(c.T, c.E)
+}
+
 // NoError asserts err is not an error.
 func NoError(t *testing.T, err error, msg ...interface{}) {
 	if err != nil {
