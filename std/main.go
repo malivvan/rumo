@@ -10,6 +10,29 @@ import (
 	"strings"
 )
 
+// sourceStringLiteral returns a Go expression that evaluates to s.
+// It uses a raw string literal (backtick-delimited) for readability, and splits
+// around any backtick characters that would otherwise terminate the literal early.
+// For example, a source containing a backtick is rendered as:
+//
+//	`before` + "`" + `after`
+func sourceStringLiteral(s string) string {
+	if !strings.ContainsRune(s, '`') {
+		return "`" + s + "`"
+	}
+	parts := strings.Split(s, "`")
+	var sb strings.Builder
+	for i, part := range parts {
+		if i > 0 {
+			sb.WriteString(" + \"`\" + ")
+		}
+		sb.WriteByte('`')
+		sb.WriteString(part)
+		sb.WriteByte('`')
+	}
+	return sb.String()
+}
+
 func cdRoot() bool {
 	for i := 0; i < 10; i++ {
 		info, err := os.Stat("go.mod")
@@ -84,7 +107,7 @@ var BuiltinModules = map[string]*module.BuiltinModule{` + "\n")
 // SourceModules are source type standard library modules.
 var SourceModules = map[string]*module.SourceModule{` + "\n")
 	for modName, modSrc := range modules {
-		out.WriteString("\t\"" + modName + "\": module.NewSource(" + strconv.Quote(modSrc) + "),\n")
+		out.WriteString("\t\"" + modName + "\": module.NewSource(" + sourceStringLiteral(modSrc) + "),\n")
 	}
 	out.WriteString("}\n")
 	out.WriteString(`
