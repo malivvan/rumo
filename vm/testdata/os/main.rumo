@@ -1,0 +1,4 @@
+os := import("os")
+fmt := import("fmt")
+b := os.read_file("vm/testdata/os/main.rumo")
+fmt.println(string(b))

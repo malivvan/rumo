@@ -8,6 +8,7 @@ import (
 	"github.com/malivvan/rumo/std/hex"
 	"github.com/malivvan/rumo/std/json"
 	"github.com/malivvan/rumo/std/math"
+	"github.com/malivvan/rumo/std/os"
 	"github.com/malivvan/rumo/std/rand"
 	"github.com/malivvan/rumo/std/text"
 	"github.com/malivvan/rumo/std/times"
@@ -22,6 +23,7 @@ var BuiltinModules = map[string]*module.BuiltinModule{
 	"hex":   hex.Module,
 	"json":   json.Module,
 	"math":   math.Module,
+	"os":   os.Module,
 	"rand":   rand.Module,
 	"text":   text.Module,
 	"times":   times.Module,
