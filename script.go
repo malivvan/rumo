@@ -491,8 +491,16 @@ func (p *Program) Set(name string, value interface{}) error {
 
 // Equals compares two Program objects for equality.
 func (p *Program) Equals(other *Program) bool {
+	// Short-circuit: a program always equals itself.
+	if p == other {
+		p.lock.RLock()
+		defer p.lock.RUnlock()
+		return true
+	}
+
 	// Acquire locks in a consistent order (by pointer address) to avoid
-	// deadlock when two goroutines call a.Equals(b) and b.Equals(a).
+	// deadlock when two goroutines call a.Equals(b) and b.Equals(a)
+	// concurrently.
 	first, second := &p.lock, &other.lock
 	if uintptr(unsafe.Pointer(first)) > uintptr(unsafe.Pointer(second)) {
 		first, second = second, first

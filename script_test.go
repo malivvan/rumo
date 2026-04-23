@@ -732,3 +732,101 @@ func TestIssue10_CloneDeepCopiesGlobals(t *testing.T) {
 		t.Fatalf("Issue #10: Clone() shares mutable globals — original map was mutated to %q", s.Value)
 	}
 }
+
+// TestEqualsLocksBothPrograms verifies that Program.Equals acquires a read
+// lock on BOTH the receiver and the argument Program before accessing their
+// fields. Without locking the argument, a concurrent writer (e.g. Set) on the
+// second Program creates a data race: Equals reads other.globals unsynchronised
+// while Set writes to it under other.lock. The Go race detector catches this
+// with the buggy implementation.
+//
+// Regression tests:
+//   - Concurrent Equals + Set on the argument must not data-race.
+//   - Concurrent a.Equals(b) and b.Equals(a) must not deadlock.
+//   - Equals returns true for structurally identical programs and false after
+//     a variable is mutated.
+func TestEqualsLocksBothPrograms(t *testing.T) {
+	newProg := func(t *testing.T) *rumo.Program {
+		t.Helper()
+		// x is pre-declared via Add; the script body just references it.
+		s := rumo.NewScript([]byte(`x += 0`))
+		if err := s.Add("x", 42); err != nil {
+			t.Fatal(err)
+		}
+		p, err := s.Compile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	t.Run("concurrent Equals and Set do not race", func(t *testing.T) {
+		a := newProg(t)
+		b := newProg(t)
+
+		const iterations = 2000
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Goroutine 1: repeatedly read b via Equals — must hold b's lock.
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_ = a.Equals(b)
+			}
+		}()
+
+		// Goroutine 2: repeatedly write b via Set — holds b's write lock.
+		// Without Equals locking b, the race detector flags this.
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				_ = b.Set("x", i)
+			}
+		}()
+
+		wg.Wait()
+	})
+
+	t.Run("symmetric call does not deadlock", func(t *testing.T) {
+		a := newProg(t)
+		b := newProg(t)
+
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() { defer wg.Done(); _ = a.Equals(b) }()
+			go func() { defer wg.Done(); _ = b.Equals(a) }()
+			wg.Wait()
+		}()
+
+		select {
+		case <-done:
+			// success
+		case <-time.After(5 * time.Second):
+			t.Fatal("deadlock: a.Equals(b) and b.Equals(a) concurrent calls did not complete")
+		}
+	})
+
+	t.Run("equal programs", func(t *testing.T) {
+		a := newProg(t)
+		// A program must equal itself.
+		if !a.Equals(a) {
+			t.Fatal("Equals returned false when comparing a program to itself")
+		}
+	})
+
+	t.Run("unequal programs after mutation", func(t *testing.T) {
+		a := newProg(t)
+		b := newProg(t)
+		if err := b.Set("x", 99); err != nil {
+			t.Fatal(err)
+		}
+		if a.Equals(b) {
+			t.Fatal("Equals returned true after mutating b.x to a different value")
+		}
+	})
+}
+
