@@ -399,7 +399,14 @@ func builtinFormat(ctx context.Context, args ...Object) (Object, error) {
 		// okay to return 'format' directly as String is immutable
 		return format, nil
 	}
-	s, err := Format(format.Value, args[1:]...)
+	// Use the running VM's config so that per-VM limits (MaxFormatWidth,
+	// MaxStringLen) are respected; fall back to DefaultConfig when called
+	// outside a VM context (e.g. tests).
+	cfg := DefaultConfig
+	if v, _ := ctx.Value(ContextKey("vm")).(*VM); v != nil {
+		cfg = v.config
+	}
+	s, err := FormatWithConfig(format.Value, cfg, args[1:]...)
 	if err != nil {
 		return nil, err
 	}

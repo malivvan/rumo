@@ -677,6 +677,9 @@ type pp struct {
 	// erroring is set when printing an error string to guard against calling
 	// handleMethods.
 	erroring bool
+
+	// maxWidth is the maximum allowed width/precision per verb (0 = unlimited).
+	maxWidth int
 }
 
 var ppFree = sync.Pool{
@@ -684,9 +687,23 @@ var ppFree = sync.Pool{
 }
 
 // newPrinter allocates a new pp struct or grabs a cached one.
+// It uses DefaultConfig's MaxFormatWidth limit.
 func newPrinter() *pp {
+	return newPrinterWithConfig(DefaultConfig)
+}
+
+// newPrinterWithConfig allocates a pp and sets the width limit from cfg.
+// If cfg is nil, DefaultConfig is used.
+func newPrinterWithConfig(cfg *Config) *pp {
 	p := ppFree.Get().(*pp)
 	p.erroring = false
+	p.maxWidth = 0
+	if cfg == nil {
+		cfg = DefaultConfig
+	}
+	if cfg.MaxFormatWidth > 0 {
+		p.maxWidth = cfg.MaxFormatWidth
+	}
 	p.fmt.init(&p.buf)
 	return p
 }
@@ -1155,6 +1172,9 @@ formatLoop:
 				p.goodArgNum = false
 			}
 		}
+		if p.maxWidth > 0 && p.fmt.widPresent && p.fmt.wid > p.maxWidth {
+			return ErrFormatWidthLimit
+		}
 
 		// Do we have precision?
 		if i+1 < end && format[i] == '.' {
@@ -1181,6 +1201,9 @@ formatLoop:
 					p.fmt.prec = 0
 					p.fmt.precPresent = true
 				}
+			}
+			if p.maxWidth > 0 && p.fmt.precPresent && p.fmt.prec > p.maxWidth {
+				return ErrFormatWidthLimit
 			}
 		}
 
@@ -1246,9 +1269,17 @@ formatLoop:
 	return nil
 }
 
-// Format is like fmt.Sprintf but using Objects.
+// Format is like fmt.Sprintf but using Objects. It applies DefaultConfig's
+// MaxFormatWidth limit to width and precision specifiers.
 func Format(format string, a ...Object) (string, error) {
-	p := newPrinter()
+	return FormatWithConfig(format, DefaultConfig, a...)
+}
+
+// FormatWithConfig is like Format but uses the limits from cfg instead of
+// DefaultConfig.  cfg may be nil, in which case no MaxFormatWidth limit is
+// applied (but MaxStringLen from DefaultConfig still guards the output size).
+func FormatWithConfig(format string, cfg *Config, a ...Object) (string, error) {
+	p := newPrinterWithConfig(cfg)
 	err := p.doFormat(format, a)
 	s := string(p.buf)
 	p.free()

@@ -44,7 +44,8 @@ func fmtPrintf(ctx context.Context, args ...vm.Object) (ret vm.Object, err error
 		return nil, nil
 	}
 
-	s, err := vm.Format(format.Value, args[1:]...)
+	cfg := vmConfig(ctx)
+	s, err := vm.FormatWithConfig(format.Value, cfg, args[1:]...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,11 +82,22 @@ func fmtSprintf(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 		// okay to return 'format' directly as String is immutable
 		return format, nil
 	}
-	s, err := vm.Format(format.Value, args[1:]...)
+	cfg := vmConfig(ctx)
+	s, err := vm.FormatWithConfig(format.Value, cfg, args[1:]...)
 	if err != nil {
 		return nil, err
 	}
 	return &vm.String{Value: s}, nil
+}
+
+// vmConfig returns the *Config from the running VM stored in ctx, falling
+// back to DefaultConfig if no VM is present (e.g. in unit tests).
+func vmConfig(ctx context.Context) *vm.Config {
+	if v, _ := ctx.Value(vm.ContextKey("vm")).(*vm.VM); v != nil {
+		cfg := v.Config()
+		return &cfg
+	}
+	return vm.DefaultConfig
 }
 
 func getPrintArgs(args ...vm.Object) ([]interface{}, error) {

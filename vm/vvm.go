@@ -57,6 +57,13 @@ type Config struct {
 	// MaxBytesLen is the maximum length for bytes values.
 	MaxBytesLen int
 
+	// MaxFormatWidth is the maximum width or precision allowed in a single
+	// format verb (e.g. the "999999" in "%999999d").  Values above this limit
+	// cause Format / FormatWithConfig to return ErrFormatWidthLimit instead of
+	// allocating a potentially huge string.  0 is replaced by DefaultConfig's
+	// value during eval(); set to -1 to disable the limit entirely.
+	MaxFormatWidth int
+
 	// Permissions restricts which privileged os-module operations are allowed.
 	// The zero value of Permissions allows all operations.
 	Permissions Permissions
@@ -64,12 +71,13 @@ type Config struct {
 
 // DefaultConfig is the Config used when nil is passed to NewVM.
 var DefaultConfig = &Config{
-	GlobalsSize:  1024,
-	StackSize:    2048,
-	MaxFrames:    1024,
-	MaxAllocs:    -1,
-	MaxStringLen: 2147483647,
-	MaxBytesLen:  2147483647,
+	GlobalsSize:    1024,
+	StackSize:      2048,
+	MaxFrames:      1024,
+	MaxAllocs:      -1,
+	MaxStringLen:   2147483647,
+	MaxBytesLen:    2147483647,
+	MaxFormatWidth: 1000,
 }
 
 // eval replaces every zero-valued field with the corresponding value from
@@ -93,6 +101,9 @@ func (c *Config) eval() {
 	}
 	if c.MaxBytesLen == 0 {
 		c.MaxBytesLen = DefaultConfig.MaxBytesLen
+	}
+	if c.MaxFormatWidth == 0 {
+		c.MaxFormatWidth = DefaultConfig.MaxFormatWidth
 	}
 }
 

@@ -264,7 +264,7 @@ template that references `$X` once with an empty `X` slips through a
 - **Fix:** check `len(s)` against the cap *after* `os.Expand`
   returns, before constructing the `String`.
 
-### 2.8 Format-string DoS &nbsp; **MED**
+### 2.8 Format-string DoS &nbsp; **MED** ✅
 
 `builtinFormat` (`vm/builtins.go:385`) and `vm.Format` accept
 arbitrary verbs including width specifiers. `format("%[1]20000000d", 1)`

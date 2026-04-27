@@ -69,6 +69,11 @@ var (
 	// ErrNotPermitted is returned when a script attempts an operation that has
 	// been denied by the VM's Permissions configuration.
 	ErrNotPermitted = errors.New("operation not permitted")
+
+	// ErrFormatWidthLimit is returned when a width or precision specifier in a
+	// format string exceeds Config.MaxFormatWidth.  This prevents a DoS where a
+	// tiny format string such as "%999999d" would allocate ~1 MB of padding.
+	ErrFormatWidthLimit = errors.New("format width/precision exceeds limit")
 )
 
 // ErrInvalidArgumentType represents an invalid argument value type error.
