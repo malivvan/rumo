@@ -21,7 +21,7 @@ func compileToBytecode(t *testing.T, src string) []byte {
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	if err := rumo.CompileOnly([]byte(src), srcFile, outFile); err != nil {
+	if err := rumo.CompileOnly(srcFile, outFile); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 	data, err := os.ReadFile(outFile)
@@ -41,7 +41,7 @@ func TestStat_CompatibilityFieldsNoModules(t *testing.T) {
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	if err := rumo.CompileOnly([]byte(src), srcFile, outFile); err != nil {
+	if err := rumo.CompileOnly(srcFile, outFile); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
@@ -82,7 +82,7 @@ func TestStat_KnownModuleIsAvailable(t *testing.T) {
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	if err := rumo.CompileOnly([]byte(src), srcFile, outFile); err != nil {
+	if err := rumo.CompileOnly(srcFile, outFile); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
@@ -138,7 +138,7 @@ func TestStat_ModuleAvailableMapIsComplete(t *testing.T) {
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	if err := rumo.CompileOnly([]byte(src), srcFile, outFile); err != nil {
+	if err := rumo.CompileOnly(srcFile, outFile); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 
@@ -207,7 +207,7 @@ func TestCanRunReflectsNativeRequirement(t *testing.T) {
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := rumo.CompileOnly([]byte(src), srcFile, outFile); err != nil {
+	if err := rumo.CompileOnly(srcFile, outFile); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 	info, err := rumo.Stat(outFile)
@@ -286,7 +286,7 @@ func TestStat_CanRunStringRepresentation(t *testing.T) {
 	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := rumo.CompileOnly([]byte(src), srcFile, outFile); err != nil {
+	if err := rumo.CompileOnly(srcFile, outFile); err != nil {
 		t.Fatalf("compile: %v", err)
 	}
 

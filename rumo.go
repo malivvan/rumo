@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -54,10 +53,10 @@ func Exports() map[string]map[string]*module.Export {
 	return GetExportMap(AllModuleNames()...)
 }
 
-// CompileOnly compiles the source code and writes the compiled binary into
-// outputFile.
-func CompileOnly(data []byte, inputFile, outputFile string) (err error) {
-	program, err := compileSrc(data, inputFile)
+// CompileOnly compiles the script at inputFile and writes the compiled binary
+// into outputFile.
+func CompileOnly(inputFile, outputFile string) (err error) {
+	program, err := compileSrc(inputFile)
 	if err != nil {
 		return
 	}
@@ -90,9 +89,9 @@ func CompileOnly(data []byte, inputFile, outputFile string) (err error) {
 	return
 }
 
-// CompileAndRun compiles the source code and executes it.
-func CompileAndRun(ctx context.Context, data []byte, inputFile string, args []string) (err error) {
-	p, err := compileSrc(data, inputFile)
+// CompileAndRun compiles the script at inputFile and executes it.
+func CompileAndRun(ctx context.Context, inputFile string, args []string) (err error) {
+	p, err := compileSrc(inputFile)
 	if err != nil {
 		return
 	}
@@ -223,7 +222,8 @@ func RunREPL(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.W
 			sym := symbolTable.Define(name)
 			globals[sym.Index] = (&vm.BuiltinModule{Attrs: mod.Objects()}).AsImmutableMap(name)
 		} else if _, ok := SourceModules[name]; ok {
-			s := NewScript([]byte(fmt.Sprintf(`__result__ := import("%s")`, name)))
+			src := fmt.Sprintf(`__result__ := import("%s")`, name)
+			s := NewScript(MapFS(map[string][]byte{"__repl_mod__.rumo": []byte(src)}), "__repl_mod__.rumo")
 			s.SetImports(Modules())
 			p, err := s.RunContext(ctx)
 			if err == nil {
@@ -342,19 +342,20 @@ func isIdentChar(r rune) bool {
 		(r >= '0' && r <= '9') || r == '_'
 }
 
-func compileSrc(src []byte, inputFile string) (*Program, error) {
-	s := NewScript(src)
-	s.SetName(inputFile)
+func compileSrc(inputFile string) (*Program, error) {
+	s := NewScript(nil, inputFile)
 	s.SetImports(Modules())
-	s.EnableFileImport(true)
-	if err := s.SetImportDir(filepath.Dir(inputFile)); err != nil {
-		return nil, fmt.Errorf("error setting import dir: %w", err)
-	}
 	return s.Compile()
 }
 
 func basename(s string) string {
-	s = filepath.Base(s)
+	// Strip directory component.
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '/' || s[i] == '\\' {
+			s = s[i+1:]
+			break
+		}
+	}
 	n := strings.LastIndexByte(s, '.')
 	if n > 0 {
 		return s[:n]

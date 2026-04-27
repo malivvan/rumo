@@ -979,6 +979,20 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 		matchedPaths = append(matchedPaths, matches...)
 	}
 
+	// Security: verify every matched embed path is within importBase so that
+	// patterns like "../../etc/passwd" cannot read files outside the root.
+	if c.importBase != "" {
+		for _, path := range matchedPaths {
+			allowed, err := isPathWithinBase(c.importBase, path)
+			if err != nil {
+				return c.errorf(node, "embed: file path error: %s", err.Error())
+			}
+			if !allowed {
+				return c.errorf(node, "embed: file path escapes import root: %s", path)
+			}
+		}
+	}
+
 	// For single-file embeds require exactly one match; for multi-file embeds
 	// build a Map. In both cases record each file in c.embeds.
 	if kind == embedString || kind == embedBytes {
@@ -1282,7 +1296,16 @@ func (c *Compiler) compileModule(
 		return compiledModule, nil
 	}
 
-	modFile := c.file.Set().AddFile(modulePath, -1, len(src))
+	// Use a display name relative to importBase for clean, portable error messages.
+	// The absolute modulePath is still used as the cache key and for file I/O.
+	displayPath := modulePath
+	if c.importBase != "" {
+		if rel, err := filepath.Rel(c.importBase, modulePath); err == nil && !strings.HasPrefix(rel, "..") {
+			displayPath = rel
+		}
+	}
+
+	modFile := c.file.Set().AddFile(displayPath, -1, len(src))
 	p := parser.NewParser(modFile, src, nil)
 	file, err := p.ParseFile()
 	if err != nil {
@@ -1400,15 +1423,15 @@ func (c *Compiler) fork(file *parser.SourceFile, modulePath string, symbolTable 
 }
 
 func isPathWithinBase(base, target string) (bool, error) {
-	// Resolve symlinks on both paths so that a symlink inside the base that
-	// points outside it is correctly detected as an escape.
+	// Resolve symlinks where possible; fall back to lexical clean paths for
+	// virtual FS targets that do not exist on the real filesystem.
 	realBase, err := filepath.EvalSymlinks(base)
 	if err != nil {
-		return false, err
+		realBase = filepath.Clean(base)
 	}
 	realTarget, err := filepath.EvalSymlinks(target)
 	if err != nil {
-		return false, err
+		realTarget = filepath.Clean(target)
 	}
 	rel, err := filepath.Rel(realBase, realTarget)
 	if err != nil {

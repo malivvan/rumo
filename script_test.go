@@ -133,7 +133,7 @@ each([a, b, c, d], func(x) {
 })`
 
 	// create a new script instance
-	script := rumo.NewScript([]byte(src))
+	script := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(src)}), "main.rumo")
 
 	// add variables with default values
 	_ = script.Add("a", 0)
@@ -167,7 +167,7 @@ each([a, b, c, d], func(x) {
 }
 
 func TestScript_Add(t *testing.T) {
-	s := rumo.NewScript([]byte(`a := b; c := test(b); d := test(5)`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`a := b; c := test(b); d := test(5)`)}), "main.rumo")
 	require.NoError(t, s.Add("b", 5))     // b = 5
 	require.NoError(t, s.Add("b", "foo")) // b = "foo"  (re-define before compilation)
 	require.NoError(t, s.Add("test",
@@ -191,7 +191,7 @@ func TestScript_Add(t *testing.T) {
 }
 
 func TestScript_Remove(t *testing.T) {
-	s := rumo.NewScript([]byte(`a := b`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`a := b`)}), "main.rumo")
 	err := s.Add("b", 5)
 	require.NoError(t, err)
 	require.True(t, s.Remove("b")) // b is removed
@@ -200,7 +200,7 @@ func TestScript_Remove(t *testing.T) {
 }
 
 func TestScript_Run(t *testing.T) {
-	s := rumo.NewScript([]byte(`a := b`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`a := b`)}), "main.rumo")
 	err := s.Add("b", 5)
 	require.NoError(t, err)
 	p, err := s.Run()
@@ -210,7 +210,7 @@ func TestScript_Run(t *testing.T) {
 }
 
 func TestScript_BuiltinModules(t *testing.T) {
-	s := rumo.NewScript([]byte(`math := import("math"); a := math.abs(-19.84)`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`math := import("math"); a := math.abs(-19.84)`)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap("math"))
 	p, err := s.Run()
 	require.NoError(t, err)
@@ -232,12 +232,12 @@ func TestScript_BuiltinModules(t *testing.T) {
 }
 
 func TestScript_SourceModules(t *testing.T) {
-	s := rumo.NewScript([]byte(`
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`
 enum := import("enum")
 a := enum.all([1,2,3], func(_, v) { 
 	return v > 0 
 })
-`))
+`)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap("enum"))
 	c, err := s.Run()
 	require.NoError(t, err)
@@ -251,7 +251,7 @@ a := enum.all([1,2,3], func(_, v) {
 
 func TestScript_SetMaxConstObjects(t *testing.T) {
 	// one constant '5'
-	s := rumo.NewScript([]byte(`a := 5`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`a := 5`)}), "main.rumo")
 	s.SetMaxConstObjects(1) // limit = 1
 	_, err := s.Compile()
 	require.NoError(t, err)
@@ -261,7 +261,7 @@ func TestScript_SetMaxConstObjects(t *testing.T) {
 	require.Equal(t, "exceeding constant objects limit: 1", err.Error())
 
 	// two constants '5' and '1'
-	s = rumo.NewScript([]byte(`a := 5 + 1`))
+	s = rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`a := 5 + 1`)}), "main.rumo")
 	s.SetMaxConstObjects(2) // limit = 2
 	_, err = s.Compile()
 	require.NoError(t, err)
@@ -271,7 +271,7 @@ func TestScript_SetMaxConstObjects(t *testing.T) {
 	require.Equal(t, "exceeding constant objects limit: 2", err.Error())
 
 	// duplicates will be removed
-	s = rumo.NewScript([]byte(`a := 5 + 5`))
+	s = rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`a := 5 + 5`)}), "main.rumo")
 	s.SetMaxConstObjects(1) // limit = 1
 	_, err = s.Compile()
 	require.NoError(t, err)
@@ -281,7 +281,7 @@ func TestScript_SetMaxConstObjects(t *testing.T) {
 	require.Equal(t, "exceeding constant objects limit: 1", err.Error())
 
 	// no limit set
-	s = rumo.NewScript([]byte(`a := 1 + 2 + 3 + 4 + 5`))
+	s = rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`a := 1 + 2 + 3 + 4 + 5`)}), "main.rumo")
 	_, err = s.Compile()
 	require.NoError(t, err)
 }
@@ -333,7 +333,7 @@ e := mod1.double(s)
 		},
 	}
 
-	scr := rumo.NewScript(code)
+	scr := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": code}), "main.rumo")
 	_ = scr.Add("a", 0)
 	_ = scr.Add("b", 0)
 	_ = scr.Add("c", 0)
@@ -470,7 +470,7 @@ func compiledGetCounter(t *testing.T, p *rumo.Program, name string, expected *Co
 
 func TestScriptSourceModule(t *testing.T) {
 	// script1 imports "mod1"
-	scr := rumo.NewScript([]byte(`out := import("mod")`))
+	scr := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`out := import("mod")`)}), "main.rumo")
 	mods := vm.NewModuleMap()
 	mods.AddSourceModule("mod", []byte(`export 5`))
 	scr.SetImports(mods)
@@ -479,7 +479,7 @@ func TestScriptSourceModule(t *testing.T) {
 	require.Equal(t, int64(5), p.Get("out").Value())
 
 	// executing module function
-	scr = rumo.NewScript([]byte(`fn := import("mod"); out := fn()`))
+	scr = rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`fn := import("mod"); out := fn()`)}), "main.rumo")
 	mods = vm.NewModuleMap()
 	mods.AddSourceModule("mod",
 		[]byte(`a := 3; export func() { return a + 5 }`))
@@ -488,7 +488,7 @@ func TestScriptSourceModule(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(8), p.Get("out").Value())
 
-	scr = rumo.NewScript([]byte(`out := import("mod")`))
+	scr = rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`out := import("mod")`)}), "main.rumo")
 	mods = vm.NewModuleMap()
 	mods.AddSourceModule("mod",
 		[]byte(`text := import("text"); export text.title("foo")`))
@@ -527,7 +527,7 @@ func BenchmarkArrayIndexCompare(b *testing.B) {
 }
 
 func bench(n int, input string) {
-	s := rumo.NewScript([]byte(input))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(input)}), "main.rumo")
 	c, err := s.Compile()
 	if err != nil {
 		panic(err)
@@ -642,7 +642,7 @@ func TestProgram_EncodeDecode(t *testing.T) {
 }
 
 func compile(t *testing.T, input string, vars M) *rumo.Program {
-	s := rumo.NewScript([]byte(input))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(input)}), "main.rumo")
 	for vn, vv := range vars {
 		err := s.Add(vn, vv)
 		require.NoError(t, err)
@@ -655,7 +655,7 @@ func compile(t *testing.T, input string, vars M) *rumo.Program {
 }
 
 func compileError(t *testing.T, input string, vars M) {
-	s := rumo.NewScript([]byte(input))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(input)}), "main.rumo")
 	for vn, vv := range vars {
 		err := s.Add(vn, vv)
 		require.NoError(t, err)
@@ -707,7 +707,7 @@ func programIsDefined(t *testing.T, p *rumo.Program, name string, expected bool)
 func TestIssue9_GetDuringRun(t *testing.T) {
 	// Compile a script that loops until the context is cancelled.
 	src := `for true { x += 1 }`
-	script := rumo.NewScript([]byte(src))
+	script := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(src)}), "main.rumo")
 	_ = script.Add("x", 0)
 	program, err := script.Compile()
 	if err != nil {
@@ -748,7 +748,7 @@ func TestIssue9_GetDuringRun(t *testing.T) {
 
 func TestIssue9_SetDuringRun(t *testing.T) {
 	src := `for true { x += 1 }`
-	script := rumo.NewScript([]byte(src))
+	script := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(src)}), "main.rumo")
 	_ = script.Add("x", 0)
 	program, err := script.Compile()
 	if err != nil {
@@ -795,7 +795,7 @@ func TestIssue9_SetDuringRun(t *testing.T) {
 
 func TestIssue10_CloneDeepCopiesGlobals(t *testing.T) {
 	src := `m["key"] = "modified"`
-	script := rumo.NewScript([]byte(src))
+	script := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(src)}), "main.rumo")
 
 	original := map[string]interface{}{
 		"key": "original",
@@ -850,7 +850,7 @@ func TestEqualsLocksBothPrograms(t *testing.T) {
 	newProg := func(t *testing.T) *rumo.Program {
 		t.Helper()
 		// x is pre-declared via Add; the script body just references it.
-		s := rumo.NewScript([]byte(`x += 0`))
+		s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`x += 0`)}), "main.rumo")
 		if err := s.Add("x", 42); err != nil {
 			t.Fatal(err)
 		}
@@ -943,7 +943,7 @@ func TestEqualsLocksBothPrograms(t *testing.T) {
 // read/write access.
 
 func TestBytecodeRemoveDuplicatesMarshalRace(t *testing.T) {
-	s := rumo.NewScript([]byte(`x := 1 + 2`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`x := 1 + 2`)}), "main.rumo")
 	p, err := s.Compile()
 	require.NoError(t, err)
 
@@ -982,7 +982,7 @@ func TestDefaultPermissionsDenyAll(t *testing.T) {
 	_ = os.Unsetenv(envKey)
 	t.Cleanup(func() { _ = os.Unsetenv(envKey) })
 
-	s := rumo.NewScript([]byte(`os := import("os"); os.setenv("` + envKey + `", "mutated")`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`os := import("os"); os.setenv("` + envKey + `", "mutated")`)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap("os"))
 	// No SetPermissions call — should default to deny-all.
 	_, err := s.Run()
@@ -996,7 +996,7 @@ func TestDefaultPermissionsDenyAll(t *testing.T) {
 
 // TestDefaultPermissionsDenyChdir verifies that os.chdir is denied by default.
 func TestDefaultPermissionsDenyChdir(t *testing.T) {
-	s := rumo.NewScript([]byte(`os := import("os"); os.chdir("/")`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`os := import("os"); os.chdir("/")`)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap("os"))
 	_, err := s.Run()
 	if err == nil {
@@ -1006,7 +1006,7 @@ func TestDefaultPermissionsDenyChdir(t *testing.T) {
 
 // TestDefaultPermissionsDenyExec verifies that os.exec is denied by default.
 func TestDefaultPermissionsDenyExec(t *testing.T) {
-	s := rumo.NewScript([]byte(`os := import("os"); cmd := os.exec("true"); cmd.run()`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`os := import("os"); cmd := os.exec("true"); cmd.run()`)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap("os"))
 	_, err := s.Run()
 	if err == nil {
@@ -1021,7 +1021,7 @@ func TestUnrestrictedPermissionsAllowsAll(t *testing.T) {
 	_ = os.Unsetenv(envKey)
 	t.Cleanup(func() { _ = os.Unsetenv(envKey) })
 
-	s := rumo.NewScript([]byte(`os := import("os"); os.setenv("` + envKey + `", "ok")`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`os := import("os"); os.setenv("` + envKey + `", "ok")`)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap("os"))
 	s.SetPermissions(vm.UnrestrictedPermissions())
 	_, err := s.Run()
@@ -1048,7 +1048,7 @@ func TestDefaultAllocsNotUnbounded(t *testing.T) {
 	// Allocate a new map object on each iteration. The loop count (100 M) far
 	// exceeds any reasonable safe default, so the VM should stop early.
 	src := `for i := 0; i < 100000000; i++ { x := {} }`
-	s := rumo.NewScript([]byte(src))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(src)}), "main.rumo")
 	_, err := s.Run()
 	if err == nil {
 		t.Fatal("expected allocation-limit error — default MaxAllocs must be bounded, not unlimited")
@@ -1068,7 +1068,7 @@ func TestDefaultStringLenBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := rumo.NewScript([]byte(`os := import("os"); data := string(os.read_file("` + bigFile + `"))`))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(`os := import("os"); data := string(os.read_file("` + bigFile + `"))`)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap("os"))
 	s.SetPermissions(vm.UnrestrictedPermissions()) // allow file reads; test is about size limit only
 	_, err := s.Run()
@@ -1081,7 +1081,7 @@ func TestDefaultStringLenBounded(t *testing.T) {
 // the default resource limits, allowing scripts to allocate freely.
 func TestUnlimitedConfigRemovesLimits(t *testing.T) {
 	src := `arr := []; for i := 0; i < 20000000; i++ { arr = append(arr, i) }`
-	s := rumo.NewScript([]byte(src))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(src)}), "main.rumo")
 	s.SetMaxAllocs(-1) // explicit unlimited via existing API
 	_, err := s.Run()
 	if err != nil {

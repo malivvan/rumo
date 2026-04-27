@@ -13,6 +13,12 @@ import (
 	"github.com/malivvan/rumo/vm/require"
 )
 
+// newInlineScript is a test helper that creates a Script from source bytes in
+// an in-memory filesystem so tests don't need a real file on disk.
+func newInlineScript(src string) *rumo.Script {
+	return rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(src)}), "main.rumo")
+}
+
 // Program.Unmarshal always resolves imported modules using the global Modules()
 // map. Embedders that supply custom builtin modules via Script.SetImports cannot
 // inject those modules into deserialization: the BuiltinFunction values inside the
@@ -39,7 +45,7 @@ func TestProgramMarshalUnmarshalRoundTripWithCustomModules(t *testing.T) {
 	customModules.AddBuiltinModule("mymod", customAttrs)
 
 	// Compile a script that imports and calls the custom module.
-	s := rumo.NewScript([]byte(`result := import("mymod").answer()`))
+	s := newInlineScript(`result := import("mymod").answer()`)
 	s.SetImports(customModules)
 	p, err := s.Compile()
 	if err != nil {
@@ -99,7 +105,7 @@ func TestRunCompiledWithModulesExecutesCustomModule(t *testing.T) {
 	customModules := vm.NewModuleMap()
 	customModules.AddBuiltinModule("mymod2", customAttrs)
 
-	s := rumo.NewScript([]byte(`_ := import("mymod2").value()`))
+	s := newInlineScript(`_ := import("mymod2").value()`)
 	s.SetImports(customModules)
 	p, err := s.Compile()
 	if err != nil {
@@ -131,9 +137,7 @@ func TestRunREPLWritesEvaluationToProvidedWriter(t *testing.T) {
 }
 
 func TestScriptRunSupportsShebangSource(t *testing.T) {
-	tempDir := t.TempDir()
-	s := rumo.NewScript([]byte("#!/usr/bin/env rumo\nanswer := 40 + 2\n"))
-	s.SetName(filepath.Join(tempDir, "script.rumo"))
+	s := newInlineScript("#!/usr/bin/env rumo\nanswer := 40 + 2\n")
 
 	p, err := s.Run()
 	if err != nil {
@@ -161,12 +165,10 @@ func TestScriptFileImportAllowsNestedRelativeImportsWithinRoot(t *testing.T) {
 		t.Fatalf("write entry module: %v", err)
 	}
 
-	s := rumo.NewScript([]byte(`out := import("./sub/entry")`))
-	s.SetName(filepath.Join(root, "main.rumo"))
-	s.EnableFileImport(true)
-	if err := s.SetImportDir(root); err != nil {
-		t.Fatalf("set import dir: %v", err)
+	if err := os.WriteFile(filepath.Join(root, "main.rumo"), []byte(`out := import("./sub/entry")`), 0o644); err != nil {
+		t.Fatalf("write main script: %v", err)
 	}
+	s := rumo.NewScript(nil, filepath.Join(root, "main.rumo"))
 
 	p, err := s.Run()
 	if err != nil {
@@ -187,12 +189,10 @@ func TestScriptFileImportRejectsEscapingImportRoot(t *testing.T) {
 		t.Fatalf("write outside module: %v", err)
 	}
 
-	s := rumo.NewScript([]byte(`out := import("../outside")`))
-	s.SetName(filepath.Join(root, "main.rumo"))
-	s.EnableFileImport(true)
-	if err := s.SetImportDir(root); err != nil {
-		t.Fatalf("set import dir: %v", err)
+	if err := os.WriteFile(filepath.Join(root, "main.rumo"), []byte(`out := import("../outside")`), 0o644); err != nil {
+		t.Fatalf("write main script: %v", err)
 	}
+	s := rumo.NewScript(nil, filepath.Join(root, "main.rumo"))
 
 	_, err := s.Compile()
 	if err == nil {
@@ -228,12 +228,10 @@ func TestScriptFileImportRejectsSymlinkEscapingImportRoot(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 
-	s := rumo.NewScript([]byte(`out := import("escape")`))
-	s.SetName(filepath.Join(root, "main.rumo"))
-	s.EnableFileImport(true)
-	if err := s.SetImportDir(root); err != nil {
-		t.Fatalf("set import dir: %v", err)
+	if err := os.WriteFile(filepath.Join(root, "main.rumo"), []byte(`out := import("escape")`), 0o644); err != nil {
+		t.Fatalf("write main script: %v", err)
 	}
+	s := rumo.NewScript(nil, filepath.Join(root, "main.rumo"))
 
 	_, err := s.Compile()
 	if err == nil {
@@ -265,12 +263,10 @@ func TestScriptFileImportAllowsSymlinkWithinRoot(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 
-	s := rumo.NewScript([]byte(`out := import("alias")`))
-	s.SetName(filepath.Join(root, "main.rumo"))
-	s.EnableFileImport(true)
-	if err := s.SetImportDir(root); err != nil {
-		t.Fatalf("set import dir: %v", err)
+	if err := os.WriteFile(filepath.Join(root, "main.rumo"), []byte(`out := import("alias")`), 0o644); err != nil {
+		t.Fatalf("write main script: %v", err)
 	}
+	s := rumo.NewScript(nil, filepath.Join(root, "main.rumo"))
 
 	p, err := s.Run()
 	if err != nil {
@@ -296,7 +292,7 @@ func TestScriptFileImportAllowsSymlinkWithinRoot(t *testing.T) {
 // os module, applying the given permissions, and returns the execution error.
 func runOSPermTest(t *testing.T, src string, perm vm.Permissions) error {
 	t.Helper()
-	s := rumo.NewScript([]byte(src))
+	s := newInlineScript(src)
 	s.SetImports(rumo.GetModuleMap("os"))
 	s.SetPermissions(perm)
 	_, err := s.Run()
@@ -425,7 +421,7 @@ func TestOSPermissionDenyExit(t *testing.T) {
 // given template string, applying the per-VM MaxStringLen limit.
 func runExpandEnvTest(t *testing.T, template string, maxStringLen int) error {
 	t.Helper()
-	s := rumo.NewScript([]byte(`os := import("os"); out := os.expand_env("` + template + `")`))
+	s := newInlineScript(`os := import("os"); out := os.expand_env("` + template + `")`)
 	s.SetImports(rumo.GetModuleMap("os"))
 	s.SetMaxStringLen(maxStringLen)
 	_, err := s.Run()
@@ -488,7 +484,7 @@ func TestExpandEnvBelowLimitSucceeds(t *testing.T) {
 // TestScriptArgsDefaultToEmptyWhenNotSet verifies that a script run without SetArgs
 // sees an empty args() list rather than the host binary's os.Args.
 func TestScriptArgsDefaultToEmptyWhenNotSet(t *testing.T) {
-	s := rumo.NewScript([]byte(`out := args()`))
+	s := newInlineScript(`out := args()`)
 	p, err := s.Run()
 	if err != nil {
 		t.Fatalf("run script: %v", err)
@@ -502,7 +498,7 @@ func TestScriptArgsDefaultToEmptyWhenNotSet(t *testing.T) {
 // TestProgramSetArgsMakesArgsVisibleToScript verifies that args set via SetArgs are
 // exactly what the script sees through the args() builtin.
 func TestProgramSetArgsMakesArgsVisibleToScript(t *testing.T) {
-	s := rumo.NewScript([]byte(`out := args()`))
+	s := newInlineScript(`out := args()`)
 	p, err := s.Compile()
 	if err != nil {
 		t.Fatalf("compile: %v", err)
@@ -526,8 +522,12 @@ func TestProgramSetArgsMakesArgsVisibleToScript(t *testing.T) {
 // TestCompileAndRunPropagatesArgsToScript verifies that CompileAndRun passes the
 // provided args slice through to the script's args() builtin.
 func TestCompileAndRunPropagatesArgsToScript(t *testing.T) {
-	script := []byte(`n := len(args())`)
-	if err := rumo.CompileAndRun(context.Background(), script, "test.rumo", []string{"a", "b", "c"}); err != nil {
+	tmp := t.TempDir()
+	scriptFile := filepath.Join(tmp, "test.rumo")
+	if err := os.WriteFile(scriptFile, []byte(`n := len(args())`), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	if err := rumo.CompileAndRun(context.Background(), scriptFile, []string{"a", "b", "c"}); err != nil {
 		t.Fatalf("CompileAndRun: %v", err)
 	}
 }
@@ -583,8 +583,8 @@ func TestEmbed_SingleFileString(t *testing.T) {
 //embed hello.txt
 content := ""
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	compiled, err := s.Compile()
 	require.NoError(t, err)
@@ -605,8 +605,8 @@ func TestEmbed_SingleFileBytes(t *testing.T) {
 //embed data.bin
 content := bytes("")
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	compiled, err := s.Compile()
 	require.NoError(t, err)
@@ -628,8 +628,8 @@ func TestEmbed_MultiFileStringMap(t *testing.T) {
 //embed *.txt
 files := {}
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	compiled, err := s.Compile()
 	require.NoError(t, err)
@@ -656,8 +656,8 @@ func TestEmbed_MultiFileBytesMap(t *testing.T) {
 //embed *.txt
 files := bytes({})
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	compiled, err := s.Compile()
 	require.NoError(t, err)
@@ -682,8 +682,8 @@ func TestEmbed_MultiplePatterns(t *testing.T) {
 //embed readme.md config.json
 assets := {}
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	compiled, err := s.Compile()
 	require.NoError(t, err)
@@ -708,8 +708,8 @@ func TestEmbed_SubdirectoryPattern(t *testing.T) {
 //embed sub/*.txt
 files := {}
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	compiled, err := s.Compile()
 	require.NoError(t, err)
@@ -730,8 +730,8 @@ func TestEmbed_NoImportDir(t *testing.T) {
 //embed hello.txt
 content := ""
 `
-	s := rumo.NewScript([]byte(src))
-	// No SetImportDir call — importDir is empty.
+	s := newInlineScript(src)
+	// With MapFS the embed dir is the CWD; hello.txt is not there so embed must fail.
 	_, err := s.Compile()
 	require.Error(t, err)
 }
@@ -743,8 +743,8 @@ func TestEmbed_PatternNoMatch(t *testing.T) {
 //embed *.nonexistent
 files := {}
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	_, err := s.Compile()
 	require.Error(t, err)
@@ -759,8 +759,8 @@ func TestEmbed_SingleFileMultipleMatches(t *testing.T) {
 //embed *.txt
 content := ""
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	_, err := s.Compile()
 	require.Error(t, err) // glob matches 2 files but target is a single string
@@ -775,8 +775,8 @@ func TestEmbed_UsedInExpression(t *testing.T) {
 msg := ""
 result := msg + ", World!"
 `
-	s := rumo.NewScript([]byte(src))
-	require.NoError(t, s.SetImportDir(dir))
+	writeTemp(t, dir, "test.rumo", src)
+	s := rumo.NewScript(nil, filepath.Join(dir, "test.rumo"))
 
 	compiled, err := s.Compile()
 	require.NoError(t, err)

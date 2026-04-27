@@ -110,7 +110,7 @@ func Object(v interface{}) vm.Object {
 
 // Expect runs the input script and asserts that the value of "out" is equal to expected.
 func Expect(t *testing.T, input string, expected interface{}) {
-	s := rumo.NewScript([]byte(input))
+	s := rumo.NewScript(rumo.MapFS(map[string][]byte{"main.rumo": []byte(input)}), "main.rumo")
 	s.SetImports(rumo.GetModuleMap(rumo.AllModuleNames()...))
 	c, err := s.Run()
 	NoError(t, err)

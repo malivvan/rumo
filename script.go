@@ -7,14 +7,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io/fs"
-
-	"github.com/malivvan/rumo/vm"
-	"github.com/malivvan/rumo/vm/codec"
-
+	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"testing/fstest"
 
+	"github.com/malivvan/rumo/vm"
+	"github.com/malivvan/rumo/vm/codec"
 	"github.com/malivvan/rumo/vm/parser"
 )
 
@@ -52,20 +52,22 @@ const FormatVersion uint16 = 6
 
 // Script can simplify compilation and execution of embedded scripts.
 type Script struct {
-	variables        map[string]*Variable
-	modules          *vm.ModuleMap
-	name             string
-	input            []byte
-	maxAllocs        int64
-	maxConstObjects  int
-	maxStringLen     int
-	enableFileImport bool
-	importDir        string
-	importFS         fs.FS // optional virtualised FS; nil → default os.DirFS(importDir)
-	permissions      vm.Permissions
+	variables       map[string]*Variable
+	modules         *vm.ModuleMap
+	path            string // path of the entrypoint within fsys
+	fsys            fs.FS  // filesystem; set by NewScript, never nil
+	root            string // abs path of the FS root on disk; "" = determine from CWD at compile time
+	maxAllocs       int64
+	maxConstObjects int
+	maxStringLen    int
+	permissions     vm.Permissions
 }
 
-// NewScript creates a Script instance with an input script.
+// NewScript creates a Script that reads its entrypoint from fsys at path.
+//
+// If fsys is nil, the current working directory is used (via os.DirFS).
+// When path is absolute and fsys is nil, the FS is rooted at the directory
+// containing path and the entrypoint becomes its base name.
 //
 // By default, the script runs with:
 //   - deny-all Permissions (no file I/O, exec, env write, or chdir allowed);
@@ -73,14 +75,38 @@ type Script struct {
 //   - bounded resource limits (MaxAllocs, MaxStringLen, MaxBytesLen from
 //     vm.DefaultConfig); call SetMaxAllocs(-1) etc. or pass vm.UnlimitedConfig()
 //     to disable limits for trusted scripts.
-func NewScript(input []byte) *Script {
+func NewScript(fsys fs.FS, path string) *Script {
+	root := ""
+	if fsys == nil {
+		if filepath.IsAbs(path) {
+			// Absolute path with nil FS: root the FS at the file's directory.
+			root = filepath.Dir(path)
+			path = filepath.Base(path)
+			fsys = os.DirFS(root)
+		} else {
+			// Relative path: use the current working directory.
+			fsys = os.DirFS(".")
+		}
+	}
 	return &Script{
+		fsys:            fsys,
+		path:            path,
+		root:            root,
 		variables:       make(map[string]*Variable),
-		name:            "(main)",
-		input:           input,
 		maxAllocs:       0, // 0 = use DefaultConfig.MaxAllocs (bounded safe default)
 		maxConstObjects: -1,
 	}
+}
+
+// MapFS creates an fs.FS backed by the provided in-memory map of filename → content.
+// It is a convenience wrapper for creating in-memory filesystems (e.g. for tests
+// or scripts whose source is generated at runtime).
+func MapFS(files map[string][]byte) fs.FS {
+	m := make(fstest.MapFS, len(files))
+	for name, data := range files {
+		m[name] = &fstest.MapFile{Data: data}
+	}
+	return m
 }
 
 // Add adds a new variable or updates an existing variable to the script.
@@ -106,24 +132,9 @@ func (s *Script) Remove(name string) bool {
 	return true
 }
 
-// SetName sets the name of the script.
-func (s *Script) SetName(name string) {
-	s.name = name
-}
-
 // SetImports sets import modules.
 func (s *Script) SetImports(modules *vm.ModuleMap) {
 	s.modules = modules
-}
-
-// SetImportDir sets the initial import directory for script files.
-func (s *Script) SetImportDir(dir string) error {
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return err
-	}
-	s.importDir = dir
-	return nil
 }
 
 // SetMaxAllocs sets the maximum number of objects allocations during the run
@@ -137,23 +148,6 @@ func (s *Script) SetMaxAllocs(n int64) {
 // constants.
 func (s *Script) SetMaxConstObjects(n int) {
 	s.maxConstObjects = n
-}
-
-// EnableFileImport enables or disables module loading from local files. Local
-// file modules are disabled by default.
-func (s *Script) EnableFileImport(enable bool) {
-	s.enableFileImport = enable
-}
-
-// SetImportFS sets a custom fs.FS used to resolve import and embed paths
-// during compilation.  The FS should be rooted at the same directory that was
-// (or will be) passed to SetImportDir.  This allows sandboxed or virtualised
-// compilation environments (e.g. in-memory filesystems, WASM, wasip1) where
-// direct os.ReadFile calls are unavailable or restricted.
-// When nil (the default), the compiler creates an os.DirFS(importDir)
-// automatically when SetImportDir is called.
-func (s *Script) SetImportFS(fsys fs.FS) {
-	s.importFS = fsys
 }
 
 // SetPermissions configures which privileged os-module operations the script is
@@ -170,6 +164,22 @@ func (s *Script) SetMaxStringLen(n int) {
 	s.maxStringLen = n
 }
 
+// resolveImportPaths returns the absolute (OS-level) importBase and importDir
+// for this script. importBase is the security root of the FS; importDir is the
+// directory of the entrypoint within that root.
+func (s *Script) resolveImportPaths() (importBase, importDir string, err error) {
+	base := s.root
+	if base == "" {
+		// Custom FS or nil FS with relative path: mount the FS at CWD.
+		base, err = os.Getwd()
+		if err != nil {
+			return "", "", fmt.Errorf("getting working directory: %w", err)
+		}
+	}
+	dir := filepath.Join(base, filepath.Dir(filepath.FromSlash(s.path)))
+	return base, dir, nil
+}
+
 // Compile compiles the script with all the defined variables and returns Program object.
 func (s *Script) Compile() (*Program, error) {
 	symbolTable, globals, err := s.prepCompile()
@@ -177,9 +187,24 @@ func (s *Script) Compile() (*Program, error) {
 		return nil, err
 	}
 
+	// Read the script source from the filesystem.
+	rawInput, err := fs.ReadFile(s.fsys, s.path)
+	if err != nil {
+		return nil, fmt.Errorf("reading script %q: %w", s.path, err)
+	}
+	input := normalizeSource(rawInput)
+
+	// Derive OS-level absolute paths for the compiler's import machinery.
+	importBase, importDir, err := s.resolveImportPaths()
+	if err != nil {
+		return nil, err
+	}
+
+	// Use the FS-relative path as the source file name for error messages.
+	srcName := s.path
+
 	fileSet := parser.NewFileSet()
-	input := normalizeSource(s.input)
-	srcFile := fileSet.AddFile(s.name, -1, len(input))
+	srcFile := fileSet.AddFile(srcName, -1, len(input))
 	p := parser.NewParser(srcFile, input, nil)
 	file, err := p.ParseFile()
 	if err != nil {
@@ -187,11 +212,11 @@ func (s *Script) Compile() (*Program, error) {
 	}
 
 	c := vm.NewCompiler(srcFile, symbolTable, nil, s.modules, nil)
-	c.EnableFileImport(s.enableFileImport)
-	c.SetImportDir(s.importDir)
-	if s.importFS != nil {
-		c.SetImportFS(s.importFS)
-	}
+	c.EnableFileImport(true)
+	// First call sets importBase; second call updates importDir without changing importBase.
+	c.SetImportDir(importBase)
+	c.SetImportFS(s.fsys)
+	c.SetImportDir(importDir)
 	if err := c.Compile(file); err != nil {
 		return nil, err
 	}

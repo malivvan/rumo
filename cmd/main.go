@@ -94,7 +94,7 @@ func runFile(ctx context.Context, inputFile string, scriptArgs []string, errOut 
 		return 0
 	}
 
-	if err := rumo.CompileAndRun(ctx, data, inputFile, args); err != nil {
+	if err := rumo.CompileAndRun(ctx, inputFile, args); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error: %s: %s\n", inputFile, err.Error())
 		return 1
 	}
@@ -120,13 +120,8 @@ func buildFile(inputFile, outputFile string, out, errOut io.Writer) int {
 		outputFile = basename(inputFile) + ".out"
 	}
 
-	data, err := os.ReadFile(inputFile)
-	if err != nil {
-		_, _ = fmt.Fprintf(errOut, "Error reading input file %s: %s\n", inputFile, err.Error())
-		return 1
-	}
 
-	if err := rumo.CompileOnly(data, inputFile, outputFile); err != nil {
+	if err := rumo.CompileOnly(inputFile, outputFile); err != nil {
 		_, _ = fmt.Fprintf(errOut, "Error compiling %s: %s\n", inputFile, err.Error())
 		return 1
 	}
