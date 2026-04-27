@@ -565,7 +565,7 @@ environment (or in browser/wasi where `os.ReadFile` is restricted).
 
 ## 6. API & maintenance smells
 
-### 6.1 `BuiltinFunction.Equals` always returns `false` &nbsp; **LOW**
+### 6.1 `BuiltinFunction.Equals` always returns `false` &nbsp; **LOW** &nbsp; ✅
 
 `vm/objects.go:364-366`. Two references to the same builtin cannot
 compare equal, breaking deduplication and user-script identity

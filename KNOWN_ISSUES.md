@@ -37,7 +37,7 @@
   listing the toolchain capabilities required to load it, and refuse
   the file when the runtime lacks them.
 
-### 1.5 REPL & input handling unusable in browser / WASI &nbsp; **MED**
+### 1.3 REPL & input handling unusable in browser / WASI &nbsp; **MED**
 
 - `rumo.go:201-203` calls `term.IsTerminal(int(fin.Fd()))` —
   `*os.File.Fd()` returns 0 / panics in some non-FD-backed runtimes.
@@ -47,7 +47,7 @@
 - **Fix:** factor the REPL out of the core package, or add a
   `RunREPLLoop` that takes pre-read lines from a callback.
 
-### 1.6 Goroutines used for routines, channels, sleep &nbsp; **MED**
+### 1.4 Goroutines used for routines, channels, sleep &nbsp; **MED**
 
 `vm/routinevm.go` and `std/times/times.go:103` spawn raw goroutines.
 On `js/wasm` the runtime is cooperative — every blocking syscall has
@@ -62,7 +62,7 @@ to yield to the event loop. This means:
   `runtime.Gosched()` from the VM run loop; document that browser
   embeds must spawn the VM in a Worker.
 
-### 1.7 Build matrix omits the platforms the README promises &nbsp; **MED**
+### 1.5 Build matrix omits the platforms the README promises &nbsp; **MED**
 
 `Makefile:64-73` builds only linux/darwin/windows × {386, amd64,
 arm, arm64}. There is no `js/wasm`, no `wasip1`, no CI signal for

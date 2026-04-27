@@ -435,9 +435,14 @@ func (o *BuiltinFunction) Copy() Object {
 }
 
 // Equals returns true if the value of the type is equal to the value of
-// another object.
-func (o *BuiltinFunction) Equals(_ Object) bool {
-	return false
+// another object. Two BuiltinFunction instances are equal when they share
+// the same non-empty name, which uniquely identifies a builtin in the registry.
+func (o *BuiltinFunction) Equals(x Object) bool {
+	t, ok := x.(*BuiltinFunction)
+	if !ok {
+		return false
+	}
+	return o.Name != "" && o.Name == t.Name
 }
 
 // Call executes a builtin function.
