@@ -387,8 +387,8 @@ out = func() {
 `, nil, 136)
 
 	// assigning different type value
-	expectRun(t, `a := 1; a = "foo"; out = a`, nil, "foo")              // global
-	expectRun(t, `func() { a := 1; a = "foo"; out = a }()`, nil, "foo") // local
+	expectRun(t, `a := 1; a = "foo"; out = a`, nil, "foo")                                                               // global
+	expectRun(t, `func() { a := 1; a = "foo"; out = a }()`, nil, "foo")                                                  // local
 	expectRun(t, `
 out = func() { 
 	a := 5
@@ -2076,6 +2076,39 @@ func TestImmutable(t *testing.T) {
 		nil, 5)
 	expectError(t, `a := immutable({b: 5, c: "foo"}); a.b = 10`,
 		nil, "not index-assignable")
+
+	// OpImmutable does not actually freeze data.
+	//
+	// The OpImmutable instruction previously wrapped the original mutable
+	// container in an ImmutableArray/ImmutableMap while sharing the same
+	// underlying slice/map pointer.  As a result, any mutation through the
+	// original mutable variable was visible through the supposedly-immutable
+	// view, breaking the fundamental immutability guarantee and opening a
+	// security hole for module exports (BuiltinModule.AsImmutableMap).
+	//
+	// Fix: OpImmutable must copy the slice/map before wrapping it, matching
+	// the copy-on-wrap behaviour of the builtinImmutableArray /
+	// builtinImmutableMap functions.
+	// ---------------------------------------------------------------------------
+
+	// Mutating the original array must NOT be visible through the immutable copy.
+	expectRun(t, `arr := [1, 2, 3]; imm := immutable(arr); arr[0] = 99; out = imm[0]`,
+		nil, 1)
+	// Mutating the immutable's backing array via the original must not work.
+	expectRun(t, `arr := [1, 2, 3]; imm := immutable(arr); arr[1] = 42; out = imm`,
+		nil, IARR{1, 2, 3})
+
+	// Mutating the original map must NOT be visible through the immutable copy.
+	expectRun(t, `m := {a: 1, b: 2}; imm := immutable(m); m.a = 99; out = imm.a`,
+		nil, 1)
+	// A new key added to the original map must NOT appear in the immutable copy.
+	expectRun(t, `m := {a: 1}; imm := immutable(m); m.x = 7; out = imm`,
+		nil, IMAP{"a": 1})
+
+	// Symmetric: mutating the slice after immutable() via append-and-replace
+	// should not affect the immutable view (covers slice-growth aliasing).
+	expectRun(t, `arr := [10, 20]; imm := immutable(arr); arr[0] = 55; out = imm[0]`,
+		nil, 10)
 }
 
 func TestIncDec(t *testing.T) {

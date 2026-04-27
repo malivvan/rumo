@@ -145,7 +145,7 @@ go func() {
 
 ## 2. Security
 
-### 2.1 `OpImmutable` does not actually freeze data &nbsp; **CRIT**
+### 2.1 `OpImmutable` does not actually freeze data &nbsp; **CRIT** ✅
 
 `vm/vm.go:620-643`:
 

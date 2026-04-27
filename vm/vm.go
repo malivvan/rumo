@@ -621,8 +621,12 @@ func (v *VM) run() {
 			value := v.stack[v.sp-1]
 			switch value := value.(type) {
 			case *Array:
+				value.mu.RLock()
+				arr := make([]Object, len(value.Value))
+				copy(arr, value.Value)
+				value.mu.RUnlock()
 				var immutableArray Object = &ImmutableArray{
-					Value: value.Value,
+					Value: arr,
 				}
 				v.allocs--
 				if v.allocs == 0 {
@@ -631,8 +635,14 @@ func (v *VM) run() {
 				}
 				v.stack[v.sp-1] = immutableArray
 			case *Map:
+				value.mu.RLock()
+				m := make(map[string]Object, len(value.Value))
+				for k, val := range value.Value {
+					m[k] = val
+				}
+				value.mu.RUnlock()
 				var immutableMap Object = &ImmutableMap{
-					Value: value.Value,
+					Value: m,
 				}
 				v.allocs--
 				if v.allocs == 0 {
