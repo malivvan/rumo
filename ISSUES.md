@@ -462,7 +462,7 @@ where mutex contention is emulated.
   constant-pool / fresh) that skips the lock. Or split into
   `Map` (locked) vs. `LocalMap` (unsynchronised).
 
-### 4.5 `Bytecode.RemoveDuplicates` skips `Bytes` and `Map` entirely &nbsp; **LOW**
+### 4.5 `Bytecode.RemoveDuplicates` skips `Bytes` and `Map` entirely &nbsp; **LOW** &nbsp; ✅
 
 `vm/bytecode.go:217-227`. `embed("file.txt")` uses a `Bytes` constant.
 A program that embeds the same file from multiple modules duplicates

@@ -453,3 +453,126 @@ func TestRemoveDuplicates_ModuleNameIsolation(t *testing.T) {
 	require.Equal(t, 2, len(b.Constants),
 		"RemoveDuplicates must keep real module and user map as separate constants")
 }
+
+// Issue 4.5: RemoveDuplicates previously skipped *Bytes and *Map constants
+// entirely, passing every occurrence through as a distinct constant even when
+// two embed directives embedded the same file content. The fix deduplicates
+// *Bytes by SHA-256 of the raw content and *Map by a canonical content hash
+// (sorted keys + marshalled values).
+
+// TestRemoveDuplicates_BytesDedup verifies that two *Bytes constants with
+// identical content are collapsed to a single constant after RemoveDuplicates,
+// and that instructions referencing both point to the surviving constant.
+func TestRemoveDuplicates_BytesDedup(t *testing.T) {
+	data := []byte("hello, embedded world")
+
+	b := &vm.Bytecode{
+		FileSet: parser.NewFileSet(),
+		MainFunction: &vm.CompiledFunction{
+			Instructions: concatInsts(
+				vm.MakeInstruction(parser.OpConstant, 0), // first Bytes
+				vm.MakeInstruction(parser.OpConstant, 1), // identical Bytes → should map to 0
+			),
+		},
+		Constants: []vm.Object{
+			&vm.Bytes{Value: append([]byte(nil), data...)},
+			&vm.Bytes{Value: append([]byte(nil), data...)}, // same content, different pointer
+		},
+	}
+
+	b.RemoveDuplicates()
+
+	require.Equal(t, 1, len(b.Constants),
+		"two identical Bytes constants must be collapsed to one")
+
+	// Both OpConstant instructions must now reference index 0.
+	insts := b.MainFunction.Instructions
+	idx0 := int(insts[2]) | int(insts[1])<<8
+	idx1 := int(insts[5]) | int(insts[4])<<8
+	require.Equal(t, 0, idx0, "first OpConstant must point to index 0")
+	require.Equal(t, 0, idx1, "second OpConstant must also point to index 0 after dedup")
+}
+
+// TestRemoveDuplicates_BytesDedupDistinct verifies that two *Bytes constants
+// with different content are kept as distinct constants.
+func TestRemoveDuplicates_BytesDedupDistinct(t *testing.T) {
+	b := &vm.Bytecode{
+		FileSet: parser.NewFileSet(),
+		MainFunction: &vm.CompiledFunction{
+			Instructions: concatInsts(
+				vm.MakeInstruction(parser.OpConstant, 0),
+				vm.MakeInstruction(parser.OpConstant, 1),
+			),
+		},
+		Constants: []vm.Object{
+			&vm.Bytes{Value: []byte("file-a.txt content")},
+			&vm.Bytes{Value: []byte("file-b.txt content")},
+		},
+	}
+
+	b.RemoveDuplicates()
+
+	require.Equal(t, 2, len(b.Constants),
+		"two distinct Bytes constants must remain as two constants")
+}
+
+// TestRemoveDuplicates_MapDedup verifies that two *Map constants with identical
+// contents are collapsed to a single constant after RemoveDuplicates.
+func TestRemoveDuplicates_MapDedup(t *testing.T) {
+	makeMap := func() *vm.Map {
+		return &vm.Map{Value: map[string]vm.Object{
+			"a.txt": &vm.Bytes{Value: []byte("content of a")},
+			"b.txt": &vm.Bytes{Value: []byte("content of b")},
+		}}
+	}
+
+	b := &vm.Bytecode{
+		FileSet: parser.NewFileSet(),
+		MainFunction: &vm.CompiledFunction{
+			Instructions: concatInsts(
+				vm.MakeInstruction(parser.OpConstant, 0),
+				vm.MakeInstruction(parser.OpConstant, 1),
+			),
+		},
+		Constants: []vm.Object{makeMap(), makeMap()},
+	}
+
+	b.RemoveDuplicates()
+
+	require.Equal(t, 1, len(b.Constants),
+		"two identical Map constants must be collapsed to one")
+
+	insts := b.MainFunction.Instructions
+	idx0 := int(insts[2]) | int(insts[1])<<8
+	idx1 := int(insts[5]) | int(insts[4])<<8
+	require.Equal(t, 0, idx0)
+	require.Equal(t, 0, idx1, "second OpConstant must point to index 0 after dedup")
+}
+
+// TestRemoveDuplicates_MapDedupDistinct verifies that two *Map constants
+// with different contents remain distinct after RemoveDuplicates.
+func TestRemoveDuplicates_MapDedupDistinct(t *testing.T) {
+	b := &vm.Bytecode{
+		FileSet: parser.NewFileSet(),
+		MainFunction: &vm.CompiledFunction{
+			Instructions: concatInsts(
+				vm.MakeInstruction(parser.OpConstant, 0),
+				vm.MakeInstruction(parser.OpConstant, 1),
+			),
+		},
+		Constants: []vm.Object{
+			&vm.Map{Value: map[string]vm.Object{
+				"a.txt": &vm.Bytes{Value: []byte("content of a")},
+			}},
+			&vm.Map{Value: map[string]vm.Object{
+				"b.txt": &vm.Bytes{Value: []byte("content of b")},
+			}},
+		},
+	}
+
+	b.RemoveDuplicates()
+
+	require.Equal(t, 2, len(b.Constants),
+		"two distinct Map constants must remain as two constants")
+}
+

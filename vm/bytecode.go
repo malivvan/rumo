@@ -1,7 +1,9 @@
 package vm
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/malivvan/rumo/vm/codec"
@@ -154,7 +156,9 @@ func (b *Bytecode) RemoveDuplicates() {
 	floats32 := make(map[float32]int)
 	floats64 := make(map[float64]int)
 	chars := make(map[rune]int)
-	immutableMaps := make(map[string]int) // for modules
+	immutableMaps := make(map[string]int)    // for modules
+	bytesConsts := make(map[[32]byte]int)    // keyed by SHA-256 of content
+	mapConsts := make(map[[32]byte]int)      // keyed by canonical content hash
 
 	for curIdx, c := range b.Constants {
 		switch c := c.(type) {
@@ -224,16 +228,33 @@ func (b *Bytecode) RemoveDuplicates() {
 				deduped = append(deduped, c)
 			}
 		case *Bytes:
-			// Bytes constants (from embed directives) cannot be deduplicated by
-			// value without an expensive comparison; pass them through as-is.
-			newIdx := len(deduped)
-			indexMap[curIdx] = newIdx
-			deduped = append(deduped, c)
+			// Deduplicate by SHA-256 of the raw byte content. Two embed
+			// directives that read the same file produce identical Bytes
+			// constants; sharing a single constant saves memory without any
+			// observable difference (Bytes has no mutable IndexSet path).
+			h := sha256.Sum256(c.Value)
+			if newIdx, ok := bytesConsts[h]; ok {
+				indexMap[curIdx] = newIdx
+			} else {
+				newIdx = len(deduped)
+				bytesConsts[h] = newIdx
+				indexMap[curIdx] = newIdx
+				deduped = append(deduped, c)
+			}
 		case *Map:
-			// Map constants (from embed directives) are always unique; pass through.
-			newIdx := len(deduped)
-			indexMap[curIdx] = newIdx
-			deduped = append(deduped, c)
+			// Deduplicate by a canonical content hash (sorted keys + marshalled
+			// values). Multi-file embed directives that match the same set of
+			// files produce structurally identical Map constants; sharing one
+			// constant avoids duplicating potentially large embedded data.
+			h := mapContentHash(c)
+			if newIdx, ok := mapConsts[h]; ok {
+				indexMap[curIdx] = newIdx
+			} else {
+				newIdx = len(deduped)
+				mapConsts[h] = newIdx
+				indexMap[curIdx] = newIdx
+				deduped = append(deduped, c)
+			}
 		case *Native:
 			// Native loader constants carry per-statement bindings and a
 			// lazily-populated runtime handle; never attempt to share them.
@@ -265,6 +286,38 @@ func (b *Bytecode) RemoveDuplicates() {
 			updateConstIndexes(c.Instructions, indexMap)
 		}
 	}
+}
+
+// mapContentHash computes a deterministic SHA-256 hash of a Map's contents
+// for use as a deduplication key in RemoveDuplicates. Keys are sorted before
+// hashing so that two maps constructed with the same key-value pairs in
+// different insertion orders produce the same hash.
+func mapContentHash(m *Map) [32]byte {
+	m.mu.RLock()
+	keys := make([]string, 0, len(m.Value))
+	snap := make(map[string]Object, len(m.Value))
+	for k, v := range m.Value {
+		keys = append(keys, k)
+		snap[k] = v
+	}
+	m.mu.RUnlock()
+
+	sort.Strings(keys)
+
+	h := sha256.New()
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte{0}) // NUL separator to prevent key boundary ambiguity
+		v := snap[k]
+		sz := SizeOfObject(v)
+		buf := make([]byte, sz)
+		MarshalObject(0, buf, v)
+		h.Write(buf)
+		h.Write([]byte{0}) // NUL separator between entries
+	}
+	var sum [32]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
 }
 
 func fixDecodedObject(
