@@ -12,7 +12,7 @@ ergonomics.
 
 ## 1. Cross-platform compatibility
 
-### 1.1 `std/times.sleep` cancellation semantics &nbsp; **HIGH**
+### 1.1 `std/times.sleep` cancellation semantics &nbsp; **HIGH** &nbsp; ✅
 
 `std/times/times.go:97-117`:
 

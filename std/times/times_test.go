@@ -1,10 +1,12 @@
 package times_test
 
 import (
+	"context"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/malivvan/rumo"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/require"
 )
@@ -68,3 +70,124 @@ func TestTimes(t *testing.T) {
 	require.Module(t, "times").Call("time_location", time1).Expect(time1.Location().String())
 	require.Module(t, "times").Call("time_string", time1).Expect(time1.String())
 }
+
+// sleepFn is a helper that fetches the times.sleep builtin function for direct invocation.
+func sleepFn(t *testing.T) func(ctx context.Context, d time.Duration) error {
+	t.Helper()
+	mod := rumo.GetModuleMap("times").GetBuiltinModule("times")
+	if mod == nil {
+		t.Fatal("times module not found")
+	}
+	fn, ok := mod.Attrs["sleep"].(*vm.BuiltinFunction)
+	if !ok {
+		t.Fatal("times.sleep not a BuiltinFunction")
+	}
+	return func(ctx context.Context, d time.Duration) error {
+		_, err := fn.Value(ctx, &vm.Int{Value: int64(d)})
+		return err
+	}
+}
+
+// times.sleep had broken cancellation semantics:
+//   - Sub-second sleeps (≤ 1s) called time.Sleep directly and could not be
+//     interrupted by context cancellation or vm.Abort().
+//   - Long sleeps spawned a goroutine that kept sleeping for the full duration
+//     even after the context was cancelled, leaking one goroutine per cancelled
+//     call until the original timer expired.
+// The fix uses time.NewTimer + select{ctx.Done()} unconditionally.
+
+// TestSleepCancellationSubSecond verifies that a sub-second sleep (which used
+// to block unconditionally) returns ErrVMAborted when the context is already
+// cancelled before the call.
+func TestSleepCancellationSubSecond(t *testing.T) {
+	sleep := sleepFn(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately before sleeping
+
+	start := time.Now()
+	err := sleep(ctx, 500*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if err != vm.ErrVMAborted {
+		t.Fatalf("expected ErrVMAborted for cancelled sub-second sleep, got: %v", err)
+	}
+	if elapsed >= 400*time.Millisecond {
+		t.Fatalf("sub-second sleep was not interrupted quickly enough: elapsed %v", elapsed)
+	}
+}
+
+// TestSleepCancellationLongSleep verifies that a long sleep (> 1s) returns
+// ErrVMAborted promptly when the context is cancelled mid-sleep, without
+// leaking a goroutine for the remaining duration.
+func TestSleepCancellationLongSleep(t *testing.T) {
+	sleep := sleepFn(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	start := time.Now()
+	err := sleep(ctx, time.Hour)
+	elapsed := time.Since(start)
+
+	if err != vm.ErrVMAborted {
+		t.Fatalf("expected ErrVMAborted for cancelled long sleep, got: %v", err)
+	}
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("long sleep was not interrupted quickly enough: elapsed %v", elapsed)
+	}
+}
+
+// TestSleepCancellationNoLeakedGoroutine verifies that cancelling a long sleep
+// does not leave a goroutine alive for the remaining sleep duration.
+// The test runs several concurrent cancelled sleeps; the buggy implementation
+// leaks one internal goroutine per call, making the leak clearly detectable.
+func TestSleepCancellationNoLeakedGoroutine(t *testing.T) {
+	sleep := sleepFn(t)
+
+	goroutinesBefore := runtime.NumGoroutine()
+
+	const n = 5
+	for i := 0; i < n; i++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		finished := make(chan error, 1)
+		go func() {
+			finished <- sleep(ctx, time.Hour)
+		}()
+		// Give the sleep goroutine time to start inside the implementation.
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+		select {
+		case err := <-finished:
+			if err != vm.ErrVMAborted {
+				t.Fatalf("iteration %d: expected ErrVMAborted, got: %v", i, err)
+			}
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("iteration %d: sleep did not return after context cancellation", i)
+		}
+	}
+
+	// Allow any remaining goroutines to settle and be collected.
+	time.Sleep(50 * time.Millisecond)
+	runtime.GC()
+
+	goroutinesAfter := runtime.NumGoroutine()
+	// Each leaking call would leave one goroutine alive for an hour;
+	// more than 2 extra goroutines indicates a leak from one of the n calls.
+	if goroutinesAfter > goroutinesBefore+2 {
+		t.Fatalf("goroutine leak: before=%d after=%d (ran %d cancelled long sleeps)", goroutinesBefore, goroutinesAfter, n)
+	}
+}
+
+// TestSleepCompletesNormally verifies that a sleep that is not cancelled
+// completes successfully and returns no error.
+func TestSleepCompletesNormally(t *testing.T) {
+	sleep := sleepFn(t)
+
+	// Use a very short sleep so the test is fast.
+	err := sleep(context.Background(), 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("expected nil error for normal sleep, got: %v", err)
+	}
+}
+

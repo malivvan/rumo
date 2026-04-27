@@ -94,24 +94,12 @@ func timesSleep(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 		return
 	}
 	ret = vm.UndefinedValue
-	if time.Duration(i1) <= time.Second {
-		time.Sleep(time.Duration(i1))
-		return
-	}
-
-	done := make(chan struct{})
-	go func() {
-		time.Sleep(time.Duration(i1))
-		select {
-		case <-ctx.Done():
-		case done <- struct{}{}:
-		}
-	}()
-
+	timer := time.NewTimer(time.Duration(i1))
+	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return nil, vm.ErrVMAborted
-	case <-done:
+	case <-timer.C:
 	}
 	return
 }
