@@ -3,6 +3,7 @@ package vm
 import (
 	"crypto/sha256"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 
@@ -153,8 +154,8 @@ func (b *Bytecode) RemoveDuplicates() {
 	fns := make(map[*CompiledFunction]int)
 	ints := make(map[int64]int)
 	strings := make(map[string]int)
-	floats32 := make(map[float32]int)
-	floats64 := make(map[float64]int)
+	floats32 := make(map[uint32]int)
+	floats64 := make(map[uint64]int)
 	chars := make(map[rune]int)
 	immutableMaps := make(map[string]int)    // for modules
 	bytesConsts := make(map[[32]byte]int)    // keyed by SHA-256 of content
@@ -201,20 +202,20 @@ func (b *Bytecode) RemoveDuplicates() {
 				deduped = append(deduped, c)
 			}
 		case *Float32:
-			if newIdx, ok := floats32[c.Value]; ok {
+			if newIdx, ok := floats32[math.Float32bits(c.Value)]; ok {
 				indexMap[curIdx] = newIdx
 			} else {
 				newIdx = len(deduped)
-				floats32[c.Value] = newIdx
+				floats32[math.Float32bits(c.Value)] = newIdx
 				indexMap[curIdx] = newIdx
 				deduped = append(deduped, c)
 			}
 		case *Float64:
-			if newIdx, ok := floats64[c.Value]; ok {
+			if newIdx, ok := floats64[math.Float64bits(c.Value)]; ok {
 				indexMap[curIdx] = newIdx
 			} else {
 				newIdx = len(deduped)
-				floats64[c.Value] = newIdx
+				floats64[math.Float64bits(c.Value)] = newIdx
 				indexMap[curIdx] = newIdx
 				deduped = append(deduped, c)
 			}

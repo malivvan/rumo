@@ -601,8 +601,10 @@ func (o *Char) Copy() Object {
 }
 
 // IsFalsy returns true if the value of the type is falsy.
+// Char is always truthy: the NUL character ('\x00') is still a valid character
+// value, so the mere presence of a Char object means "I have a character".
 func (o *Char) IsFalsy() bool {
-	return o.Value == 0
+	return false
 }
 
 // Equals returns true if the value of the type is equal to the value of
@@ -763,6 +765,9 @@ func (o *Float32) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			}
 			return &Float32{Value: float32(r)}, nil
 		case token.Quo:
+			if rv == 0 {
+				return nil, ErrDivisionByZero
+			}
 			r := lv / rv
 			if r == lv {
 				return o, nil
@@ -786,6 +791,9 @@ func (o *Float32) BinaryOp(op token.Token, rhs Object) (Object, error) {
 		case token.Mul:
 			return &Float64{Value: lv * rhs.Value}, nil
 		case token.Quo:
+			if rhs.Value == 0 {
+				return nil, ErrDivisionByZero
+			}
 			return &Float64{Value: lv / rhs.Value}, nil
 		case token.Less:
 			return boolObject(lv < rhs.Value), nil
@@ -806,6 +814,9 @@ func (o *Float32) BinaryOp(op token.Token, rhs Object) (Object, error) {
 		case token.Mul:
 			return &Float32{Value: float32(lv * rv)}, nil
 		case token.Quo:
+			if rv == 0 {
+				return nil, ErrDivisionByZero
+			}
 			return &Float32{Value: float32(lv / rv)}, nil
 		case token.Less:
 			return boolObject(lv < rv), nil
@@ -824,7 +835,8 @@ func (o *Float32) BinaryOp(op token.Token, rhs Object) (Object, error) {
 func (o *Float32) Copy() Object { return &Float32{Value: o.Value} }
 
 // IsFalsy returns true if the value of the type is falsy.
-func (o *Float32) IsFalsy() bool { return math.IsNaN(float64(o.Value)) }
+// Both zero and NaN are considered falsy, consistent with Int where 0 is falsy.
+func (o *Float32) IsFalsy() bool { return o.Value == 0 || math.IsNaN(float64(o.Value)) }
 
 // Equals returns true if the value of the type is equal to the value of
 // another object.
@@ -879,6 +891,9 @@ func (o *Float64) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			}
 			return &Float64{Value: r}, nil
 		case token.Quo:
+			if rhs.Value == 0 {
+				return nil, ErrDivisionByZero
+			}
 			r := o.Value / rhs.Value
 			if r == o.Value {
 				return o, nil
@@ -903,6 +918,9 @@ func (o *Float64) BinaryOp(op token.Token, rhs Object) (Object, error) {
 		case token.Mul:
 			return &Float64{Value: o.Value * rv}, nil
 		case token.Quo:
+			if rv == 0 {
+				return nil, ErrDivisionByZero
+			}
 			return &Float64{Value: o.Value / rv}, nil
 		case token.Less:
 			return boolObject(o.Value < rv), nil
@@ -934,6 +952,9 @@ func (o *Float64) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			}
 			return &Float64{Value: r}, nil
 		case token.Quo:
+			if rhs.Value == 0 {
+				return nil, ErrDivisionByZero
+			}
 			r := o.Value / float64(rhs.Value)
 			if r == o.Value {
 				return o, nil
@@ -958,8 +979,9 @@ func (o *Float64) Copy() Object {
 }
 
 // IsFalsy returns true if the value of the type is falsy.
+// Both zero and NaN are considered falsy, consistent with Int where 0 is falsy.
 func (o *Float64) IsFalsy() bool {
-	return math.IsNaN(o.Value)
+	return o.Value == 0 || math.IsNaN(o.Value)
 }
 
 // Equals returns true if the value of the type is equal to the value of

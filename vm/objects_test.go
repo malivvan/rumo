@@ -51,9 +51,13 @@ func TestObject_IsFalsy(t *testing.T) {
 	require.True(t, o.IsFalsy())
 	o = &vm.Int{Value: 1}
 	require.False(t, o.IsFalsy())
+	// 5.5: Float zero is falsy, consistent with Int; non-zero non-NaN is truthy.
 	o = &vm.Float{Value: 0}
-	require.False(t, o.IsFalsy())
+	require.True(t, o.IsFalsy())
 	o = &vm.Float{Value: 1}
+	require.False(t, o.IsFalsy())
+	// 5.6: Char is always truthy, even NUL ('\x00').
+	o = &vm.Char{Value: 0}
 	require.False(t, o.IsFalsy())
 	o = &vm.Char{Value: ' '}
 	require.False(t, o.IsFalsy())

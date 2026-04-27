@@ -639,14 +639,14 @@ func TestBuiltinFunction(t *testing.T) {
 
 	expectRun(t, `out = bool(1)`, nil, true)          // non-zero integer: true
 	expectRun(t, `out = bool(0)`, nil, false)         // zero: true
-	expectRun(t, `out = bool(1.8)`, nil, true)        // all floats (except for NaN): true
-	expectRun(t, `out = bool(0.0)`, nil, true)        // all floats (except for NaN): true
+	expectRun(t, `out = bool(1.8)`, nil, true)        // non-zero float: true
+	expectRun(t, `out = bool(0.0)`, nil, false)       // zero float is falsy (5.5: consistent with Int)
 	expectRun(t, `out = bool("false")`, nil, true)    // non-empty string: true
 	expectRun(t, `out = bool("")`, nil, false)        // empty string: false
 	expectRun(t, `out = bool(true)`, nil, true)       // true: true
 	expectRun(t, `out = bool(false)`, nil, false)     // false: false
 	expectRun(t, `out = bool('8')`, nil, true)        // non-zero chars: true
-	expectRun(t, `out = bool(char(0))`, nil, false)   // zero char: false
+	expectRun(t, `out = bool(char(0))`, nil, true)    // NUL char is truthy (5.6: Char is always truthy)
 	expectRun(t, `out = bool([1])`, nil, true)        // non-empty arrays: true
 	expectRun(t, `out = bool([])`, nil, false)        // empty array: false
 	expectRun(t, `out = bool({a: 1})`, nil, true)     // non-empty maps: true

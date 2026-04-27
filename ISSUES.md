@@ -450,19 +450,19 @@ shift counts pass through `uint64(rv)` and produce huge values.
 - **Fix:** in the wrapper, validate `0 ≤ rv < 8/16/32/64` and return
   `ErrInvalidOperator` otherwise — match Go's runtime panic.
 
-### 5.5 `Float*.IsFalsy` returns true only for NaN &nbsp; **LOW**
+### 5.5 `Float*.IsFalsy` returns true only for NaN &nbsp; **LOW** &nbsp; ✅
 
 Go convention says `0.0` is falsy; rumo's `Float32`/`Float64.IsFalsy`
 treats `NaN` as falsy and `0.0` as *truthy*. The opposite of `Int`
 where `0` is falsy. Document or reconcile.
 
-### 5.6 `Char` zero value is falsy &nbsp; **LOW**
+### 5.6 `Char` zero value is falsy &nbsp; **LOW** &nbsp; ✅
 
 `vm/objects.go:578` `Char.IsFalsy() = (Value == 0)`. `'\x00'` is a
 valid character; `if c { … }` skips the body for NUL even though
 the script writer means "I have a character".
 
-### 5.7 `Float32 == Float32` uses bit-identity not numerical equality &nbsp; **LOW**
+### 5.7 `Float32 == Float32` uses bit-identity not numerical equality &nbsp; **LOW** &nbsp; ✅
 
 `vm/objects.go:796-803`. `NaN == NaN` should be false per IEEE 754 —
 let me double-check. Reading the code:
@@ -480,7 +480,7 @@ That's IEEE compare (NaN != NaN). Good. But `Map` keys / dedup uses
 pattern. Two NaNs with different mantissas dedup separately; same
 NaN written twice dedups. Inconsistent.
 
-### 5.8 Divisor `0` for `Float` produces `Inf`/`NaN`, not error &nbsp; **LOW**
+### 5.8 Divisor `0` for `Float` produces `Inf`/`NaN`, not error &nbsp; **LOW** &nbsp; ✅
 
 `Float64.BinaryOp Quo` with `rhs.Value == 0` returns `Inf`. `Int.Quo`
 returns `ErrDivisionByZero`. Mixed-type operations behave
