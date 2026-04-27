@@ -9,21 +9,12 @@ TEST_FORMAT ?= pkgname
 
 define build
 	@mkdir -p build
-	$(eval OUTPUT := $(if $(filter windows,$(1)),rumo-$(1)-$(2).exe,rumo-$(1)-$(2)))
-	$(eval URL := $(shell if [ -z "$(VERSION)" ]; then echo -n "" ; else echo -n https://github.com/malivvan/rumo/releases/download/$(VERSION)/$(OUTPUT); fi))
+	$(eval TAGS := $(shell echo -n "$(4)" | tr ' ' ','))
+	$(eval URL := $(shell if [ -z "$(VERSION)" ]; then echo -n "" ; else echo -n https://github.com/malivvan/rumo/releases/download/$(VERSION)/$(5); fi))
 	$(eval SERIAL := $(shell if [ -z "$(VERSION)" ]; then uuidgen --random ; else uuidgen --sha1 --namespace @url --name $(URL); fi))
-	@echo "$(OUTPUT)"
-	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) GOFLAGS=-tags="$(4)" cyclonedx-gomod app -json -packages -licenses -serial=$(SERIAL) -output build/$(OUTPUT).json -main ./cmd > /dev/null 2>&1
-	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) go build -trimpath -tags="$(4)" -ldflags="$(3) -buildid=$(SERIAL) -X github.com/malivvan/rumo.commit=$(COMMIT) -X github.com/malivvan/rumo.version=$(VERSION)" -o build/$(OUTPUT) ./cmd
-	@if [ ! -f build/release.md ]; then \
-	  echo "| filename | serial |" > build/release.md; \
-	  echo "|----------|--------|" >> build/release.md; \
-	fi
-	@if [ -z "$(VERSION)" ]; then \
-	  echo "| $(OUTPUT) | $(SERIAL) |" >> build/release.md; \
-	else \
-	  echo "| [$(OUTPUT)]($(URL)) | [$(SERIAL)]($(URL).json) |" >> build/release.md; \
-	fi
+	@echo "$(5) [$(TAGS)]"
+	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) GOFLAGS=-tags="$(TAGS)" cyclonedx-gomod app -json -packages -licenses -serial=$(SERIAL) -output build/$(5).json -main ./cmd > /dev/null 2>&1
+	@CGO_ENABLED=0 GOOS=$(1) GOARCH=$(2) go build -trimpath -tags="$(TAGS)" -ldflags="$(3) -buildid=$(SERIAL) -X github.com/malivvan/rumo.commit=$(COMMIT) -X github.com/malivvan/rumo.version=$(VERSION)" -o build/$(5) ./cmd
 endef
 
 .PHONY: install/build
@@ -61,16 +52,17 @@ preview: clean ## Build the project for the current platform with optimizations
 
 .PHONY: release
 release: clean ## Build the project for all platforms with optimizations
-	$(call build,linux,386,-s -w,)
-	$(call build,linux,amd64,-s -w,)
-	$(call build,linux,arm,-s -w,)
-	$(call build,linux,arm64,-s -w,)
-	$(call build,darwin,amd64,-s -w,)
-	$(call build,darwin,arm64,-s -w,)
-	$(call build,windows,amd64,-s -w,)
-	$(call build,windows,386,-s -w,)
-	$(call build,windows,arm,-s -w,)
-	$(call build,windows,arm64,-s -w,)
+	$(call build,linux,386,-s -w,readline,rumo_linux_386)
+	$(call build,linux,amd64,-s -w,readline,rumo_linux_amd64)
+	$(call build,linux,arm,-s -w,readline,rumo_linux_arm)
+	$(call build,linux,arm64,-s -w,readline,rumo_linux_arm64)
+	$(call build,darwin,amd64,-s -w,readline,rumo_darwin_amd64)
+	$(call build,darwin,arm64,-s -w,readline,rumo_darwin_arm64)
+	$(call build,windows,amd64,-s -w,readline,rumo_windows_amd64.exe)
+	$(call build,windows,386,-s -w,readline,rumo_windows_386.exe)
+	$(call build,windows,arm,-s -w,readline,rumo_windows_arm.exe)
+	$(call build,windows,arm64,-s -w,readline,rumo_windows_arm64.exe)
+	$(call build,wasip1,wasm,-s -w,,rumo_wasip1.wasm)
 
 .PHONY: info
 info: ## Show information about the dependencies
