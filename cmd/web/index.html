@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>rumo · js/wasm playground</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+        :root {
+            color-scheme: dark light;
+            --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 1rem 1.25rem;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        h1 { font-size: 1.4rem; margin: 0 0 0.5rem; }
+        .meta { color: #888; font-size: 0.85rem; margin-bottom: 1rem; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        .panel {
+            display: flex;
+            flex-direction: column;
+            min-height: 14rem;
+        }
+        textarea, pre {
+            font-family: var(--mono);
+            font-size: 0.9rem;
+            line-height: 1.4;
+            border: 1px solid #888;
+            border-radius: 4px;
+            padding: 0.5rem;
+            box-sizing: border-box;
+            width: 100%;
+            min-height: 14rem;
+            resize: vertical;
+            background: rgba(127,127,127,0.06);
+        }
+        pre { white-space: pre-wrap; word-break: break-word; margin: 0; overflow: auto; }
+        button {
+            font-size: 0.9rem;
+            padding: 0.45rem 0.8rem;
+            margin-right: 0.4rem;
+            border: 1px solid #888;
+            border-radius: 4px;
+            background: rgba(127,127,127,0.1);
+            cursor: pointer;
+        }
+        button:hover { background: rgba(127,127,127,0.25); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        label { display: inline-block; margin-right: 1rem; font-size: 0.85rem; }
+        h2 { font-size: 1rem; margin: 1.25rem 0 0.4rem; }
+        .small { font-size: 0.8rem; color: #888; }
+        .toolbar { margin: 0.5rem 0; }
+        .file-list {
+            font-family: var(--mono);
+            font-size: 0.85rem;
+            border: 1px solid #888;
+            border-radius: 4px;
+            padding: 0.4rem 0.6rem;
+            min-height: 2.5rem;
+        }
+        .file-list .empty { color: #888; }
+        @media (max-width: 720px) {
+            .row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <h1>rumo · js/wasm</h1>
+    <div class="meta" id="meta">connecting to rumo SharedWorker…</div>
+
+    <div class="toolbar">
+        <button id="run">▶ run</button>
+        <button id="compile">build → bytecode</button>
+        <button id="runc" disabled>▶ run bytecode</button>
+        <button id="spawn">spawn (routine)</button>
+        <button id="cancel" disabled>cancel routine</button>
+        <button id="clear">clear output</button>
+    </div>
+
+    <div class="row">
+        <div class="panel">
+            <h2>source <span class="small" id="srcInfo"></span></h2>
+            <textarea id="src" spellcheck="false">fmt := import("fmt")
+times := import("times")
+
+ping := chan(4)
+pong := chan(4)
+
+go func() {
+    for i := 0; i < 5; i++ {
+        msg := ping.recv()
+        fmt.println("worker got:", msg)
+        pong.send(msg + 1)
+    }
+}()
+
+for i := 0; i < 5; i++ {
+    ping.send(i)
+    fmt.println("main got:", pong.recv())
+    times.sleep(times.millisecond * 50)
+}
+fmt.println("done.")
+</textarea>
+        </div>
+        <div class="panel">
+            <h2>output</h2>
+            <pre id="out"></pre>
+        </div>
+    </div>
+
+    <h2>shared filesystem</h2>
+    <div class="toolbar">
+        <input id="fsName" placeholder="path (e.g. helper.rumo)" style="font-family:var(--mono); padding:0.3rem 0.5rem;">
+        <button id="fsAdd">add file from source ⇒ FS</button>
+        <button id="fsRefresh">refresh list</button>
+        <button id="fsClear">clear FS</button>
+    </div>
+    <div class="file-list" id="fsList"><span class="empty">(empty)</span></div>
+
+    <h2>modules</h2>
+    <pre id="modules" class="small">…</pre>
+
+    <script src="./rumo.js"></script>
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const out = $("out");
+        const meta = $("meta");
+        const srcInfo = $("srcInfo");
+        const append = (s) => { out.textContent += s; out.scrollTop = out.scrollHeight; };
+
+        let rumo = null;
+        let lastBytecode = null;
+        let activeRoutine = null;
+
+        async function init() {
+            try {
+                rumo = await Rumo.connect("./worker.js");
+            } catch (err) {
+                meta.textContent = "failed to connect: " + err.message;
+                return;
+            }
+            const v = await rumo.version();
+            const c = await rumo.commit();
+            meta.textContent = `connected · rumo ${v} (${c}) · runtime running in SharedWorker`;
+            const mods = await rumo.modules();
+            $("modules").textContent = mods.join(", ");
+            await refreshFiles();
+        }
+
+        $("run").onclick = async () => {
+            out.textContent = "";
+            const t = performance.now();
+            try {
+                const res = await rumo.run($("src").value, {
+                    path: "main.rumo",
+                    onOutput: append,
+                });
+                if (res.error) append("\n[error] " + res.error + "\n");
+                append(`\n[ran in ${(performance.now() - t).toFixed(1)} ms]\n`);
+            } catch (err) {
+                append("\n[exception] " + err.message + "\n");
+            }
+        };
+
+        $("compile").onclick = async () => {
+            try {
+                lastBytecode = await rumo.compile($("src").value, "main.rumo");
+                $("runc").disabled = false;
+                srcInfo.textContent = `(compiled · ${lastBytecode.byteLength} bytes)`;
+                append(`\n[compiled to ${lastBytecode.byteLength} bytes of bytecode]\n`);
+            } catch (err) {
+                append("\n[compile error] " + err.message + "\n");
+            }
+        };
+
+        $("runc").onclick = async () => {
+            if (!lastBytecode) return;
+            out.textContent = "";
+            try {
+                const res = await rumo.runCompiled(lastBytecode, { onOutput: append });
+                if (res.error) append("\n[error] " + res.error + "\n");
+            } catch (err) {
+                append("\n[exception] " + err.message + "\n");
+            }
+        };
+
+        $("spawn").onclick = async () => {
+            out.textContent = "";
+            try {
+                activeRoutine = await rumo.spawn($("src").value, {
+                    path: "spawn.rumo",
+                    onOutput: append,
+                });
+                $("cancel").disabled = false;
+                append(`[spawned routine #${activeRoutine.id}]\n`);
+                activeRoutine.done.then((d) => {
+                    append(`\n[routine #${activeRoutine.id} done${d.error ? " — " + d.error : ""}]\n`);
+                    $("cancel").disabled = true;
+                });
+            } catch (err) {
+                append("\n[spawn error] " + err.message + "\n");
+            }
+        };
+
+        $("cancel").onclick = async () => {
+            if (!activeRoutine) return;
+            await activeRoutine.cancel();
+            append(`\n[cancel signal sent to routine #${activeRoutine.id}]\n`);
+        };
+
+        $("clear").onclick = () => { out.textContent = ""; };
+
+        $("fsAdd").onclick = async () => {
+            const name = $("fsName").value.trim();
+            if (!name) {
+                append("\n[fs] enter a path first\n");
+                return;
+            }
+            await rumo.fs.put(name, $("src").value);
+            await refreshFiles();
+        };
+
+        $("fsRefresh").onclick = refreshFiles;
+
+        $("fsClear").onclick = async () => {
+            await rumo.fs.clear();
+            await refreshFiles();
+        };
+
+        async function refreshFiles() {
+            const list = await rumo.fs.list();
+            const el = $("fsList");
+            if (!list.length) {
+                el.innerHTML = "<span class=\"empty\">(empty)</span>";
+                return;
+            }
+            el.textContent = list.join("\n");
+        }
+
+        init();
+    </script>
+</body>
+</html>

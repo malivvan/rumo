@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -329,7 +330,25 @@ type Program struct {
 	maxStringLen  int
 	args          []string
 	permissions   vm.Permissions
+	stdin         io.Reader
+	stdout        io.Writer
 	lock          sync.RWMutex
+}
+
+// SetStdin overrides the reader used for the script's standard input. When nil
+// (the default), os.Stdin is used.
+func (p *Program) SetStdin(r io.Reader) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.stdin = r
+}
+
+// SetStdout overrides the writer used for the script's standard output. When
+// nil (the default), os.Stdout is used.
+func (p *Program) SetStdout(w io.Writer) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.stdout = w
 }
 
 // SetArgs sets the argument list that will be visible to the script via args().
@@ -487,6 +506,8 @@ func (p *Program) Run() error {
 	maxStringLen := p.maxStringLen
 	args := p.args
 	permissions := p.permissions
+	stdin := p.stdin
+	stdout := p.stdout
 	p.lock.RUnlock()
 
 	v := vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions})
@@ -496,6 +517,12 @@ func (p *Program) Run() error {
 		args = []string{}
 	}
 	v.Args = args
+	if stdin != nil {
+		v.In = stdin
+	}
+	if stdout != nil {
+		v.Out = stdout
+	}
 	err := v.Run()
 
 	// Write back modified globals under a brief write lock.
@@ -517,6 +544,8 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 	maxStringLen := p.maxStringLen
 	args := p.args
 	permissions := p.permissions
+	stdin := p.stdin
+	stdout := p.stdout
 	p.lock.RUnlock()
 
 	v := vm.NewVM(ctx, bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions})
@@ -526,6 +555,12 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 		args = []string{}
 	}
 	v.Args = args
+	if stdin != nil {
+		v.In = stdin
+	}
+	if stdout != nil {
+		v.Out = stdout
+	}
 	ch := make(chan error, 1)
 	go func() {
 		ch <- v.Run()
