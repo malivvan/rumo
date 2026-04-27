@@ -40,6 +40,7 @@ const (
 	_stringIterator   byte = 102
 	_bytesIterator    byte = 103
 	_builtinFunction  byte = 104
+	_rangeObject      byte = 105
 )
 
 var _typeMap = map[byte]func() Object{
@@ -68,6 +69,7 @@ var _typeMap = map[byte]func() Object{
 	_compiledFunction: func() Object { return &CompiledFunction{SourceMap: make(map[int]parser.Pos)} },
 	_builtinFunction:  func() Object { return &BuiltinFunction{} },
 	_error:            func() Object { return &Error{} },
+	_rangeObject:      func() Object { return &RangeObject{} },
 }
 
 // MakeObject creates a new object based on the given type code.
@@ -139,6 +141,8 @@ func TypeOfObject(o Object) byte {
 		return _builtinFunction
 	case *Error:
 		return _error
+	case *RangeObject:
+		return _rangeObject
 	default:
 		return 0
 	}
@@ -222,6 +226,8 @@ func SizeOfObject(o Object) int {
 		return codec.SizeByte() + s
 	case _error:
 		return codec.SizeByte() + SizeOfObject(o.(*Error).Value)
+	case _rangeObject:
+		return codec.SizeByte() + codec.SizeInt64()*3
 	default:
 		panic("sizeof: unsupported type: " + o.TypeName())
 	}
@@ -333,6 +339,12 @@ func MarshalObject(n int, b []byte, o Object) int {
 	case _error:
 		n = codec.MarshalByte(n, b, _error)
 		n = MarshalObject(n, b, o.(*Error).Value)
+	case _rangeObject:
+		r := o.(*RangeObject)
+		n = codec.MarshalByte(n, b, _rangeObject)
+		n = codec.MarshalInt64(n, b, r.Start)
+		n = codec.MarshalInt64(n, b, r.Stop)
+		n = codec.MarshalInt64(n, b, r.Step)
 	default:
 		panic("marshal: unsupported type: " + o.TypeName())
 	}
@@ -548,6 +560,21 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 			return nn, nil, err
 		}
 		return n, o, nil
+	case _rangeObject:
+		r := o.(*RangeObject)
+		n, r.Start, err = codec.UnmarshalInt64(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, r.Stop, err = codec.UnmarshalInt64(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, r.Step, err = codec.UnmarshalInt64(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, r, nil
 	}
 	return nn, nil, errors.New("unmarshal: unsupported type: " + o.TypeName())
 }

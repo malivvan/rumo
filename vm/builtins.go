@@ -290,6 +290,8 @@ func builtinLen(ctx context.Context, args ...Object) (Object, error) {
 		return &Int{Value: int64(len(arg.Value))}, nil
 	case *ImmutableMap:
 		return &Int{Value: int64(len(arg.Value))}, nil
+	case *RangeObject:
+		return &Int{Value: rangeLen(arg.Start, arg.Stop, arg.Step)}, nil
 	default:
 		return nil, ErrInvalidArgumentType{
 			Name:     "first",
@@ -343,7 +345,7 @@ func builtinRange(ctx context.Context, args ...Object) (Object, error) {
 		step = &Int{Value: int64(1)}
 	}
 
-	return buildRange(start.Value, stop.Value, step.Value), nil
+	return &RangeObject{Start: start.Value, Stop: stop.Value, Step: step.Value}, nil
 }
 
 // builtinArgs returns the argument list associated with the running VM
@@ -364,23 +366,6 @@ func builtinArgs(ctx context.Context, callArgs ...Object) (Object, error) {
 	return &Array{Value: result}, nil
 }
 
-func buildRange(start, stop, step int64) *Array {
-	array := &Array{}
-	if start <= stop {
-		for i := start; i < stop; i += step {
-			array.Value = append(array.Value, &Int{
-				Value: i,
-			})
-		}
-	} else {
-		for i := start; i > stop; i -= step {
-			array.Value = append(array.Value, &Int{
-				Value: i,
-			})
-		}
-	}
-	return array
-}
 
 func builtinFormat(ctx context.Context, args ...Object) (Object, error) {
 	numArgs := len(args)

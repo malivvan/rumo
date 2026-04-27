@@ -353,6 +353,135 @@ func Test_builtinSplice(t *testing.T) {
 	}
 }
 
+// TestRangeLazyMaterialization verifies that range(start, stop) returns a lazy
+// RangeObject rather than a pre-allocated slice of all values. Prior to the fix,
+// builtinRange created a full *Array with every element materialised upfront,
+// causing O(N) heap allocation just to call range(0, N).
+func TestRangeLazyMaterialization(t *testing.T) {
+	var rangeFunc func(ctx context.Context, args ...vm.Object) (vm.Object, error)
+	for _, f := range vm.GetAllBuiltinFunctions() {
+		if f.Name == "range" {
+			rangeFunc = f.Value
+			break
+		}
+	}
+	if rangeFunc == nil {
+		t.Fatal("range builtin not found")
+	}
+
+	const N = 100_000
+	result, err := rangeFunc(context.Background(), &vm.Int{Value: 0}, &vm.Int{Value: N})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// range(0, N) must NOT eagerly allocate an array of N elements.
+	if _, ok := result.(*vm.Array); ok {
+		t.Errorf("range(0, %d) returned a pre-allocated *vm.Array; "+
+			"expected a lazy RangeObject to avoid O(N) heap allocation", N)
+	}
+
+	// The result must still be iterable.
+	if !result.CanIterate() {
+		t.Fatal("range result must be iterable")
+	}
+
+	// Iterating the result must yield all expected values.
+	iter := result.Iterate()
+	want := int64(0)
+	for iter.Next() {
+		v, ok := iter.Value().(*vm.Int)
+		if !ok {
+			t.Fatalf("iterator value is %T, want *vm.Int", iter.Value())
+		}
+		if v.Value != want {
+			t.Fatalf("at index %d: got %d, want %d", want, v.Value, want)
+		}
+		want++
+	}
+	if want != N {
+		t.Fatalf("iterated %d values, want %d", want, N)
+	}
+}
+
+// TestRangeLazyIterationValues checks that a lazy range produces the right
+// values for ascending, descending, and stepped ranges.
+func TestRangeLazyIterationValues(t *testing.T) {
+	var rangeFunc func(ctx context.Context, args ...vm.Object) (vm.Object, error)
+	for _, f := range vm.GetAllBuiltinFunctions() {
+		if f.Name == "range" {
+			rangeFunc = f.Value
+			break
+		}
+	}
+	if rangeFunc == nil {
+		t.Fatal("range builtin not found")
+	}
+
+	collect := func(t *testing.T, args ...vm.Object) []int64 {
+		t.Helper()
+		result, err := rangeFunc(context.Background(), args...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		iter := result.Iterate()
+		var out []int64
+		for iter.Next() {
+			v, ok := iter.Value().(*vm.Int)
+			if !ok {
+				t.Fatalf("iterator value is %T, want *vm.Int", iter.Value())
+			}
+			out = append(out, v.Value)
+		}
+		return out
+	}
+
+	assertEqual := func(t *testing.T, got, want []int64) {
+		t.Helper()
+		if len(got) != len(want) {
+			t.Fatalf("len mismatch: got %v, want %v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("index %d: got %d, want %d", i, got[i], want[i])
+			}
+		}
+	}
+
+	t.Run("ascending_default_step", func(t *testing.T) {
+		got := collect(t, &vm.Int{Value: 0}, &vm.Int{Value: 5})
+		assertEqual(t, got, []int64{0, 1, 2, 3, 4})
+	})
+
+	t.Run("ascending_step_2", func(t *testing.T) {
+		got := collect(t, &vm.Int{Value: 0}, &vm.Int{Value: 5}, &vm.Int{Value: 2})
+		assertEqual(t, got, []int64{0, 2, 4})
+	})
+
+	t.Run("descending", func(t *testing.T) {
+		got := collect(t, &vm.Int{Value: 0}, &vm.Int{Value: -5})
+		assertEqual(t, got, []int64{0, -1, -2, -3, -4})
+	})
+
+	t.Run("descending_step_2", func(t *testing.T) {
+		got := collect(t, &vm.Int{Value: 0}, &vm.Int{Value: -10}, &vm.Int{Value: 2})
+		assertEqual(t, got, []int64{0, -2, -4, -6, -8})
+	})
+
+	t.Run("empty_range", func(t *testing.T) {
+		got := collect(t, &vm.Int{Value: 0}, &vm.Int{Value: 0})
+		assertEqual(t, got, nil)
+	})
+
+	t.Run("large_range_no_alloc", func(t *testing.T) {
+		// Calling range(0, 1_000_000) should not OOM or take excessive time.
+		got := collect(t, &vm.Int{Value: 0}, &vm.Int{Value: 1_000_000})
+		if len(got) != 1_000_000 {
+			t.Fatalf("expected 1_000_000 values, got %d", len(got))
+		}
+	})
+}
+
 func Test_builtinRange(t *testing.T) {
 	var builtinRange func(ctx context.Context, args ...vm.Object) (vm.Object, error)
 	for _, f := range vm.GetAllBuiltinFunctions() {
@@ -367,7 +496,7 @@ func Test_builtinRange(t *testing.T) {
 	tests := []struct {
 		name      string
 		args      []vm.Object
-		result    *vm.Array
+		result    []int64 // expected iteration values (nil means empty/no check)
 		wantErr   bool
 		wantedErr error
 	}{
@@ -413,77 +542,32 @@ func Test_builtinRange(t *testing.T) {
 		{name: "same bound",
 			args:    []vm.Object{&vm.Int{}, &vm.Int{}},
 			wantErr: false,
-			result: &vm.Array{
-				Value: nil,
-			},
+			result:  nil,
 		},
 		{name: "positive range",
 			args:    []vm.Object{&vm.Int{}, &vm.Int{Value: 5}},
 			wantErr: false,
-			result: &vm.Array{
-				Value: []vm.Object{
-					intObject(0),
-					intObject(1),
-					intObject(2),
-					intObject(3),
-					intObject(4),
-				},
-			},
+			result:  []int64{0, 1, 2, 3, 4},
 		},
 		{name: "negative range",
 			args:    []vm.Object{&vm.Int{}, &vm.Int{Value: -5}},
 			wantErr: false,
-			result: &vm.Array{
-				Value: []vm.Object{
-					intObject(0),
-					intObject(-1),
-					intObject(-2),
-					intObject(-3),
-					intObject(-4),
-				},
-			},
+			result:  []int64{0, -1, -2, -3, -4},
 		},
-
 		{name: "positive with step",
 			args:    []vm.Object{&vm.Int{}, &vm.Int{Value: 5}, &vm.Int{Value: 2}},
 			wantErr: false,
-			result: &vm.Array{
-				Value: []vm.Object{
-					intObject(0),
-					intObject(2),
-					intObject(4),
-				},
-			},
+			result:  []int64{0, 2, 4},
 		},
-
 		{name: "negative with step",
 			args:    []vm.Object{&vm.Int{}, &vm.Int{Value: -10}, &vm.Int{Value: 2}},
 			wantErr: false,
-			result: &vm.Array{
-				Value: []vm.Object{
-					intObject(0),
-					intObject(-2),
-					intObject(-4),
-					intObject(-6),
-					intObject(-8),
-				},
-			},
+			result:  []int64{0, -2, -4, -6, -8},
 		},
-
 		{name: "large range",
 			args:    []vm.Object{intObject(-10), intObject(10), &vm.Int{Value: 3}},
 			wantErr: false,
-			result: &vm.Array{
-				Value: []vm.Object{
-					intObject(-10),
-					intObject(-7),
-					intObject(-4),
-					intObject(-1),
-					intObject(2),
-					intObject(5),
-					intObject(8),
-				},
-			},
+			result:  []int64{-10, -7, -4, -1, 2, 5, 8},
 		},
 	}
 	for _, tt := range tests {
@@ -497,10 +581,25 @@ func Test_builtinRange(t *testing.T) {
 			if tt.wantErr && tt.wantedErr.Error() != err.Error() {
 				t.Errorf("builtinRange() error = %v, wantedErr %v",
 					err, tt.wantedErr)
+				return
 			}
-			if tt.result != nil && !reflect.DeepEqual(tt.result, got) {
-				t.Errorf("builtinRange() arrays are not equal expected"+
-					" %s, got %s", tt.result, got.(*vm.Array))
+			if tt.result != nil {
+				// Collect iterated values and compare.
+				if !got.CanIterate() {
+					t.Fatalf("range result is not iterable")
+				}
+				iter := got.Iterate()
+				var vals []int64
+				for iter.Next() {
+					v, ok := iter.Value().(*vm.Int)
+					if !ok {
+						t.Fatalf("iterator value is %T, want *vm.Int", iter.Value())
+					}
+					vals = append(vals, v.Value)
+				}
+				if !reflect.DeepEqual(vals, tt.result) {
+					t.Errorf("builtinRange() values = %v, want %v", vals, tt.result)
+				}
 			}
 		})
 	}

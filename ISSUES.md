@@ -422,7 +422,7 @@ removes the channel will introduce a race silently.
 
 ## 4. Performance & resource use
 
-### 4.1 `range(start, stop, step)` is eagerly materialized &nbsp; **HIGH**
+### 4.1 `range(start, stop, step)` is eagerly materialized &nbsp; **HIGH** ✅
 
 `vm/builtins.go:367-383` builds an `[]Object` of length
 `(stop-start)/step` upfront. `range(0, 1_000_000_000)` allocates 8 GB
