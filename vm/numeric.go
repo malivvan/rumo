@@ -18,8 +18,9 @@ type Rune = Char
 
 // signedIntBinaryOp implements binary operators for signed integer types by
 // upcasting both operands to int64. wrap converts the int64 result back into
-// the appropriate concrete type.
-func signedIntBinaryOp(op token.Token, lv, rv int64, wrap func(int64) Object) (Object, error) {
+// the appropriate concrete type. bits is the effective bit-width of the type
+// (e.g. 8, 16, 32, 64); shift amounts outside [0, bits) return ErrInvalidOperator.
+func signedIntBinaryOp(op token.Token, lv, rv int64, bits int, wrap func(int64) Object) (Object, error) {
 	switch op {
 	case token.Add:
 		return wrap(lv + rv), nil
@@ -46,8 +47,14 @@ func signedIntBinaryOp(op token.Token, lv, rv int64, wrap func(int64) Object) (O
 	case token.AndNot:
 		return wrap(lv &^ rv), nil
 	case token.Shl:
+		if rv < 0 || rv >= int64(bits) {
+			return nil, ErrInvalidOperator
+		}
 		return wrap(lv << uint64(rv)), nil
 	case token.Shr:
+		if rv < 0 || rv >= int64(bits) {
+			return nil, ErrInvalidOperator
+		}
 		return wrap(lv >> uint64(rv)), nil
 	case token.Less:
 		return boolObject(lv < rv), nil
@@ -62,8 +69,9 @@ func signedIntBinaryOp(op token.Token, lv, rv int64, wrap func(int64) Object) (O
 }
 
 // unsignedIntBinaryOp implements binary operators for unsigned integer types
-// by upcasting both operands to uint64.
-func unsignedIntBinaryOp(op token.Token, lv, rv uint64, wrap func(uint64) Object) (Object, error) {
+// by upcasting both operands to uint64. bits is the effective bit-width of the
+// type (e.g. 8, 16, 32, 64); shift amounts >= bits return ErrInvalidOperator.
+func unsignedIntBinaryOp(op token.Token, lv, rv uint64, bits int, wrap func(uint64) Object) (Object, error) {
 	switch op {
 	case token.Add:
 		return wrap(lv + rv), nil
@@ -90,8 +98,14 @@ func unsignedIntBinaryOp(op token.Token, lv, rv uint64, wrap func(uint64) Object
 	case token.AndNot:
 		return wrap(lv &^ rv), nil
 	case token.Shl:
+		if rv >= uint64(bits) {
+			return nil, ErrInvalidOperator
+		}
 		return wrap(lv << rv), nil
 	case token.Shr:
+		if rv >= uint64(bits) {
+			return nil, ErrInvalidOperator
+		}
 		return wrap(lv >> rv), nil
 	case token.Less:
 		return boolObject(lv < rv), nil
@@ -121,7 +135,7 @@ func (o *Byte) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return signedIntBinaryOp(op, int64(int8(o.Value)), rv, func(r int64) Object { return &Byte{Value: byte(r)} })
+	return signedIntBinaryOp(op, int64(int8(o.Value)), rv, 8, func(r int64) Object { return &Byte{Value: byte(r)} })
 }
 
 // Int8 represents a signed 8-bit integer.
@@ -140,7 +154,7 @@ func (o *Int8) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return signedIntBinaryOp(op, int64(o.Value), rv, func(r int64) Object { return &Int8{Value: int8(r)} })
+	return signedIntBinaryOp(op, int64(o.Value), rv, 8, func(r int64) Object { return &Int8{Value: int8(r)} })
 }
 
 // Uint8 represents an unsigned 8-bit integer.
@@ -159,7 +173,7 @@ func (o *Uint8) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return unsignedIntBinaryOp(op, uint64(o.Value), rv, func(r uint64) Object { return &Uint8{Value: uint8(r)} })
+	return unsignedIntBinaryOp(op, uint64(o.Value), rv, 8, func(r uint64) Object { return &Uint8{Value: uint8(r)} })
 }
 
 // Int16 represents a signed 16-bit integer.
@@ -178,7 +192,7 @@ func (o *Int16) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return signedIntBinaryOp(op, int64(o.Value), rv, func(r int64) Object { return &Int16{Value: int16(r)} })
+	return signedIntBinaryOp(op, int64(o.Value), rv, 16, func(r int64) Object { return &Int16{Value: int16(r)} })
 }
 
 // Uint16 represents an unsigned 16-bit integer.
@@ -197,7 +211,7 @@ func (o *Uint16) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return unsignedIntBinaryOp(op, uint64(o.Value), rv, func(r uint64) Object { return &Uint16{Value: uint16(r)} })
+	return unsignedIntBinaryOp(op, uint64(o.Value), rv, 16, func(r uint64) Object { return &Uint16{Value: uint16(r)} })
 }
 
 // Int32 represents a signed 32-bit integer.
@@ -216,7 +230,7 @@ func (o *Int32) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return signedIntBinaryOp(op, int64(o.Value), rv, func(r int64) Object { return &Int32{Value: int32(r)} })
+	return signedIntBinaryOp(op, int64(o.Value), rv, 32, func(r int64) Object { return &Int32{Value: int32(r)} })
 }
 
 // Uint represents an unsigned 32-bit integer (per rumo Type Mapping).
@@ -235,7 +249,7 @@ func (o *Uint) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return unsignedIntBinaryOp(op, uint64(o.Value), rv, func(r uint64) Object { return &Uint{Value: uint32(r)} })
+	return unsignedIntBinaryOp(op, uint64(o.Value), rv, 32, func(r uint64) Object { return &Uint{Value: uint32(r)} })
 }
 
 // Uint64 represents an unsigned 64-bit integer.
@@ -254,7 +268,7 @@ func (o *Uint64) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	if !ok {
 		return nil, ErrInvalidOperator
 	}
-	return unsignedIntBinaryOp(op, o.Value, rv, func(r uint64) Object { return &Uint64{Value: r} })
+	return unsignedIntBinaryOp(op, o.Value, rv, 64, func(r uint64) Object { return &Uint64{Value: r} })
 }
 
 // Ptr represents an untyped pointer (unsafe.Pointer in Go, void* in C).

@@ -117,8 +117,9 @@ func TestRunCompiledWithModulesExecutesCustomModule(t *testing.T) {
 
 func TestRunREPLWritesEvaluationToProvidedWriter(t *testing.T) {
 	var out bytes.Buffer
+	var errOut bytes.Buffer
 
-	rumo.RunREPL(context.Background(), strings.NewReader("1 + 1\n"), &out, ">> ", nil)
+	rumo.RunREPL(context.Background(), strings.NewReader("1 + 1\n"), &out, &errOut, nil)
 
 	got := out.String()
 	if !strings.Contains(got, "2\n") {
@@ -547,10 +548,11 @@ func TestNewVMDoesNotDefaultToOSArgs(t *testing.T) {
 // print functions write to the custom io.Writer passed to RunREPL, not os.Stdout.
 func TestRunREPLFmtPrintWritesToProvidedWriter(t *testing.T) {
 	var out bytes.Buffer
+	var errOut bytes.Buffer
 	// "fmt" is pre-imported globally by passing it in the modules slice, so no import
 	// statement is needed in the REPL line.
 	input := strings.NewReader(`fmt.println("hello-from-fmt")` + "\n")
-	rumo.RunREPL(context.Background(), input, &out, ">> ", []string{"fmt"})
+	rumo.RunREPL(context.Background(), input, &out, &errOut, []string{"fmt"})
 
 	got := out.String()
 	if !strings.Contains(got, "hello-from-fmt") {

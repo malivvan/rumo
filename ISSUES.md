@@ -428,7 +428,7 @@ no diagnostic.
   warning if the recursion would have been tail-call optimisable;
   document the trade-off.
 
-### 5.3 `OpBinaryOp Less`/`LessEq` swaps operands at compile time &nbsp; **MED**
+### 5.3 `OpBinaryOp Less`/`LessEq` swaps operands at compile time &nbsp; **MED** &nbsp; ✅
 
 `vm/compiler.go:133-150` rewrites `a < b` to `b > a`, generating only
 the `Greater`/`GreaterEq` opcodes. This is fine for symmetric numeric
@@ -440,7 +440,7 @@ mirror not implemented in `Int.BinaryOp`, the swapped form fails.
 - **Fix:** never swap; emit dedicated `OpLess`/`OpLessEq` opcodes.
   Cost is one byte per opcode in the VM dispatch table.
 
-### 5.4 `Int8`/`Int16`/`Uint*` shift width is not checked &nbsp; **MED**
+### 5.4 `Int8`/`Int16`/`Uint*` shift width is not checked &nbsp; **MED** &nbsp; ✅
 
 `vm/numeric.go` reuses `signedIntBinaryOp`/`unsignedIntBinaryOp`
 which operate on `int64`/`uint64`. `uint8(1) << 9 = 0` silently

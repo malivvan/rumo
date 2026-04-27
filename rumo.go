@@ -243,7 +243,7 @@ func RunREPL(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.W
 		}
 	}
 
-	rl, err := newReadline("> ", stdin, stdout, stderr)(&Completer{
+	rl, err := newReadline(">> ", stdin, stdout, stderr)(&Completer{
 		exports:     Exports(),
 		symbolTable: symbolTable,
 	})

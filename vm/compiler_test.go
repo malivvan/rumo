@@ -104,12 +104,12 @@ func TestCompiler_Compile(t *testing.T) {
 			concatInsts(
 				vm.MakeInstruction(parser.OpConstant, 0),
 				vm.MakeInstruction(parser.OpConstant, 1),
-				vm.MakeInstruction(parser.OpBinaryOp, 39),
+				vm.MakeInstruction(parser.OpBinaryOp, 38),
 				vm.MakeInstruction(parser.OpPop),
 				vm.MakeInstruction(parser.OpSuspend)),
 			objectsArray(
-				intObject(2),
-				intObject(1))))
+				intObject(1),
+				intObject(2))))
 
 	expectCompile(t, `1 >= 2`,
 		bytecode(
@@ -128,12 +128,12 @@ func TestCompiler_Compile(t *testing.T) {
 			concatInsts(
 				vm.MakeInstruction(parser.OpConstant, 0),
 				vm.MakeInstruction(parser.OpConstant, 1),
-				vm.MakeInstruction(parser.OpBinaryOp, 44),
+				vm.MakeInstruction(parser.OpBinaryOp, 43),
 				vm.MakeInstruction(parser.OpPop),
 				vm.MakeInstruction(parser.OpSuspend)),
 			objectsArray(
-				intObject(2),
-				intObject(1))))
+				intObject(1),
+				intObject(2))))
 
 	expectCompile(t, `1 == 2`,
 		bytecode(
@@ -926,9 +926,9 @@ func() {
 			concatInsts(
 				vm.MakeInstruction(parser.OpConstant, 0),
 				vm.MakeInstruction(parser.OpSetGlobal, 0),
-				vm.MakeInstruction(parser.OpConstant, 1),
 				vm.MakeInstruction(parser.OpGetGlobal, 0),
-				vm.MakeInstruction(parser.OpBinaryOp, 39),
+				vm.MakeInstruction(parser.OpConstant, 1),
+				vm.MakeInstruction(parser.OpBinaryOp, 38),
 				vm.MakeInstruction(parser.OpJumpFalsy, 31),
 				vm.MakeInstruction(parser.OpGetGlobal, 0),
 				vm.MakeInstruction(parser.OpConstant, 2),
@@ -975,9 +975,9 @@ func() {
 				vm.MakeInstruction(parser.OpConstant, 1),
 				vm.MakeInstruction(parser.OpNotEqual),
 				vm.MakeInstruction(parser.OpOrJump, 34),
-				vm.MakeInstruction(parser.OpConstant, 1),
 				vm.MakeInstruction(parser.OpGetGlobal, 0),
-				vm.MakeInstruction(parser.OpBinaryOp, 39),
+				vm.MakeInstruction(parser.OpConstant, 1),
+				vm.MakeInstruction(parser.OpBinaryOp, 38),
 				vm.MakeInstruction(parser.OpPop),
 				vm.MakeInstruction(parser.OpSuspend)),
 			objectsArray(
