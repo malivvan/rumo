@@ -494,7 +494,7 @@ forever (well, stack overflow). Same with `Copy`, `String()`,
 
 - **Fix:** track visited pointers in a per-call set.
 
-### 5.10 `Builtin` index baked into bytecode &nbsp; **MED**
+### 5.10 `Builtin` index baked into bytecode &nbsp; **MED** &nbsp; ✅
 
 `vm/builtins.go:13-79` populates `builtinFuncs` via `init()`. The
 *order* of `addBuiltinFunction` calls determines the integer index

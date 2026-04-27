@@ -33,7 +33,11 @@ const Magic = "RUMO"
 //	2: trailer replaced with a 32-byte SHA-256 digest.
 //	3: ImmutableMap encoding prepends an out-of-band module-name string so
 //	   the __module_name__ namespace cannot be spoofed by user script data.
-const FormatVersion uint16 = 3
+//	4: Bytecode encoding prepends a builtin name table so that OpGetBuiltin
+//	   indices are resolved by name at load time.  New builtins may now be
+//	   inserted anywhere in the registration list without corrupting compiled
+//	   bytecode (fixes issue 5.10: Builtin index baked into bytecode).
+const FormatVersion uint16 = 4
 
 // Script can simplify compilation and execution of embedded scripts.
 type Script struct {

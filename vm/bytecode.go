@@ -22,6 +22,127 @@ type Bytecode struct {
 	Constants    []Object
 }
 
+// collectBuiltinIndices scans bytecode instructions and returns the set of
+// OpGetBuiltin operand values (runtime builtin indices) that are referenced.
+func collectBuiltinIndices(insts []byte) map[int]bool {
+	used := make(map[int]bool)
+	i := 0
+	for i < len(insts) {
+		op := insts[i]
+		numOperands := parser.OpcodeOperands[op]
+		_, read := parser.ReadOperands(numOperands, insts[i+1:])
+		if op == parser.OpGetBuiltin {
+			used[int(insts[i+1])] = true
+		}
+		i += 1 + read
+	}
+	return used
+}
+
+// gatherBuiltinIndices returns the sorted unique set of builtin indices
+// referenced across the entire Bytecode (MainFunction + all compiled-function
+// constants).
+func (b *Bytecode) gatherBuiltinIndices() []int {
+	used := collectBuiltinIndices(b.MainFunction.Instructions)
+	for _, c := range b.Constants {
+		if fn, ok := c.(*CompiledFunction); ok {
+			for k, v := range collectBuiltinIndices(fn.Instructions) {
+				used[k] = v
+			}
+		}
+	}
+	indices := make([]int, 0, len(used))
+	for idx := range used {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+	return indices
+}
+
+// sizeBuiltinNameTable returns the byte count needed to encode the builtin
+// name table for the given sorted slice of builtin indices.
+func sizeBuiltinNameTable(indices []int) int {
+	n := codec.SizeInt(len(indices))
+	for _, idx := range indices {
+		n += codec.SizeByte() + codec.SizeString(builtinFuncs[idx].Name)
+	}
+	return n
+}
+
+// marshalBuiltinNameTable writes: [count varint] [(index byte, name string)…]
+// into b starting at offset n and returns the new offset.
+func marshalBuiltinNameTable(n int, b []byte, indices []int) int {
+	n = codec.MarshalInt(n, b, len(indices))
+	for _, idx := range indices {
+		n = codec.MarshalByte(n, b, byte(idx))
+		n = codec.MarshalString(n, b, builtinFuncs[idx].Name)
+	}
+	return n
+}
+
+// unmarshalBuiltinNameTable reads the builtin name table produced by
+// marshalBuiltinNameTable and returns a remap slice where
+// remap[serialized_index] == current_runtime_index.
+// An error is returned if a name in the table is not known to this build.
+func unmarshalBuiltinNameTable(n int, data []byte) (int, []int, error) {
+	// Default identity mapping so indices not listed in the table pass through.
+	remap := make([]int, 256)
+	for i := range remap {
+		remap[i] = i
+	}
+
+	var count int
+	var err error
+	n, count, err = codec.UnmarshalInt(n, data)
+	if err != nil {
+		return n, nil, fmt.Errorf("builtin name table: %w", err)
+	}
+	if count < 0 || count > 256 {
+		return n, nil, fmt.Errorf("builtin name table: invalid entry count %d", count)
+	}
+
+	// Build a name → current runtime-index lookup.
+	nameToIdx := make(map[string]int, len(builtinFuncs))
+	for idx, fn := range builtinFuncs {
+		nameToIdx[fn.Name] = idx
+	}
+
+	for i := 0; i < count; i++ {
+		var serializedIdx byte
+		n, serializedIdx, err = codec.UnmarshalByte(n, data)
+		if err != nil {
+			return n, nil, fmt.Errorf("builtin name table entry %d index: %w", i, err)
+		}
+		var name string
+		n, name, err = codec.UnmarshalString(n, data)
+		if err != nil {
+			return n, nil, fmt.Errorf("builtin name table entry %d name: %w", i, err)
+		}
+		runtimeIdx, ok := nameToIdx[name]
+		if !ok {
+			return n, nil, fmt.Errorf("unknown builtin function: %q", name)
+		}
+		remap[int(serializedIdx)] = runtimeIdx
+	}
+	return n, remap, nil
+}
+
+// patchBuiltinIndices rewrites all OpGetBuiltin operands in insts using the
+// provided remap table (remap[old_index] == new_index).
+func patchBuiltinIndices(insts []byte, remap []int) {
+	i := 0
+	for i < len(insts) {
+		op := insts[i]
+		numOperands := parser.OpcodeOperands[op]
+		_, read := parser.ReadOperands(numOperands, insts[i+1:])
+		if op == parser.OpGetBuiltin {
+			old := int(insts[i+1])
+			insts[i+1] = byte(remap[old])
+		}
+		i += 1 + read
+	}
+}
+
 // Equals compares two Bytecode instances for equality.
 func (b *Bytecode) Equals(other *Bytecode) bool {
 	if b == nil || other == nil {
@@ -52,11 +173,23 @@ func (b *Bytecode) Equals(other *Bytecode) bool {
 }
 
 // Marshal writes Bytecode data to the writer.
+// The encoding begins with a builtin name table that maps the OpGetBuiltin
+// indices used in this bytecode to their canonical names.  On Unmarshal the
+// names are resolved to the current runtime indices, so compiled bytecode
+// remains correct even when new builtins are inserted at arbitrary positions
+// in the registration list.
 func (b *Bytecode) Marshal() ([]byte, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+
+	// Collect the sorted set of builtin indices referenced by this bytecode.
+	indices := b.gatherBuiltinIndices()
+
 	n := 0
-	c := make([]byte, parser.SizeFileSet(b.FileSet)+SizeOfObject(b.MainFunction)+codec.SizeSlice[Object](b.Constants, SizeOfObject))
+	c := make([]byte,
+		sizeBuiltinNameTable(indices)+
+			parser.SizeFileSet(b.FileSet)+SizeOfObject(b.MainFunction)+codec.SizeSlice[Object](b.Constants, SizeOfObject))
+	n = marshalBuiltinNameTable(n, c, indices)
 	n = parser.MarshalFileSet(n, c, b.FileSet)
 	n = MarshalObject(n, c, b.MainFunction)
 	n = codec.MarshalSlice(n, c, b.Constants, MarshalObject)
@@ -106,6 +239,17 @@ func (b *Bytecode) Unmarshal(data []byte, modules *ModuleMap) (err error) {
 	}
 
 	n := 0
+
+	// Read the builtin name table and build a remap from serialized indices
+	// to current runtime indices.  This decouples on-disk bytecode from the
+	// order of addBuiltinFunction calls, so new builtins may be inserted
+	// anywhere in the list without corrupting existing compiled files.
+	var remap []int
+	n, remap, err = unmarshalBuiltinNameTable(n, data)
+	if err != nil {
+		return err
+	}
+
 	n, b.FileSet, err = parser.UnmarshalFileSet(n, data)
 	if err != nil {
 
@@ -126,6 +270,15 @@ func (b *Bytecode) Unmarshal(data []byte, modules *ModuleMap) (err error) {
 	n, b.Constants, err = codec.UnmarshalSlice[Object](n, data, UnmarshalObject)
 	if err != nil {
 		return err
+	}
+
+	// Patch OpGetBuiltin operands in all compiled functions using the remap
+	// built from the name table.
+	patchBuiltinIndices(b.MainFunction.Instructions, remap)
+	for _, c := range b.Constants {
+		if fn, ok := c.(*CompiledFunction); ok {
+			patchBuiltinIndices(fn.Instructions, remap)
+		}
 	}
 
 	for i, v := range b.Constants {
