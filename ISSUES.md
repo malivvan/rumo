@@ -452,7 +452,7 @@ the closures are static.
   the first time it is spawned; or do the isolation lazily on first
   `OpSetFree` from a child.
 
-### 4.4 `Map.IndexGet`/`IndexSet` always lock &nbsp; **MED**
+### 4.4 `Map.IndexGet`/`IndexSet` always lock &nbsp; **MED** &nbsp; 👩⚡
 
 `vm/objects.go:1409, 1425`. Single-threaded use is the common case;
 mutex traffic dominates micro-benchmarks. Even more so on `js/wasm`
@@ -487,7 +487,7 @@ gets it ignored by the very paths that should respect it.
   function `Default()`, and route every limit check through
   `vm.Config` of the running VM (look it up via context if needed).
 
-### 4.7 Default limits effectively unbounded &nbsp; **HIGH**
+### 4.7 Default limits effectively unbounded &nbsp; **HIGH** &nbsp; 👩
 
 `MaxStringLen = 2_147_483_647`, `MaxBytesLen = 2_147_483_647`,
 `MaxAllocs = -1`. Embedders running untrusted scripts get *zero*
