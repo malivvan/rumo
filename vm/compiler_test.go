@@ -1037,6 +1037,81 @@ func TestCompilerErrorReport(t *testing.T) {
 		"Compile Error: export not allowed inside function\n\tat test:1:10")
 }
 
+func TestCompilerDeferTailCallWarning(t *testing.T) {
+	// A function that uses defer AND ends with a call-then-return (tail call
+	// pattern) should warn, because the defer suppresses TCO.
+	expectCompileWarning(t,
+		`f := func(n) { defer func(){}(); return f(n-1) }; f(0)`,
+		"tail-call optimisation")
+
+	// Tail call in ExprStmt position (call → pop → return) should also warn.
+	expectCompileWarning(t,
+		`f := func() { defer func(){}(); f() }; f()`,
+		"tail-call optimisation")
+
+	// A function with defer but NO tail call should NOT warn.
+	expectNoCompileWarning(t,
+		`func(n) { defer func(){}(); a := n + 1; return a }`,
+		"tail-call optimisation")
+
+	// A function with a tail call but NO defer should NOT warn.
+	expectNoCompileWarning(t,
+		`f := func(n) { return f(n-1) }; f(0)`,
+		"tail-call optimisation")
+}
+
+// expectCompileWarning compiles input and asserts that at least one compiler
+// warning message contains the expected substring.
+func expectCompileWarning(t *testing.T, input, expected string) {
+	t.Helper()
+	fileSet := parser.NewFileSet()
+	file := fileSet.AddFile("test", -1, len(input))
+	p := parser.NewParser(file, []byte(input), nil)
+	parsed, err := p.ParseFile()
+	require.NoError(t, err)
+
+	symTable := vm.NewSymbolTable()
+	for idx, fn := range vm.GetAllBuiltinFunctions() {
+		symTable.DefineBuiltin(idx, fn.Name)
+	}
+	c := vm.NewCompiler(file, symTable, nil, nil, nil)
+	_ = c.Compile(parsed)
+
+	var found bool
+	for _, w := range c.Warnings() {
+		if strings.Contains(w.Message, expected) {
+			found = true
+			break
+		}
+	}
+	require.True(t, found,
+		"expected compiler warning containing %q, got warnings: %v", expected, c.Warnings())
+}
+
+// expectNoCompileWarning compiles input and asserts that no compiler warning
+// message contains the given substring.
+func expectNoCompileWarning(t *testing.T, input, unexpected string) {
+	t.Helper()
+	fileSet := parser.NewFileSet()
+	file := fileSet.AddFile("test", -1, len(input))
+	p := parser.NewParser(file, []byte(input), nil)
+	parsed, err := p.ParseFile()
+	require.NoError(t, err)
+
+	symTable := vm.NewSymbolTable()
+	for idx, fn := range vm.GetAllBuiltinFunctions() {
+		symTable.DefineBuiltin(idx, fn.Name)
+	}
+	c := vm.NewCompiler(file, symTable, nil, nil, nil)
+	_ = c.Compile(parsed)
+
+	for _, w := range c.Warnings() {
+		if strings.Contains(w.Message, unexpected) {
+			t.Errorf("unexpected compiler warning: %s", w.String())
+		}
+	}
+}
+
 func TestCompilerDeadCode(t *testing.T) {
 	expectCompile(t, `
 func() {

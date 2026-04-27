@@ -17,6 +17,19 @@ type compilationScope struct {
 	Instructions []byte
 	SymbolInit   map[string]bool
 	SourceMap    map[int]parser.Pos
+	hasDefer     bool // true if this scope emitted at least one OpDefer
+}
+
+// CompilerWarning represents a non-fatal diagnostic emitted during compilation.
+type CompilerWarning struct {
+	FileSet *parser.SourceFileSet
+	Node    parser.Node
+	Message string
+}
+
+func (w *CompilerWarning) String() string {
+	filePos := w.FileSet.Position(w.Node.Pos())
+	return fmt.Sprintf("Compile Warning: %s\n\tat %s", w.Message, filePos)
 }
 
 // loop represents a loop construct that the compiler uses to track the current
@@ -56,6 +69,32 @@ type Compiler struct {
 	loopIndex       int
 	trace           io.Writer
 	indent          int
+	warnings        []*CompilerWarning
+}
+
+// Warnings returns all non-fatal diagnostics emitted during compilation.
+// It collects warnings from child (module) compilers as well.
+func (c *Compiler) Warnings() []*CompilerWarning {
+	// Walk up to root so that warnings collected there are returned.
+	root := c
+	for root.parent != nil {
+		root = root.parent
+	}
+	return root.warnings
+}
+
+// addWarning records a warning on the root compiler so that module-forked
+// child compilers also surface warnings to the caller.
+func (c *Compiler) addWarning(node parser.Node, format string, args ...interface{}) {
+	root := c
+	for root.parent != nil {
+		root = root.parent
+	}
+	root.warnings = append(root.warnings, &CompilerWarning{
+		FileSet: c.file.Set(),
+		Node:    node,
+		Message: fmt.Sprintf(format, args...),
+	})
 }
 
 // NewCompiler creates a Compiler.
@@ -412,6 +451,21 @@ func (c *Compiler) Compile(node parser.Node) error {
 		// code optimization
 		c.optimizeFunc(node)
 
+		// Issue 5.2: warn when a defer in a function suppresses tail-call
+		// optimisation.  The VM only performs TCO when there are no pending
+		// defers (vm/vm.go: `len(v.curFrame.defers) == 0`), so a function
+		// that both uses defer and contains a tail-call pattern will silently
+		// consume stack frames on every recursive call, eventually causing a
+		// stack-overflow.  We cannot determine at compile time whether the
+		// call is self-recursive, so we conservatively warn whenever defer
+		// is combined with any tail-call-shaped instruction sequence.
+		if c.scopes[c.scopeIndex].hasDefer &&
+			scopeHasTailCallPattern(c.scopes[c.scopeIndex].Instructions) {
+			c.addWarning(node,
+				"function uses 'defer' which disables tail-call optimisation; "+
+					"deep recursion inside this function may cause a stack overflow")
+		}
+
 		freeSymbols := c.symbolTable.FreeSymbols()
 		numLocals := c.symbolTable.MaxSymbols()
 		instructions, sourceMap := c.leaveScope()
@@ -514,6 +568,9 @@ func (c *Compiler) Compile(node parser.Node) error {
 		if c.symbolTable.Parent(true) == nil {
 			return c.errorf(node, "defer not allowed outside function")
 		}
+		// Mark the current scope so we can warn about suppressed tail-call
+		// optimisation later (see FuncLit compilation below).
+		c.scopes[c.scopeIndex].hasDefer = true
 		if err := c.Compile(node.Call.Func); err != nil {
 			return err
 		}
@@ -1512,6 +1569,51 @@ func iterateInstructions(b []byte, fn func(pos int, opcode parser.Opcode, operan
 		}
 		i += read
 	}
+}
+
+// scopeHasTailCallPattern reports whether the instruction slice contains any
+// tail-call shaped sequence:
+//
+//	OpCall … OpReturn
+//	OpCall … OpPop OpReturn
+//
+// This mirrors the exact pattern checked by the VM at runtime when deciding
+// whether to apply tail-call optimisation.
+func scopeHasTailCallPattern(insts []byte) bool {
+	found := false
+	iterateInstructions(insts,
+		func(pos int, opcode parser.Opcode, operands []int) bool {
+			if opcode != parser.OpCall {
+				return true
+			}
+			// Size of OpCall instruction: 1 (opcode) + sum of operand widths
+			callSize := 1
+			for _, w := range parser.OpcodeOperands[parser.OpCall] {
+				callSize += w
+			}
+			next := pos + callSize
+			if next >= len(insts) {
+				return true
+			}
+			nextOp := parser.Opcode(insts[next])
+			if nextOp == parser.OpReturn {
+				found = true
+				return false // stop early
+			}
+			if nextOp == parser.OpPop {
+				popSize := 1
+				for _, w := range parser.OpcodeOperands[parser.OpPop] {
+					popSize += w
+				}
+				afterPop := next + popSize
+				if afterPop < len(insts) && parser.Opcode(insts[afterPop]) == parser.OpReturn {
+					found = true
+					return false
+				}
+			}
+			return true
+		})
+	return found
 }
 
 func tracec(c *Compiler, msg string) *Compiler {

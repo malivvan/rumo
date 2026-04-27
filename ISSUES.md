@@ -411,7 +411,7 @@ Anyone porting Go code will be misled.
 - **Fix:** drop the aliases or add genuine `Int32`/`Uint32` types
   that aren't disguised characters.
 
-### 5.2 Tail-call optimisation suppressed by *any* defer &nbsp; **MED**
+### 5.2 Tail-call optimisation suppressed by *any* defer &nbsp; **MED** &nbsp; ✅
 
 `vm/vm.go:904`:
 
