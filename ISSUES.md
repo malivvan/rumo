@@ -441,7 +441,7 @@ rune slice (4× expansion) just to read one code point.
 - **Fix:** for `IndexGet` use `utf8.DecodeRuneInString` with byte
   scanning; reserve full decode for iterator construction.
 
-### 4.3 `isolateClosureFreeRec` runs on every `go fn()` &nbsp; **MED**
+### 4.3 `isolateClosureFreeRec` runs on every `go fn()` &nbsp; **MED** &nbsp; ✅
 
 `vm/routinevm.go:226-262`. Every routine spawn deep-walks the
 closure graph. Hot fan-out patterns (e.g., a fixed worker pool that

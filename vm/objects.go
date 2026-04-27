@@ -599,6 +599,14 @@ type CompiledFunction struct {
 	VarArgs       bool
 	SourceMap     map[int]parser.Pos
 	Free          []*ObjectPtr
+
+	// spawnOnce guards the one-time computation of spawnAlias.
+	// spawnAlias[i] = j means Free[i] and Free[j] reference the same
+	// *ObjectPtr cell (j ≤ i); j == i means the slot is canonical (unique).
+	// Cached so that isolateClosureFree avoids rebuilding the dedup map on
+	// every goroutine spawn (issue 4.3).
+	spawnOnce  sync.Once
+	spawnAlias []int
 }
 
 // TypeName returns the name of the type.

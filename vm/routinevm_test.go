@@ -914,3 +914,43 @@ out = v
 	}
 }
 
+// Issue #43 (performance): isolateClosureFree ran on every `go fn()` call,
+// re-building the alias dedup map from scratch each time. For hot fan-out
+// patterns (e.g. a worker pool spawning 1000 goroutines of the same closure)
+// this paid the full walk cost N times even though the closure topology is
+// static.
+//
+// The fix caches the alias topology on *CompiledFunction via sync.Once, and
+// only allocates the cross-function seen map when a Free cell actually holds
+// an inner closure. Simple captures of non-closure values now pay no map
+// allocation at all on subsequent spawns.
+
+// BenchmarkIssue43_IsolateClosureFreeHot measures the per-spawn cost of
+// isolateClosureFree for the hot path: a closure with several captured
+// variables (no inner closures). After the first spawn the alias topology
+// is cached; subsequent spawns should pay zero map-allocation overhead.
+func BenchmarkIssue43_IsolateClosureFreeHot(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		t := &testing.T{}
+		expectRun(t, `
+func() {
+	a := 1
+	b := 2
+	c := 3
+	d := 4
+	worker := func() { return a + b + c + d }
+	r1 := go worker()
+	r2 := go worker()
+	r3 := go worker()
+	r4 := go worker()
+	r1.wait()
+	r2.wait()
+	r3.wait()
+	r4.wait()
+}()
+out = "ok"
+`, Opts().Skip2ndPass(), "ok")
+		_ = t
+	}
+}

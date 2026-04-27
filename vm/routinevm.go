@@ -222,37 +222,112 @@ func (gvm *routineVM) getRet(ctx context.Context, args ...Object) (Object, error
 // been deep-copied so that OpSetFree in the child VM does not mutate the
 // parent's (or sibling routines') closed-over variables.
 //
-// A deduplication map is threaded through the recursion: if the same
-// *ObjectPtr is referenced by multiple Free slots (or by nested closures
-// sharing a captured variable), they will still share a single *new* cell
-// in the copy—preserving intra-routine variable identity while isolating
-// inter-routine access.
+// The alias topology (which Free slots share the same *ObjectPtr) is
+// computed once per *CompiledFunction under spawnOnce and reused on every
+// subsequent spawn, avoiding a per-spawn hash-map allocation for the
+// common case where captured values are simple (non-closure) types.
+//
+// A cross-function seen map is still threaded through the recursion when
+// needed: if a Free cell holds an inner CompiledFunction whose own Free
+// cells overlap with the outer function's cells, seen ensures they map to
+// the same new *ObjectPtr—preserving intra-routine variable identity while
+// isolating inter-routine access.
 func isolateClosureFree(fn *CompiledFunction) *CompiledFunction {
 	if len(fn.Free) == 0 {
 		return fn
 	}
-	return isolateClosureFreeRec(fn, make(map[*ObjectPtr]*ObjectPtr))
+	// Lazily compute and cache the alias topology (which Free[i] slots
+	// reference the same *ObjectPtr as an earlier slot j < i).
+	fn.spawnOnce.Do(func() {
+		alias := make([]int, len(fn.Free))
+		for i, fv := range fn.Free {
+			alias[i] = i // assume canonical until a duplicate is found
+			for j := 0; j < i; j++ {
+				if fn.Free[j] == fv {
+					alias[i] = j
+					break
+				}
+			}
+		}
+		fn.spawnAlias = alias
+	})
+
+	// Only allocate the cross-function dedup map when at least one Free
+	// cell currently holds an inner closure with its own Free vars. In the
+	// common case (captures of ints, strings, etc.) we skip this entirely.
+	var seen map[*ObjectPtr]*ObjectPtr
+	for _, fv := range fn.Free {
+		if inner, ok := (*fv.Value).(*CompiledFunction); ok && len(inner.Free) > 0 {
+			_ = inner
+			seen = make(map[*ObjectPtr]*ObjectPtr)
+			break
+		}
+	}
+	return isolateClosureFreeRec(fn, seen)
 }
 
 func isolateClosureFreeRec(fn *CompiledFunction, seen map[*ObjectPtr]*ObjectPtr) *CompiledFunction {
 	if len(fn.Free) == 0 {
 		return fn
 	}
-	newFree := make([]*ObjectPtr, len(fn.Free))
+	// Ensure the alias topology is available; this is a no-op if the outer
+	// isolateClosureFree already ran it, and handles inner CompiledFunctions
+	// encountered during recursion.
+	fn.spawnOnce.Do(func() {
+		alias := make([]int, len(fn.Free))
+		for i, fv := range fn.Free {
+			alias[i] = i
+			for j := 0; j < i; j++ {
+				if fn.Free[j] == fv {
+					alias[i] = j
+					break
+				}
+			}
+		}
+		fn.spawnAlias = alias
+	})
+
+	n := len(fn.Free)
+	newCells := make([]*ObjectPtr, n) // indexed by canonical (first-occurrence) index
+	newFree := make([]*ObjectPtr, n)
 	for i, fv := range fn.Free {
-		if dup, ok := seen[fv]; ok {
-			newFree[i] = dup
+		canon := fn.spawnAlias[i]
+		if canon < i {
+			// Intra-function duplicate: reuse the cell already created for
+			// the canonical slot, no further work needed.
+			newFree[i] = newCells[canon]
 			continue
 		}
+		// Canonical slot: check the cross-function seen map for sharing
+		// between this function's cells and those of any inner closure.
+		if seen != nil {
+			if dup, ok := seen[fv]; ok {
+				newCells[i] = dup
+				newFree[i] = dup
+				continue
+			}
+		}
+		// Create a fresh isolated cell.
 		val := *fv.Value
-		// If the captured value is itself a closure with free variables,
-		// recurse to isolate its ObjectPtr cells as well (nested closures
-		// that share the same captured variable with the outer closure).
 		if inner, ok := val.(*CompiledFunction); ok && len(inner.Free) > 0 {
+			if seen == nil {
+				// Lazily allocate seen and retroactively register all
+				// canonical cells processed so far, so the recursive call
+				// can find them if inner shares a cell with this function.
+				seen = make(map[*ObjectPtr]*ObjectPtr, i)
+				for k := 0; k < i; k++ {
+					if fn.spawnAlias[k] == k {
+						seen[fn.Free[k]] = newCells[k]
+					}
+				}
+			}
 			val = isolateClosureFreeRec(inner, seen)
 		}
 		newFV := &ObjectPtr{Value: &val}
-		seen[fv] = newFV
+		if seen != nil {
+			seen[fv] = newFV
+		}
+		newCells[i] = newFV
 		newFree[i] = newFV
 	}
 	return &CompiledFunction{
