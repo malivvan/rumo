@@ -2,6 +2,7 @@ package rumo
 
 import (
 	"errors"
+
 	"github.com/malivvan/rumo/vm"
 )
 
@@ -126,7 +127,7 @@ func (v *Variable) Error() error {
 }
 
 // Object returns an underlying Object of the variable value. Note that
-// returned Object is a copy of an actual Object used in the script.
+// returned Object is the live VM object. Modifying it may cause unexpected side effects.
 func (v *Variable) Object() vm.Object {
 	return v.value
 }

@@ -600,7 +600,7 @@ GC moves or non-amd64 architectures (technically the runtime allows
 moving stack-allocated objects). Use a per-Program unique ID
 (`atomic.Int64` counter) and compare those.
 
-### 6.4 `Variable.Object()` returns the live VM object &nbsp; **MED**
+### 6.4 `Variable.Object()` returns the live VM object &nbsp; **MED** &nbsp; ✅
 
 `variable.go:130`:
 
