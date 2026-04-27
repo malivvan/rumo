@@ -35,6 +35,37 @@ go func() {
 - **Fix:** unify on `time.NewTimer` + `select { ctx.Done() }`; never
   block the calling goroutine on a non-cancellable sleep.
 
+
+### 1.2 Host-specific values baked into stdlib constants &nbsp; **HIGH**
+
+`std/os/os.go:38-40` exposes:
+
+```go
+Const("path_separator string", string(os.PathSeparator))
+Const("path_list_separator string", string(os.PathListSeparator))
+Const("dev_null string", os.DevNull)
+```
+
+These are evaluated at compile time of the *Go binary*. A bytecode
+file produced with `dev_null = "/dev/null"` and shipped to a Windows
+host (`NUL`) will misbehave silently. The same applies to all
+`os.O_*`, `os.Mode*` constants — Go's portable values do not match the
+target OS's actual constants once the bytecode crosses platforms.
+
+- **Fix:** resolve `os.*` constants at script execution time, not at
+  Go compile time of the host binary, so the running platform's value
+  is used. This is a property of "language must run on every
+  platform" - the *script bytecode* should be portable, not the host.
+
+### 1.3 `times.date` leaks the host's local timezone &nbsp; **HIGH**
+
+`std/times/times.go:386` constructs a date with
+`time.Now().Location()`. The script writer expects a deterministic
+calendar; running the same script on a server in UTC vs. a developer
+laptop in CET produces different `time` values for the same inputs.
+
+- **Fix:** default to `time.UTC`; require an explicit
+  `times.date_in(zone, …)` for local construction.
 ---
 
 ## 2. Security
@@ -507,11 +538,16 @@ gate.
   resolved at unmarshal time), or freeze the index table in
   `FormatVersion`.
 
-### 5.11 `Time` deserialisation drops timezone info &nbsp; **LOW**
+### 5.11 `Time` deserialisation drops timezone info &nbsp; **LOW** &nbsp; ✅
 
 `vm/encoding.go:425` always rebinds to `time.UTC`. A
 `time.Now().In(berlin)` round-tripped through bytecode comes back
 in UTC. Probably intentional, but undocumented.
+
+- **Fix:** marshalise the `Location().String()` name alongside the
+  `UnixNano()` timestamp; on unmarshal call `time.LoadLocation` to
+  restore the original zone, falling back to UTC if the zone is not
+  available on the target system. `FormatVersion` bumped to 5.
 
 ### 5.12 Compiler reads files even when the script is "compile only" &nbsp; **MED**
 

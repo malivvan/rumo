@@ -192,7 +192,7 @@ func SizeOfObject(o Object) int {
 	case _string:
 		return codec.SizeByte() + codec.SizeString(o.(*String).Value)
 	case _time:
-		return codec.SizeByte() + codec.SizeInt64()
+		return codec.SizeByte() + codec.SizeInt64() + codec.SizeString(o.(*Time).Value.Location().String())
 	case _array:
 		arr := o.(*Array)
 		arr.mu.RLock()
@@ -301,6 +301,7 @@ func MarshalObject(n int, b []byte, o Object) int {
 	case _time:
 		n = codec.MarshalByte(n, b, _time)
 		n = codec.MarshalInt64(n, b, o.(*Time).Value.UnixNano())
+		n = codec.MarshalString(n, b, o.(*Time).Value.Location().String())
 	case _array:
 		arr := o.(*Array)
 		arr.mu.RLock()
@@ -483,7 +484,20 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		if err != nil {
 			return nn, nil, err
 		}
-		o.(*Time).Value = time.Unix(0, v).In(time.UTC)
+		var zoneName string
+		n, zoneName, err = codec.UnmarshalString(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		// Restore the original timezone. Fall back to UTC if the zone is
+		// not available on this system (e.g. cross-platform bytecode).
+		loc := time.UTC
+		if zoneName != "" && zoneName != "UTC" {
+			if loaded, err := time.LoadLocation(zoneName); err == nil {
+				loc = loaded
+			}
+		}
+		o.(*Time).Value = time.Unix(0, v).In(loc)
 		return n, o, nil
 	case _array:
 		n, o.(*Array).Value, err = codec.UnmarshalSlice[Object](n, b, UnmarshalObject)

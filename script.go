@@ -37,7 +37,13 @@ const Magic = "RUMO"
 //	   indices are resolved by name at load time.  New builtins may now be
 //	   inserted anywhere in the registration list without corrupting compiled
 //	   bytecode (fixes issue 5.10: Builtin index baked into bytecode).
-const FormatVersion uint16 = 4
+// FormatVersion history:
+//   1 – original CRC64/ECMA trailer
+//   2 – SHA-256 trailer
+//   3 – Ptr serialisation removed
+//   4 – various encoding hardening
+//   5 – Time encoding now includes timezone name (fixes silent UTC coercion)
+const FormatVersion uint16 = 5
 
 // Script can simplify compilation and execution of embedded scripts.
 type Script struct {
