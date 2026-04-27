@@ -36,7 +36,7 @@ go func() {
   block the calling goroutine on a non-cancellable sleep.
 
 
-### 1.2 Host-specific values baked into stdlib constants &nbsp; **HIGH**
+### 1.2 Host-specific values baked into stdlib constants &nbsp; **HIGH** &nbsp; ✅
 
 `std/os/os.go:38-40` exposes:
 

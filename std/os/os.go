@@ -13,14 +13,21 @@ import (
 )
 
 var Module = module.NewBuiltin().
-	Const("o_rdonly int  			open the file read-only", int64(os.O_RDONLY)).
-	Const("o_wronly int				open the file write-only", int64(os.O_WRONLY)).
-	Const("o_rdwr int				open the file read-write", int64(os.O_RDWR)).
-	Const("o_append int				append data to the file when writing", int64(os.O_APPEND)).
-	Const("o_create int				create a new file if none exists", int64(os.O_CREATE)).
-	Const("o_excl int				fail if the file already exists", int64(os.O_EXCL)).
-	Const("o_sync int				open for synchronous I/O", int64(os.O_SYNC)).
-	Const("o_trunc int				truncate regular writable file when opened", int64(os.O_TRUNC)).
+	// os.O_* flags are platform-specific syscall values; expose them as zero-arg
+	// functions so that bytecode remains portable across operating systems and the
+	// correct host value is read at script execution time rather than being baked
+	// into the bytecode as a literal integer at compile time.
+	Func("o_rdonly() (value int)  open the file read-only", func() int { return os.O_RDONLY }).
+	Func("o_wronly() (value int)  open the file write-only", func() int { return os.O_WRONLY }).
+	Func("o_rdwr() (value int)    open the file read-write", func() int { return os.O_RDWR }).
+	Func("o_append() (value int)  append data to the file when writing", func() int { return os.O_APPEND }).
+	Func("o_create() (value int)  create a new file if none exists", func() int { return os.O_CREATE }).
+	Func("o_excl() (value int)    fail if the file already exists", func() int { return os.O_EXCL }).
+	Func("o_sync() (value int)    open for synchronous I/O", func() int { return os.O_SYNC }).
+	Func("o_trunc() (value int)   truncate regular writable file when opened", func() int { return os.O_TRUNC }).
+	// os.Mode* bit-fields are Go's portable abstract FileMode values (defined in
+	// fs.FileMode with fixed constants) – they are the same on every platform and
+	// may safely remain as bytecode constants.
 	Const("mode_dir int", int64(os.ModeDir)).
 	Const("mode_append int", int64(os.ModeAppend)).
 	Const("mode_exclusive int", int64(os.ModeExclusive)).
@@ -35,9 +42,14 @@ var Module = module.NewBuiltin().
 	Const("mode_sticky int", int64(os.ModeSticky)).
 	Const("mode_type int", int64(os.ModeType)).
 	Const("mode_perm int", int64(os.ModePerm)).
-	Const("path_separator string", string(os.PathSeparator)).
-	Const("path_list_separator string", string(os.PathListSeparator)).
-	Const("dev_null string", os.DevNull).
+	// path_separator, path_list_separator, and dev_null differ between operating
+	// systems (e.g. '/' vs '\', ':' vs ';', "/dev/null" vs "NUL"). Expose them
+	// as zero-arg functions so their values are resolved against the *running*
+	// host at call time rather than frozen into bytecode at compile time.
+	Func("path_separator() (value string)      OS-specific path element separator", func() string { return string(os.PathSeparator) }).
+	Func("path_list_separator() (value string) OS-specific PATH list separator", func() string { return string(os.PathListSeparator) }).
+	Func("dev_null() (value string)            OS-specific null device path", func() string { return os.DevNull }).
+	// io.Seek* constants are 0, 1, 2 on every platform – safe as bytecode literals.
 	Const("seek_set int", int64(io.SeekStart)).
 	Const("seek_cur int", int64(io.SeekCurrent)).
 	Const("seek_end int", int64(io.SeekEnd)).

@@ -37,37 +37,6 @@
   listing the toolchain capabilities required to load it, and refuse
   the file when the runtime lacks them.
 
-### 1.3 Host-specific values baked into stdlib constants &nbsp; **HIGH**
-
-`std/os/os.go:38-40` exposes:
-
-```go
-Const("path_separator string", string(os.PathSeparator))
-Const("path_list_separator string", string(os.PathListSeparator))
-Const("dev_null string", os.DevNull)
-```
-
-These are evaluated at compile time of the *Go binary*. A bytecode
-file produced with `dev_null = "/dev/null"` and shipped to a Windows
-host (`NUL`) will misbehave silently. The same applies to all
-`os.O_*`, `os.Mode*` constants — Go's portable values do not match the
-target OS's actual constants once the bytecode crosses platforms.
-
-- **Fix:** resolve `os.*` constants at script execution time, not at
-  Go compile time of the host binary, so the running platform's value
-  is used. This is a property of "language must run on every
-  platform" - the *script bytecode* should be portable, not the host.
-
-### 1.4 `times.date` leaks the host's local timezone &nbsp; **HIGH**
-
-`std/times/times.go:386` constructs a date with
-`time.Now().Location()`. The script writer expects a deterministic
-calendar; running the same script on a server in UTC vs. a developer
-laptop in CET produces different `time` values for the same inputs.
-
-- **Fix:** default to `time.UTC`; require an explicit
-  `times.date_in(zone, …)` for local construction.
-
 ### 1.5 REPL & input handling unusable in browser / WASI &nbsp; **MED**
 
 - `rumo.go:201-203` calls `term.IsTerminal(int(fin.Fd()))` —

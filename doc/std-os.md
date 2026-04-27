@@ -10,14 +10,6 @@ os := import("os")
 
 ## Constants
 
-- `o_rdonly`: open the file read-only
-- `o_wronly`: open the file write-only
-- `o_rdwr`: open the file read-write
-- `o_append`: append data to the file when writing
-- `o_create`: create a new file if none exists
-- `o_excl`: fail if the file already exists
-- `o_sync`: open for synchronous I/O
-- `o_trunc`: truncate regular writable file when opened
 - `mode_dir`
 - `mode_append`
 - `mode_exclusive`
@@ -32,15 +24,23 @@ os := import("os")
 - `mode_sticky`
 - `mode_type`
 - `mode_perm`
-- `path_separator`
-- `path_list_separator`
-- `dev_null`
 - `seek_set`
 - `seek_cur`
 - `seek_end`
 
 ## Functions
 
+- `o_rdonly() => int`: open the file read-only
+- `o_wronly() => int`: open the file write-only
+- `o_rdwr() => int`: open the file read-write
+- `o_append() => int`: append data to the file when writing
+- `o_create() => int`: create a new file if none exists
+- `o_excl() => int`: fail if the file already exists
+- `o_sync() => int`: open for synchronous I/O
+- `o_trunc() => int`: truncate regular writable file when opened
+- `path_separator() => string`: OS-specific path element separator
+- `path_list_separator() => string`: OS-specific PATH list separator
+- `dev_null() => string`: OS-specific null device path
 - `args() => []string`
 - `chdir(dir string)`: error
 - `chmod(name string, mode int)`: error
