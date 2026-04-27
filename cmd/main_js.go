@@ -1451,15 +1451,41 @@ func handlePortMessage(port js.Value, data js.Value) {
 		out.Set("workerName", wn)
 		portReply(port, id, out)
 	case "chan.create":
-		// vm-host asks the coordinator to allocate a backing queue.
+		// vm-host asks the coordinator to allocate a backing queue. When
+		// SharedArrayBuffer is available and buf>0 we hand the worker a
+		// shared ring directly so subsequent send/recv calls bypass
+		// postMessage entirely. Otherwise we fall back to the original
+		// goroutine-backed LocalChan + RPC path.
 		buf := 0
 		if v := data.Get("buf"); v.Type() == js.TypeNumber {
 			buf = v.Int()
 		}
-		c := vm.NewLocalChan(buf)
-		coordChans.Register(c)
 		out := jsObject.New()
-		out.Set("chanId", c.ID())
+		if sabSupported() && buf > 0 {
+			ring := newSABRing(buf, sabDefaultSlotBytes)
+			cid := vm.NewChanID()
+			coordSABs.put(cid, ring.sab)
+			out.Set("chanId", cid)
+			out.Set("sab", ring.sab)
+		} else {
+			c := vm.NewLocalChan(buf)
+			coordChans.Register(c)
+			out.Set("chanId", c.ID())
+			out.Set("sab", js.Null())
+		}
+		portReply(port, id, out)
+	case "chan.lookup":
+		// Workers that received a chan id by other means (marshalled
+		// value, go fn() arg) ask the coordinator to hand them the SAB
+		// so they can join the fast path. Replies with sab:null when the
+		// chan is RPC-only (no SAB allocated for it).
+		cid := int64(data.Get("chanId").Int())
+		out := jsObject.New()
+		if sab, ok := coordSABs.get(cid); ok {
+			out.Set("sab", sab)
+		} else {
+			out.Set("sab", js.Null())
+		}
 		portReply(port, id, out)
 	case "chan.send":
 		go coordChanSend(port, id, data)
@@ -1526,6 +1552,15 @@ func coordChanRecv(port, id, data js.Value) {
 
 func coordChanClose(port, id, data js.Value) {
 	cid := int64(data.Get("chanId").Int())
+	// SAB-backed chans live only in the SAB store on the coordinator —
+	// the worker has already performed the in-memory close via the ring
+	// header. We just drop our reference so chan.lookup stops handing it
+	// out to fresh workers.
+	if _, ok := coordSABs.get(cid); ok {
+		coordSABs.del(cid)
+		portReply(port, id, true)
+		return
+	}
 	c := coordChans.Lookup(cid)
 	if c == nil {
 		portError(port, id, fmt.Sprintf("chan.close: unknown chanId %d", cid))

@@ -42,6 +42,12 @@ var nextChanID atomic.Int64
 
 func newChanID() int64 { return nextChanID.Add(1) }
 
+// NewChanID mints a fresh globally-unique chan id without allocating a Chan.
+// Used by transports that own queues out-of-band (e.g. the js/wasm
+// SharedArrayBuffer-backed chan in the coordinator) but still need an id
+// in the same address space as locally-created chans.
+func NewChanID() int64 { return newChanID() }
+
 // NewLocalChan creates a buffered chan backed by a local Go channel. Used by
 // the native runtime and by the coordinator SharedWorker (which owns chan
 // queues and serves send/recv calls from remote vm-host workers).

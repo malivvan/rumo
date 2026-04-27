@@ -337,14 +337,66 @@ func isShipFriendly(o vm.Object) bool {
 // remoteChanTransport — vm.ChanTransport via the coordinator
 // ---------------------------------------------------------------------------
 
+// remoteChanTransport routes chan ops to the coordinator. When the chan
+// has an associated SharedArrayBuffer (advertised by the coordinator at
+// chan.create time, or fetched lazily via chan.lookup), Send/Recv/Close
+// operate directly on shared memory using Atomics.waitAsync — no
+// postMessage round-trip per op. The RPC path remains as a fallback for
+// unbuffered chans, environments without cross-origin isolation, and the
+// (rare) oversized-payload case.
 type remoteChanTransport struct {
 	coord *coordClient
+	sabs  *sabRegistry
+}
+
+func newRemoteChanTransport(coord *coordClient) *remoteChanTransport {
+	return &remoteChanTransport{coord: coord, sabs: newSABRegistry()}
+}
+
+// sabFor returns the cached sabRing for chanID, performing a single
+// chan.lookup RPC against the coordinator on the first miss. Returns nil
+// if the chan is RPC-only (no SAB allocated, or SAB unsupported in this
+// scope).
+func (t *remoteChanTransport) sabFor(ctx context.Context, chanID int64) *sabRing {
+	if !sabSupported() {
+		return nil
+	}
+	if r := t.sabs.get(chanID); r != nil {
+		return r
+	}
+	res, err := t.coord.call(ctx, "chan.lookup", func(m js.Value) {
+		m.Set("chanId", chanID)
+	})
+	if err != nil {
+		return nil
+	}
+	sab := res.Get("sab")
+	if !sab.Truthy() {
+		return nil
+	}
+	r := wrapSABRing(sab)
+	t.sabs.put(chanID, r)
+	return r
 }
 
 func (t *remoteChanTransport) SendOp(ctx context.Context, chanID int64, val vm.Object) error {
 	blob, err := vm.MarshalLive(val)
 	if err != nil {
 		return err
+	}
+	if r := t.sabFor(ctx, chanID); r != nil {
+		sErr := r.Send(ctx, blob)
+		if sErr == nil {
+			return nil
+		}
+		if !errors.Is(sErr, ErrSABTooBig) {
+			return sErr
+		}
+		// Oversized payload: best-effort RPC fallback. Ordering across
+		// the SAB and RPC paths for the same chan isn't preserved, but
+		// the coordinator still has a queue for any RPC-only producer
+		// to land on. In practice scripts rarely send values bigger
+		// than the per-slot budget; documented limitation.
 	}
 	_, err = t.coord.call(ctx, "chan.send", func(m js.Value) {
 		m.Set("chanId", chanID)
@@ -354,6 +406,26 @@ func (t *remoteChanTransport) SendOp(ctx context.Context, chanID int64, val vm.O
 }
 
 func (t *remoteChanTransport) RecvOp(ctx context.Context, chanID int64) (vm.Object, error) {
+	if r := t.sabFor(ctx, chanID); r != nil {
+		blob, ok, err := r.Recv(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			// closed and empty
+			return vm.UndefinedValue, nil
+		}
+		if len(blob) == 0 {
+			return vm.UndefinedValue, nil
+		}
+		o, uErr := vm.UnmarshalLive(blob)
+		if uErr != nil {
+			return nil, uErr
+		}
+		// any chan that flowed through the queue keeps its core nil; bind it.
+		vm.ResolveChans(o, nil, t)
+		return o, nil
+	}
 	res, err := t.coord.call(ctx, "chan.recv", func(m js.Value) { m.Set("chanId", chanID) })
 	if err != nil {
 		return nil, err
@@ -369,14 +441,43 @@ func (t *remoteChanTransport) RecvOp(ctx context.Context, chanID int64) (vm.Obje
 	if err != nil {
 		return nil, err
 	}
-	// any chan that flowed through the queue keeps its core nil; bind it.
 	vm.ResolveChans(o, nil, t)
 	return o, nil
 }
 
 func (t *remoteChanTransport) CloseOp(ctx context.Context, chanID int64) error {
+	var sabErr error
+	if r := t.sabFor(ctx, chanID); r != nil {
+		sabErr = r.Close()
+		t.sabs.del(chanID)
+	}
+	// Always notify the coordinator so its registry forgets the chan and
+	// future chan.lookup calls return null.
 	_, err := t.coord.call(ctx, "chan.close", func(m js.Value) { m.Set("chanId", chanID) })
+	if sabErr != nil && !errors.Is(sabErr, errSABClosedClose) {
+		return sabErr
+	}
 	return err
+}
+
+// makeChanFactory returns a vm.Config-compatible ChanFactory that allocates
+// chans via the coordinator and primes tr's SAB cache from the create reply,
+// so the very first send/recv on a freshly-created buffered chan already
+// uses the fast path.
+func makeChanFactory(coord *coordClient, tr *remoteChanTransport) func(int) (vm.Object, error) {
+	return func(buf int) (vm.Object, error) {
+		res, err := coord.call(context.Background(), "chan.create", func(m js.Value) {
+			m.Set("buf", buf)
+		})
+		if err != nil {
+			return nil, err
+		}
+		chanID := int64(res.Get("chanId").Int())
+		if sab := res.Get("sab"); sab.Truthy() {
+			tr.sabs.put(chanID, wrapSABRing(sab))
+		}
+		return vm.NewRemoteChan(chanID, tr), nil
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -641,16 +742,8 @@ func installRemoteConcurrency(cfg *vm.Config, parentBytecode []byte) {
 	if myCoord == nil {
 		return
 	}
-	tr := &remoteChanTransport{coord: myCoord}
-	cfg.ChanFactory = func(buf int) (vm.Object, error) {
-		res, err := myCoord.call(context.Background(), "chan.create", func(m js.Value) {
-			m.Set("buf", buf)
-		})
-		if err != nil {
-			return nil, err
-		}
-		return vm.NewRemoteChan(int64(res.Get("chanId").Int()), tr), nil
-	}
+	tr := newRemoteChanTransport(myCoord)
+	cfg.ChanFactory = makeChanFactory(myCoord, tr)
 	cfg.Spawner = newSpawner(myCoord, parentBytecode)
 }
 
@@ -723,16 +816,8 @@ func runCompiledRemote(ctx context.Context, data []byte, args []string, stdin io
 // using myCoord as the coordinator client and bcBlob as the bytecode that
 // children should ship for closure resolution.
 func installRemoteSpawnerOnProgram(prog *rumo.Program, bcBlob []byte) {
-	tr := &remoteChanTransport{coord: myCoord}
-	prog.SetChanFactory(func(buf int) (vm.Object, error) {
-		res, err := myCoord.call(context.Background(), "chan.create", func(m js.Value) {
-			m.Set("buf", buf)
-		})
-		if err != nil {
-			return nil, err
-		}
-		return vm.NewRemoteChan(int64(res.Get("chanId").Int()), tr), nil
-	})
+	tr := newRemoteChanTransport(myCoord)
+	prog.SetChanFactory(makeChanFactory(myCoord, tr))
 	prog.SetSpawner(newSpawner(myCoord, bcBlob))
 }
 
@@ -795,7 +880,7 @@ func runOneVMRoutine(port js.Value, data js.Value, cancelOut *context.CancelFunc
 	}
 
 	// any *Chan inside fn's free vars or args needs binding
-	tr := &remoteChanTransport{coord: myCoord}
+	tr := newRemoteChanTransport(myCoord)
 	vm.ResolveChans(fn, nil, tr)
 
 	argsArr := data.Get("args")
@@ -815,15 +900,7 @@ func runOneVMRoutine(port js.Value, data js.Value, cancelOut *context.CancelFunc
 	// Wire VM with our Spawner + ChanFactory so this child also fans out.
 	cfg := vm.UnlimitedConfig()
 	cfg.Permissions = vm.UnrestrictedPermissions()
-	cfg.ChanFactory = func(buf int) (vm.Object, error) {
-		res, err := myCoord.call(context.Background(), "chan.create", func(m js.Value) {
-			m.Set("buf", buf)
-		})
-		if err != nil {
-			return nil, err
-		}
-		return vm.NewRemoteChan(int64(res.Get("chanId").Int()), tr), nil
-	}
+	cfg.ChanFactory = makeChanFactory(myCoord, tr)
 	cfg.Spawner = newSpawner(myCoord, bcBlob)
 
 	bc := prog.Bytecode()
