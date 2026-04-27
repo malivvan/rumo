@@ -145,7 +145,7 @@ go func() {
 
 ## 2. Security
 
-### 2.1 `OpImmutable` does not actually freeze data &nbsp; **CRIT** ✅
+### 2.1 `OpImmutable` does not actually freeze data &nbsp; **CRIT** &nbsp; ✅
 
 `vm/vm.go:620-643`:
 
@@ -174,7 +174,7 @@ assumption they cannot be tampered with.
 - **Fix:** clone the slice / map in `OpImmutable`; deep-clone if
   nested mutable containers can leak.
 
-### 2.2 `Ptr` is constructible from any integer &nbsp; **CRIT (with native)** ✅
+### 2.2 `Ptr` is constructible from any integer &nbsp; **CRIT (with native)** &nbsp; ✅
 
 - `vm/vvm.go:282-313` `ToPtr(*Int) → unsafe.Pointer(uintptr(o.Value))`.
 - `vm/builtins_new.go` `builtinPtr` accepts an `Int`.
@@ -193,7 +193,7 @@ Even *without* `native`, embedders that expose Go callbacks taking
   values; remove `Int → Ptr` coercion; never marshal `Ptr` (it cannot
   survive an exec across runs anyway).
 
-### 2.3 Bytecode integrity uses CRC64, not a cryptographic hash &nbsp; **HIGH** ✅
+### 2.3 Bytecode integrity uses CRC64, not a cryptographic hash &nbsp; **HIGH** &nbsp; ✅
 
 `script.go:288-294` validates with `crc64/ECMA`. CRC is a
 non-cryptographic checksum: a passive attacker who can modify the
@@ -208,7 +208,7 @@ signed packages), this misleads them.
   "tamper-detection, not authentication". Add an optional Ed25519
   signature block.
 
-### 2.4 Unmarshal lacks size caps & sanity checks &nbsp; **HIGH** ✅
+### 2.4 Unmarshal lacks size caps & sanity checks &nbsp; **HIGH** &nbsp; ✅
 
 - `codec/encoding.go:118-150` `UnmarshalSlice` reads a varint and
   immediately `make([]T, s)`.
@@ -225,7 +225,7 @@ signed packages), this misleads them.
   allocating; convert panics in `MakeObject` to errors that bubble
   through `Unmarshal`.
 
-### 2.5 File-import path containment can be bypassed via symlinks &nbsp; **HIGH** ✅
+### 2.5 File-import path containment can be bypassed via symlinks &nbsp; **HIGH** &nbsp; ✅
 
 `vm/compiler.go:578-592` resolves `modulePath = filepath.Abs(filepath.Join(c.importDir, name))`
 and checks containment with `filepath.Rel`. This is a *lexical*
@@ -236,7 +236,7 @@ embedded into bytecode constants.
 - **Fix:** call `filepath.EvalSymlinks` on both `c.importBase` and
   `modulePath` before comparing; deny resolution failures.
 
-### 2.6 `std/os` exposes process & environment without sandboxing &nbsp; **HIGH** ✅
+### 2.6 `std/os` exposes process & environment without sandboxing &nbsp; **HIGH** &nbsp; ✅
 
 - `os.exec`, `os.start_process`: arbitrary process launch.
 - `os.exit`: terminates the *host* program. There is no
@@ -254,7 +254,7 @@ analogue to Lua's `loadstring` / Deno's `--allow-*`.
 - **Fix:** add a per-VM permissions struct (read/write/exec/env) and
   consult it at every privileged builtin entry; default to *deny*.
 
-### 2.7 `expand_env` length accounting under-counts &nbsp; **MED** ✅
+### 2.7 `expand_env` length accounting under-counts &nbsp; **MED** &nbsp; ✅
 
 `std/os/os.go:228-249` only counts the *value bytes substituted*
 into the result, not the literal text of the template. A 100MB
@@ -264,7 +264,7 @@ template that references `$X` once with an empty `X` slips through a
 - **Fix:** check `len(s)` against the cap *after* `os.Expand`
   returns, before constructing the `String`.
 
-### 2.8 Format-string DoS &nbsp; **MED** ✅
+### 2.8 Format-string DoS &nbsp; **MED** &nbsp; ✅
 
 `builtinFormat` (`vm/builtins.go:385`) and `vm.Format` accept
 arbitrary verbs including width specifiers. `format("%[1]20000000d", 1)`
@@ -274,7 +274,7 @@ checked once per `OpBinaryOp`, not inside the formatter).
 - **Fix:** intercept width / precision specifiers and reject anything
   above a configurable bound.
 
-### 2.9 `std/text.repeat` & `re_replace` size checks are post-hoc &nbsp; **MED** ✅
+### 2.9 `std/text.repeat` & `re_replace` size checks are post-hoc &nbsp; **MED** &nbsp; ✅
 
 `text.go:608` checks `len(s1)*i2 > MaxStringLen` *before* the call —
 good — but `i2` is taken from a script-supplied `int`. With
@@ -282,7 +282,7 @@ good — but `i2` is taken from a script-supplied `int`. With
 complement and might *pass* the check. Use unsigned multiplication
 with overflow detection.
 
-### 2.10 `std/rand` is `math/rand`, not crypto-safe &nbsp; **MED** 👩
+### 2.10 `std/rand` is `math/rand`, not crypto-safe &nbsp; **MED** &nbsp; 👩
 
 `std/rand/rand.go` exports `rand.int`, `rand.read`, etc. Most users
 will reach for `rand.read(bytes)` to make a token; that's a non-CSPRNG
@@ -292,7 +292,7 @@ output, predictable on demand.
   `crypto/rand`. Mark every function with whether it is suitable for
   security use.
 
-### 2.11 `Native.Call` accepts arbitrary library paths from script &nbsp; **HIGH** ✅
+### 2.11 `Native.Call` accepts arbitrary library paths from script &nbsp; **HIGH** &nbsp; ✅
 
 `vm/native.go:260` does `purego.Dlopen(o.Path, …)` where `o.Path`
 came directly from the source `native foo = "/some/path" { … }`. A
@@ -304,7 +304,7 @@ disk. No allow-list, no signature check.
   registry. Reserve `-tags native` for trusted, embedder-driven
   configurations.
 
-### 2.12 Bytecode does not isolate `__module_name__` namespace &nbsp; **MED** ✅
+### 2.12 Bytecode does not isolate `__module_name__` namespace &nbsp; **MED** &nbsp; ✅
 
 `vm/bytecode.go:351-356` `inferModuleName` reads the
 `__module_name__` key from any `*ImmutableMap`. A user can construct
@@ -320,7 +320,7 @@ constants on subsequent `fixDecodedObject` passes.
 
 ## 3. Concurrency & data races ✅
 
-### 3.1 `String.runeStr` lazy population is racy &nbsp; **HIGH** ✅
+### 3.1 `String.runeStr` lazy population is racy &nbsp; **HIGH** &nbsp; ✅
 
 `vm/objects.go:1583-1604`:
 
@@ -338,7 +338,7 @@ mid-use.
 - **Fix:** populate `runeStr` once at construction (cheap for short
   strings) or guard with `sync.Once` / atomic pointer.
 
-### 3.2 `Bytes` has no mutex &nbsp; **HIGH** ✅
+### 3.2 `Bytes` has no mutex &nbsp; **HIGH** &nbsp; ✅
 
 `Bytes.Iterate` (`vm/iterator.go:67`) captures the raw `[]byte`
 slice; concurrent `IndexSet` (only via runtime selectors) or
@@ -348,7 +348,7 @@ snapshot.
 - **Fix:** add `sync.RWMutex` like `Array`/`Map`, or document
   immutable semantics for `Bytes` and remove all mutating paths.
 
-### 3.3 `Map`/`Array` partial locking &nbsp; **MED** ✅
+### 3.3 `Map`/`Array` partial locking &nbsp; **MED** &nbsp; ✅
 
 The mutex is private (`mu sync.RWMutex`), but several call sites
 *read or write `Value` directly without the lock*:
@@ -366,7 +366,7 @@ The mutex is private (`mu sync.RWMutex`), but several call sites
   method on the `Object` interface or eliminate `mu` entirely and
   require callers to copy-on-write.
 
-### 3.4 `vmChildCtl.cancelFns` grows without bound &nbsp; **MED** ✅
+### 3.4 `vmChildCtl.cancelFns` grows without bound &nbsp; **MED** &nbsp; ✅
 
 `vm/vm.go:283-316`. `addChild` appends to `cancelFns`; `delChild`
 calls each `cancel()` but does not remove it from the slice. A long
@@ -377,7 +377,7 @@ on every `Abort()`.
 - **Fix:** track via a map keyed by an opaque token returned from
   `addChild`, deleted in `delChild`.
 
-### 3.5 `BuiltinModule.AsImmutableMap` shares attribute references &nbsp; **MED** ✅
+### 3.5 `BuiltinModule.AsImmutableMap` shares attribute references &nbsp; **MED** &nbsp; ✅
 
 `vm/objects.go:389-396` does `attrs[k] = v.Copy()` which is a
 *shallow* copy for compound types (recall `Array.Copy` does deep, but
@@ -391,7 +391,7 @@ helpers and `times` constants are not.
   current `Copy()` is intended to deep-clone) and freeze them at
   module load.
 
-### 3.6 `Program.Marshal` reads `bytecode` under RLock but compiler may write &nbsp; **MED** ✅
+### 3.6 `Program.Marshal` reads `bytecode` under RLock but compiler may write &nbsp; **MED** &nbsp; ✅
 
 `script.go:324`. The lock guards `globals`/`globalIndices`/`maxAllocs`,
 but `bytecode.MainFunction.Instructions`, `bytecode.Constants` are
@@ -401,7 +401,7 @@ mutated by `RemoveDuplicates` and `updateConstIndexes`. Concurrent
 - **Fix:** make `Bytecode` immutable after `Compiler.Bytecode()`
   returns, or document that `Compile` must not race with `Marshal`.
 
-### 3.7 Routine return value double-locking pattern &nbsp; **LOW** ✅
+### 3.7 Routine return value double-locking pattern &nbsp; **LOW** &nbsp; ✅
 
 `vm/routinevm.go:107-109`:
 
@@ -422,7 +422,7 @@ removes the channel will introduce a race silently.
 
 ## 4. Performance & resource use
 
-### 4.1 `range(start, stop, step)` is eagerly materialized &nbsp; **HIGH** ✅
+### 4.1 `range(start, stop, step)` is eagerly materialized &nbsp; **HIGH** &nbsp; ✅
 
 `vm/builtins.go:367-383` builds an `[]Object` of length
 `(stop-start)/step` upfront. `range(0, 1_000_000_000)` allocates 8 GB
