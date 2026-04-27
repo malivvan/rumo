@@ -54,6 +54,12 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 			_, _ = fmt.Fprintln(stderr, "usage: rumo build <input_file> [output_file]")
 			return 1
 		}
+	case "info":
+		if len(args) < 2 {
+			_, _ = fmt.Fprintln(stderr, "usage: rumo info <compiled_file>")
+			return 1
+		}
+		return infoFile(args[1], stdout, stderr)
 	case "-o":
 		if len(args) != 3 {
 			_, _ = fmt.Fprintln(stderr, "usage: rumo -o <output_file> <input_file>")
@@ -67,7 +73,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 }
 
 func usage(out io.Writer) {
-	_, _ = fmt.Fprintf(out, "usage: %s [run <file> | build <file> [output] | -o <output> <file> | version]\n", os.Args[0])
+	_, _ = fmt.Fprintf(out, "usage: %s [run <file> | build <file> [output] | -o <output> <file> | info <compiled_file> | version]\n", os.Args[0])
 }
 
 func runFile(ctx context.Context, inputFile string, scriptArgs []string, errOut io.Writer) int {
@@ -127,6 +133,42 @@ func buildFile(inputFile, outputFile string, out, errOut io.Writer) int {
 
 	_, _ = fmt.Fprintf(out, "Compiled %s to %s\n", inputFile, outputFile)
 	return 0
+}
+
+func infoFile(path string, out, errOut io.Writer) int {
+	info, err := rumo.Stat(path)
+	if err != nil {
+		_, _ = fmt.Fprintf(errOut, "Error: %s\n", err.Error())
+		return 1
+	}
+	printInfo(out, info)
+	return 0
+}
+
+func printInfo(out io.Writer, info *rumo.Info) {
+	_, _ = fmt.Fprintf(out, "File Size:       %d bytes\n", info.FileSize)
+	_, _ = fmt.Fprintf(out, "Format Version:  %d\n", info.FormatVersion)
+	_, _ = fmt.Fprintf(out, "Body Size:       %d bytes\n", info.BodySize)
+	_, _ = fmt.Fprintf(out, "Checksum:        %s\n", info.Checksum)
+	_, _ = fmt.Fprintf(out, "Requires Native: %v\n", info.RequiresNative)
+
+	if len(info.Modules) > 0 {
+		_, _ = fmt.Fprintf(out, "Modules (%d):\n", len(info.Modules))
+		for _, m := range info.Modules {
+			_, _ = fmt.Fprintf(out, "  - %s\n", m)
+		}
+	} else {
+		_, _ = fmt.Fprintf(out, "Modules:         (none)\n")
+	}
+
+	if len(info.SourceFiles) > 0 {
+		_, _ = fmt.Fprintf(out, "Source Files (%d):\n", len(info.SourceFiles))
+		for _, f := range info.SourceFiles {
+			_, _ = fmt.Fprintf(out, "  %-40s  %d bytes\n", f.Name, f.Size)
+		}
+	} else {
+		_, _ = fmt.Fprintf(out, "Source Files:    (none)\n")
+	}
 }
 
 func basename(s string) string {

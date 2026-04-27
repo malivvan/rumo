@@ -185,10 +185,13 @@ func main() {
 		println("failed to find project root")
 		os.Exit(1)
 	}
-	if len(os.Args) < 1 {
-		println("usage: go run ./std")
-		os.Exit(1)
+
+	// Collect the filter set from command-line arguments (if any).
+	filter := make(map[string]bool)
+	for _, arg := range os.Args[1:] {
+		filter[arg] = true
 	}
+
 	var builtins []string
 	var sources []string
 	entries, err := os.ReadDir("./std")
@@ -197,9 +200,14 @@ func main() {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && entry.Name() != "test" {
-			builtins = append(builtins, entry.Name())
+			if len(filter) == 0 || filter[entry.Name()] {
+				builtins = append(builtins, entry.Name())
+			}
 		} else if strings.HasSuffix(entry.Name(), ".rumo") {
-			sources = append(sources, strings.TrimSuffix(entry.Name(), ".rumo"))
+			name := strings.TrimSuffix(entry.Name(), ".rumo")
+			if len(filter) == 0 || filter[name] {
+				sources = append(sources, name)
+			}
 		}
 	}
 

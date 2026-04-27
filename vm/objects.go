@@ -1206,6 +1206,12 @@ func (o *ImmutableMap) TypeName() string {
 	return "immutable-map"
 }
 
+// ModuleName returns the module name associated with this map, or an empty
+// string for user-constructed immutable maps that are not module objects.
+func (o *ImmutableMap) ModuleName() string {
+	return o.moduleName
+}
+
 func (o *ImmutableMap) String() string {
 	return o.stringWithVisited(make(map[uintptr]bool))
 }
