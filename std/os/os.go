@@ -101,13 +101,15 @@ var Module = module.NewBuiltin().
 func permsFromCtx(ctx context.Context) vm.Permissions {
 	v, ok := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
 	if !ok || v == nil {
-		return vm.Permissions{}
+		// No VM in context (e.g. direct builtin calls in tests). Return
+		// unrestricted so that non-VM callers are not accidentally blocked.
+		return vm.UnrestrictedPermissions()
 	}
 	return v.Permissions()
 }
 
 func osExit(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyExit {
+	if !permsFromCtx(ctx).AllowExit {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 1 {
@@ -122,7 +124,7 @@ func osExit(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osChdir(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyChdir {
+	if !permsFromCtx(ctx).AllowChdir {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 1 {
@@ -136,7 +138,7 @@ func osChdir(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osSetenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyEnvWrite {
+	if !permsFromCtx(ctx).AllowEnvWrite {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 2 {
@@ -154,7 +156,7 @@ func osSetenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osUnsetenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyEnvWrite {
+	if !permsFromCtx(ctx).AllowEnvWrite {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 1 {
@@ -168,7 +170,7 @@ func osUnsetenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osClearenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyEnvWrite {
+	if !permsFromCtx(ctx).AllowEnvWrite {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 0 {
@@ -179,7 +181,7 @@ func osClearenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osReadFile(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if permsFromCtx(ctx).DenyFileRead {
+	if !permsFromCtx(ctx).AllowFileRead {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 1 {
@@ -221,7 +223,7 @@ func osStat(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 }
 
 func osCreate(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyFileWrite {
+	if !permsFromCtx(ctx).AllowFileWrite {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 1 {
@@ -239,7 +241,7 @@ func osCreate(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osOpen(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyFileRead {
+	if !permsFromCtx(ctx).AllowFileRead {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 1 {
@@ -275,11 +277,11 @@ func osOpenFile(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	const writeFlags = os.O_WRONLY | os.O_RDWR | os.O_CREATE | os.O_TRUNC | os.O_EXCL | os.O_APPEND
 	perms := permsFromCtx(ctx)
 	if i2&writeFlags != 0 {
-		if perms.DenyFileWrite {
+		if !perms.AllowFileWrite {
 			return nil, vm.ErrNotPermitted
 		}
 	} else {
-		if perms.DenyFileRead {
+		if !perms.AllowFileRead {
 			return nil, vm.ErrNotPermitted
 		}
 	}
@@ -373,7 +375,7 @@ func osExpandEnv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osExec(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyExec {
+	if !permsFromCtx(ctx).AllowExec {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) == 0 {
@@ -403,7 +405,7 @@ func osExec(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osFindProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyExec {
+	if !permsFromCtx(ctx).AllowExec {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 1 {
@@ -425,7 +427,7 @@ func osFindProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osStartProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	if permsFromCtx(ctx).DenyExec {
+	if !permsFromCtx(ctx).AllowExec {
 		return nil, vm.ErrNotPermitted
 	}
 	if len(args) != 4 {

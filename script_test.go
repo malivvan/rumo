@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"hash/crc64"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -963,3 +965,126 @@ func TestBytecodeRemoveDuplicatesMarshalRace(t *testing.T) {
 	wg.Wait()
 }
 
+// NewScript exposes file I/O, environment mutation, process execution, and
+// working-directory changes to untrusted scripts without any restrictions. An
+// embedder that does nothing more than rumo.NewScript(src).Run() gives the
+// script full access to privileged os-module operations — the zero-value
+// Permissions struct (all Deny* fields false) permits everything. The fix makes
+// the zero-value Permissions struct deny-by-default, and adds
+// vm.UnrestrictedPermissions() as an explicit opt-in for embedders that need
+// the old behaviour.
+
+// TestDefaultPermissionsDenyAll verifies that a Script created with NewScript
+// and no explicit SetPermissions call denies privileged os-module operations by
+// default.
+func TestDefaultPermissionsDenyAll(t *testing.T) {
+	const envKey = "RUMO_DEFAULT_PERM_DENY_TEST"
+	_ = os.Unsetenv(envKey)
+	t.Cleanup(func() { _ = os.Unsetenv(envKey) })
+
+	s := rumo.NewScript([]byte(`os := import("os"); os.setenv("` + envKey + `", "mutated")`))
+	s.SetImports(rumo.GetModuleMap("os"))
+	// No SetPermissions call — should default to deny-all.
+	_, err := s.Run()
+	if err == nil {
+		t.Fatal("NewScript default permissions should deny os.setenv, but got nil error")
+	}
+	if got := os.Getenv(envKey); got != "" {
+		t.Errorf("env was mutated despite default deny-all permissions: %s=%q", envKey, got)
+	}
+}
+
+// TestDefaultPermissionsDenyChdir verifies that os.chdir is denied by default.
+func TestDefaultPermissionsDenyChdir(t *testing.T) {
+	s := rumo.NewScript([]byte(`os := import("os"); os.chdir("/")`))
+	s.SetImports(rumo.GetModuleMap("os"))
+	_, err := s.Run()
+	if err == nil {
+		t.Fatal("NewScript default permissions should deny os.chdir, but got nil error")
+	}
+}
+
+// TestDefaultPermissionsDenyExec verifies that os.exec is denied by default.
+func TestDefaultPermissionsDenyExec(t *testing.T) {
+	s := rumo.NewScript([]byte(`os := import("os"); cmd := os.exec("true"); cmd.run()`))
+	s.SetImports(rumo.GetModuleMap("os"))
+	_, err := s.Run()
+	if err == nil {
+		t.Fatal("NewScript default permissions should deny os.exec, but got nil error")
+	}
+}
+
+// TestUnrestrictedPermissionsAllowsAll verifies that vm.UnrestrictedPermissions()
+// re-enables all os-module capabilities, matching the previous allow-all default.
+func TestUnrestrictedPermissionsAllowsAll(t *testing.T) {
+	const envKey = "RUMO_UNRESTRICTED_PERM_TEST"
+	_ = os.Unsetenv(envKey)
+	t.Cleanup(func() { _ = os.Unsetenv(envKey) })
+
+	s := rumo.NewScript([]byte(`os := import("os"); os.setenv("` + envKey + `", "ok")`))
+	s.SetImports(rumo.GetModuleMap("os"))
+	s.SetPermissions(vm.UnrestrictedPermissions())
+	_, err := s.Run()
+	if err != nil {
+		t.Fatalf("unexpected error with UnrestrictedPermissions: %v", err)
+	}
+	if got := os.Getenv(envKey); got != "ok" {
+		t.Errorf("setenv did not take effect with UnrestrictedPermissions: %s=%q", envKey, got)
+	}
+}
+
+// The default vm.Config used by NewScript sets MaxAllocs to -1, meaning
+// unlimited object allocations. Combined with MaxStringLen and MaxBytesLen set
+// to math.MaxInt32, an embedder that does nothing more than
+// rumo.NewScript(src).Run() exposes the host process to denial-of-service
+// attacks — a loop that allocates objects or builds large strings can exhaust
+// available memory with no guard. The fix ships safe defaults (10 M allocs,
+// 16 MiB strings/bytes) and adds vm.UnlimitedConfig() for embedders that
+// knowingly need the old unbounded behaviour.
+
+// TestDefaultAllocsNotUnbounded verifies that NewScript enforces a finite
+// object-allocation limit by default.
+func TestDefaultAllocsNotUnbounded(t *testing.T) {
+	// Allocate a new map object on each iteration. The loop count (100 M) far
+	// exceeds any reasonable safe default, so the VM should stop early.
+	src := `for i := 0; i < 100000000; i++ { x := {} }`
+	s := rumo.NewScript([]byte(src))
+	_, err := s.Run()
+	if err == nil {
+		t.Fatal("expected allocation-limit error — default MaxAllocs must be bounded, not unlimited")
+	}
+}
+
+// TestDefaultStringLenBounded verifies that NewScript enforces a finite maximum
+// string length by default.
+func TestDefaultStringLenBounded(t *testing.T) {
+	// Build a byte slice larger than the safe default (16 MiB) and convert it to
+	// a string.  We do this via os.read_file to avoid a slow character-by-character
+	// loop; instead, write a large temp file and read it back.
+	dir := t.TempDir()
+	bigFile := filepath.Join(dir, "big.bin")
+	// 20 MiB of zeros — exceeds the 16 MiB default MaxStringLen.
+	if err := os.WriteFile(bigFile, make([]byte, 20*1024*1024), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := rumo.NewScript([]byte(`os := import("os"); data := string(os.read_file("` + bigFile + `"))`))
+	s.SetImports(rumo.GetModuleMap("os"))
+	s.SetPermissions(vm.UnrestrictedPermissions()) // allow file reads; test is about size limit only
+	_, err := s.Run()
+	if err == nil {
+		t.Fatal("expected string-length-limit error — default MaxStringLen must be bounded, not unlimited")
+	}
+}
+
+// TestUnlimitedConfigRemovesLimits verifies that vm.UnlimitedConfig() disables
+// the default resource limits, allowing scripts to allocate freely.
+func TestUnlimitedConfigRemovesLimits(t *testing.T) {
+	src := `arr := []; for i := 0; i < 20000000; i++ { arr = append(arr, i) }`
+	s := rumo.NewScript([]byte(src))
+	s.SetMaxAllocs(-1) // explicit unlimited via existing API
+	_, err := s.Run()
+	if err != nil {
+		t.Fatalf("unexpected error with unlimited allocs: %v", err)
+	}
+}

@@ -12,28 +12,60 @@ import (
 
 
 // Permissions controls which privileged operations in the os standard-library
-// module are available to scripts. The zero value (all fields false) permits
-// every operation, preserving backward-compatible behaviour. Set individual
-// Deny* fields to true to prevent scripts from exercising those capabilities.
+// module are available to scripts. The zero value (all fields false) denies
+// every operation — this is the safe, deny-by-default posture. Set individual
+// Allow* fields to true to grant the corresponding capability. Use
+// UnrestrictedPermissions() to enable all capabilities at once (opt-in to the
+// old allow-all behaviour).
 type Permissions struct {
-	// DenyExec prevents os.exec and os.start_process from launching subprocesses.
-	DenyExec bool
-	// DenyExit prevents os.exit from terminating the host process; it returns
-	// an error to the script instead.
-	DenyExit bool
-	// DenyEnvWrite prevents os.setenv, os.unsetenv, and os.clearenv from
-	// mutating the host process's environment.
-	DenyEnvWrite bool
-	// DenyChdir prevents os.chdir from changing the host process's working
-	// directory.
-	DenyChdir bool
-	// DenyFileRead prevents os.read_file and read-only os.open from reading
-	// files on behalf of the script.
-	DenyFileRead bool
-	// DenyFileWrite prevents os.create and write-mode os.open_file from
-	// creating or writing files on behalf of the script.
-	DenyFileWrite bool
+	// AllowExec permits os.exec and os.start_process to launch subprocesses.
+	AllowExec bool
+	// AllowExit permits os.exit to terminate the host process.
+	AllowExit bool
+	// AllowEnvWrite permits os.setenv, os.unsetenv, and os.clearenv to mutate
+	// the host process's environment.
+	AllowEnvWrite bool
+	// AllowChdir permits os.chdir to change the host process's working directory.
+	AllowChdir bool
+	// AllowFileRead permits os.read_file and read-only os.open to read files.
+	AllowFileRead bool
+	// AllowFileWrite permits os.create and write-mode os.open_file to create
+	// or write files.
+	AllowFileWrite bool
 }
+
+// UnrestrictedPermissions returns a Permissions value that allows every
+// privileged os-module operation. Pass this (or the result of its fluent
+// With-methods) to Script.SetPermissions or Program.SetPermissions when the
+// script is trusted and needs full host access.
+func UnrestrictedPermissions() Permissions {
+	return Permissions{
+		AllowExec:      true,
+		AllowExit:      true,
+		AllowEnvWrite:  true,
+		AllowChdir:     true,
+		AllowFileRead:  true,
+		AllowFileWrite: true,
+	}
+}
+
+// WithDenyExec returns a copy of p with AllowExec set to false.
+func (p Permissions) WithDenyExec() Permissions { p.AllowExec = false; return p }
+
+// WithDenyExit returns a copy of p with AllowExit set to false.
+func (p Permissions) WithDenyExit() Permissions { p.AllowExit = false; return p }
+
+// WithDenyEnvWrite returns a copy of p with AllowEnvWrite set to false.
+func (p Permissions) WithDenyEnvWrite() Permissions { p.AllowEnvWrite = false; return p }
+
+// WithDenyChdir returns a copy of p with AllowChdir set to false.
+func (p Permissions) WithDenyChdir() Permissions { p.AllowChdir = false; return p }
+
+// WithDenyFileRead returns a copy of p with AllowFileRead set to false.
+func (p Permissions) WithDenyFileRead() Permissions { p.AllowFileRead = false; return p }
+
+// WithDenyFileWrite returns a copy of p with AllowFileWrite set to false.
+func (p Permissions) WithDenyFileWrite() Permissions { p.AllowFileWrite = false; return p }
 
 // Config holds the VM limits. Pass a *Config to NewVM to override the
 // defaults. Passing nil selects DefaultConfig. Zero values in a non-nil
@@ -72,14 +104,38 @@ type Config struct {
 // defaultCfg holds the canonical default limits as a value type.
 // DefaultConfig points at it for backward compatibility; prefer using
 // ConfigFromContext inside builtin functions to honour per-VM overrides.
+//
+// Safe defaults:
+//   - MaxAllocs: 10 000 000 objects — prevents runaway allocation loops.
+//   - MaxStringLen: 16 MiB — prevents huge string construction.
+//   - MaxBytesLen: 16 MiB — prevents huge bytes construction.
+//
+// Use vm.UnlimitedConfig() or Script.SetMaxAllocs(-1) / Script.SetMaxStringLen
+// when the script is trusted and needs to handle larger data.
 var defaultCfg = Config{
 	GlobalsSize:    1024,
 	StackSize:      2048,
 	MaxFrames:      1024,
-	MaxAllocs:      -1,
-	MaxStringLen:   2147483647,
-	MaxBytesLen:    2147483647,
+	MaxAllocs:      10_000_000,
+	MaxStringLen:   16 * 1024 * 1024,
+	MaxBytesLen:    16 * 1024 * 1024,
 	MaxFormatWidth: 1000,
+}
+
+// UnlimitedConfig returns a Config with all resource limits disabled,
+// equivalent to the pre-safe-defaults behaviour. Use it when the script is
+// fully trusted and may need to process arbitrarily large data or perform a
+// very large number of allocations.
+func UnlimitedConfig() *Config {
+	return &Config{
+		GlobalsSize:    defaultCfg.GlobalsSize,
+		StackSize:      defaultCfg.StackSize,
+		MaxFrames:      defaultCfg.MaxFrames,
+		MaxAllocs:      -1,
+		MaxStringLen:   2147483647,
+		MaxBytesLen:    2147483647,
+		MaxFormatWidth: -1,
+	}
 }
 
 // DefaultConfig is the Config used when nil is passed to NewVM.

@@ -38,12 +38,14 @@ const Magic = "RUMO"
 //	   indices are resolved by name at load time.  New builtins may now be
 //	   inserted anywhere in the registration list without corrupting compiled
 //	   bytecode (fixes issue 5.10: Builtin index baked into bytecode).
+//
 // FormatVersion history:
-//   1 – original CRC64/ECMA trailer
-//   2 – SHA-256 trailer
-//   3 – Ptr serialisation removed
-//   4 – various encoding hardening
-//   5 – Time encoding now includes timezone name (fixes silent UTC coercion)
+//
+//	1 – original CRC64/ECMA trailer
+//	2 – SHA-256 trailer
+//	3 – Ptr serialisation removed
+//	4 – various encoding hardening
+//	5 – Time encoding now includes timezone name (fixes silent UTC coercion)
 const FormatVersion uint16 = 5
 
 // Script can simplify compilation and execution of embedded scripts.
@@ -62,12 +64,19 @@ type Script struct {
 }
 
 // NewScript creates a Script instance with an input script.
+//
+// By default, the script runs with:
+//   - deny-all Permissions (no file I/O, exec, env write, or chdir allowed);
+//     call SetPermissions(vm.UnrestrictedPermissions()) to opt in.
+//   - bounded resource limits (MaxAllocs, MaxStringLen, MaxBytesLen from
+//     vm.DefaultConfig); call SetMaxAllocs(-1) etc. or pass vm.UnlimitedConfig()
+//     to disable limits for trusted scripts.
 func NewScript(input []byte) *Script {
 	return &Script{
 		variables:       make(map[string]*Variable),
 		name:            "(main)",
 		input:           input,
-		maxAllocs:       -1,
+		maxAllocs:       0, // 0 = use DefaultConfig.MaxAllocs (bounded safe default)
 		maxConstObjects: -1,
 	}
 }
@@ -146,8 +155,9 @@ func (s *Script) SetImportFS(fsys fs.FS) {
 }
 
 // SetPermissions configures which privileged os-module operations the script is
-// allowed to perform. By default all operations are permitted; set individual
-// Deny* fields to restrict them.
+// allowed to perform. The zero value of Permissions (default) denies all
+// operations; use vm.UnrestrictedPermissions() to allow everything, or set
+// individual Allow* fields to grant only the capabilities your script needs.
 func (s *Script) SetPermissions(p vm.Permissions) {
 	s.permissions = p
 }

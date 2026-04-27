@@ -288,9 +288,9 @@ func TestScriptFileImportAllowsSymlinkWithinRoot(t *testing.T) {
 // the host process — with no way to prevent any of this.
 //
 // The fix adds a vm.Permissions struct to vm.Config (and wires it through Script and
-// Program). Each Deny* field, when true, causes the corresponding os-module function
-// to return vm.ErrNotPermitted instead of executing the operation. The zero value of
-// Permissions (all fields false) preserves backward-compatible allow-all behaviour.
+// Program). The zero value of Permissions (all Allow* fields false) denies all operations
+// (deny-by-default). Use vm.UnrestrictedPermissions() to allow everything, or set
+// individual Allow* fields to grant only the capabilities your script needs.
 
 // runOSPermTest is a helper that compiles and runs a one-line script that imports the
 // os module, applying the given permissions, and returns the execution error.
@@ -304,49 +304,50 @@ func runOSPermTest(t *testing.T, src string, perm vm.Permissions) error {
 }
 
 // TestOSPermissionDenyEnvWrite verifies that os.setenv, os.unsetenv, and os.clearenv
-// return an error when DenyEnvWrite is set, and that the host environment is not mutated.
+// return an error when AllowEnvWrite is false, and that the host environment is not mutated.
 func TestOSPermissionDenyEnvWrite(t *testing.T) {
 	const key = "RUMO_PERM_TEST_ENVWRITE"
 	os.Unsetenv(key)
 
+	// Allow everything except env writes.
 	err := runOSPermTest(t,
 		`os := import("os"); os.setenv("`+key+`", "mutated")`,
-		vm.Permissions{DenyEnvWrite: true},
+		vm.UnrestrictedPermissions().WithDenyEnvWrite(),
 	)
 	if err == nil {
-		t.Fatal("expected error when DenyEnvWrite=true, got nil")
+		t.Fatal("expected error when AllowEnvWrite=false, got nil")
 	}
 	if got := os.Getenv(key); got != "" {
-		t.Errorf("env was mutated despite DenyEnvWrite: %s=%q", key, got)
+		t.Errorf("env was mutated despite AllowEnvWrite=false: %s=%q", key, got)
 	}
 }
 
-// TestOSPermissionDenyExec verifies that os.exec returns an error when DenyExec is set.
+// TestOSPermissionDenyExec verifies that os.exec returns an error when AllowExec is false.
 func TestOSPermissionDenyExec(t *testing.T) {
 	err := runOSPermTest(t,
 		`os := import("os"); cmd := os.exec("true"); cmd.run()`,
-		vm.Permissions{DenyExec: true},
+		vm.UnrestrictedPermissions().WithDenyExec(),
 	)
 	if err == nil {
-		t.Fatal("expected error when DenyExec=true, got nil")
+		t.Fatal("expected error when AllowExec=false, got nil")
 	}
 }
 
-// TestOSPermissionDenyChdir verifies that os.chdir returns an error when DenyChdir is set.
+// TestOSPermissionDenyChdir verifies that os.chdir returns an error when AllowChdir is false.
 func TestOSPermissionDenyChdir(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	t.Cleanup(func() { os.Chdir(orig) }) // restore in case permission check is absent
 	err := runOSPermTest(t,
 		`os := import("os"); os.chdir("`+dir+`")`,
-		vm.Permissions{DenyChdir: true},
+		vm.UnrestrictedPermissions().WithDenyChdir(),
 	)
 	if err == nil {
-		t.Fatal("expected error when DenyChdir=true, got nil")
+		t.Fatal("expected error when AllowChdir=false, got nil")
 	}
 }
 
-// TestOSPermissionDenyFileRead verifies that os.read_file returns an error when DenyFileRead is set.
+// TestOSPermissionDenyFileRead verifies that os.read_file returns an error when AllowFileRead is false.
 func TestOSPermissionDenyFileRead(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "secret.txt")
@@ -355,53 +356,54 @@ func TestOSPermissionDenyFileRead(t *testing.T) {
 	}
 	err := runOSPermTest(t,
 		`os := import("os"); os.read_file("`+f+`")`,
-		vm.Permissions{DenyFileRead: true},
+		vm.UnrestrictedPermissions().WithDenyFileRead(),
 	)
 	if err == nil {
-		t.Fatal("expected error when DenyFileRead=true, got nil")
+		t.Fatal("expected error when AllowFileRead=false, got nil")
 	}
 }
 
-// TestOSPermissionDenyFileWrite verifies that os.create returns an error when DenyFileWrite is set.
+// TestOSPermissionDenyFileWrite verifies that os.create returns an error when AllowFileWrite is false.
 func TestOSPermissionDenyFileWrite(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "out.txt")
 	err := runOSPermTest(t,
 		`os := import("os"); os.create("`+f+`")`,
-		vm.Permissions{DenyFileWrite: true},
+		vm.UnrestrictedPermissions().WithDenyFileWrite(),
 	)
 	if err == nil {
-		t.Fatal("expected error when DenyFileWrite=true, got nil")
+		t.Fatal("expected error when AllowFileWrite=false, got nil")
 	}
 }
 
-// TestOSPermissionDefaultAllowsAll verifies that with default permissions (zero value)
-// the os module works normally — specifically that setenv, exec, and read_file succeed.
-func TestOSPermissionDefaultAllowsAll(t *testing.T) {
-	const key = "RUMO_PERM_TEST_DEFAULT"
+// TestOSPermissionUnrestrictedAllowsAll verifies that vm.UnrestrictedPermissions()
+// allows all os module operations — this is the explicit opt-in to the old allow-all
+// behaviour that was previously the (unsafe) default.
+func TestOSPermissionUnrestrictedAllowsAll(t *testing.T) {
+	const key = "RUMO_PERM_TEST_UNRESTRICTED"
 	os.Unsetenv(key)
 	t.Cleanup(func() { os.Unsetenv(key) })
 
 	if err := runOSPermTest(t,
 		`os := import("os"); os.setenv("`+key+`", "ok")`,
-		vm.Permissions{},
+		vm.UnrestrictedPermissions(),
 	); err != nil {
-		t.Errorf("unexpected error with default permissions: %v", err)
+		t.Errorf("unexpected error with UnrestrictedPermissions: %v", err)
 	}
 	if got := os.Getenv(key); got != "ok" {
 		t.Errorf("setenv did not take effect: %s=%q", key, got)
 	}
 }
 
-// TestOSPermissionDenyExit verifies that os.exit returns an error when DenyExit is set,
+// TestOSPermissionDenyExit verifies that os.exit returns an error when AllowExit is false,
 // preventing the host process from being terminated by a script.
 func TestOSPermissionDenyExit(t *testing.T) {
 	err := runOSPermTest(t,
 		`os := import("os"); os.exit(0)`,
-		vm.Permissions{DenyExit: true},
+		vm.UnrestrictedPermissions().WithDenyExit(),
 	)
 	if err == nil {
-		t.Fatal("expected error when DenyExit=true, got nil — host process would have been terminated")
+		t.Fatal("expected error when AllowExit=false, got nil — host process would have been terminated")
 	}
 }
 
