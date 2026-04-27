@@ -1,6 +1,8 @@
 package rumo
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -10,8 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/malivvan/readline"
-	"github.com/malivvan/readline/term"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
 	"github.com/malivvan/rumo/vm/parser"
@@ -132,15 +132,15 @@ func RunCompiledWithModules(ctx context.Context, data []byte, args []string, mod
 	return
 }
 
-// replCompleter implements shell.AutoCompleter for the REPL, providing
+// Completer implements shell.AutoCompleter for the REPL, providing
 // tab-completion for builtin functions, globally imported module names,
 // user-defined symbols, and module member access (e.g. fmt.println).
-type replCompleter struct {
+type Completer struct {
 	exports     map[string]map[string]*module.Export
 	symbolTable *vm.SymbolTable
 }
 
-func (c *replCompleter) Do(line []rune, pos int) ([][]rune, int) {
+func (c *Completer) Do(line []rune, pos int) ([][]rune, int) {
 	// Walk backwards from cursor to find the current token.
 	start := pos
 	for start > 0 && (isIdentChar(line[start-1]) || line[start-1] == '.') {
@@ -188,22 +188,38 @@ func (c *replCompleter) Do(line []rune, pos int) ([][]rune, int) {
 	return candidates, len(prefix)
 }
 
-func isIdentChar(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
-		(r >= '0' && r <= '9') || r == '_'
+type ReadLine interface {
+	ReadLine() (line string, err error)
+}
+
+type readLine struct {
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+	prompt string
+	buffer bytes.Buffer
+}
+
+func (rl *readLine) ReadLine() (line string, err error) {
+	_, err = rl.stdout.Write([]byte(rl.prompt))
+	r := bufio.NewReader(rl.stdin)
+	b, err := r.ReadBytes('\n')
+	if err != nil {
+		return "", err
+	}
+	line = string(b[:len(b)-1])
+	return line, nil
+}
+
+var newReadline = func(prompt string, stdin io.Reader, stdout, stderr io.Writer) func(completer *Completer) (ReadLine, error) {
+	return func(completer *Completer) (ReadLine, error) {
+		return &readLine{stdin: stdin, stdout: stdout, stderr: stderr, prompt: prompt}, nil
+	}
 }
 
 // RunREPL starts REPL. If modules is non-nil, each named module is imported
 // globally (available as a top-level variable without an explicit import call).
-func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, modules []string) {
-	// Determine if we're running in an interactive terminal
-	interactive := false
-	if fin, ok := in.(*os.File); ok {
-		if fout, ok := out.(*os.File); ok {
-			interactive = term.IsTerminal(int(fin.Fd())) && term.IsTerminal(int(fout.Fd()))
-		}
-	}
-
+func RunREPL(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.Writer, modules []string) {
 	fileSet := parser.NewFileSet()
 	globals := make([]vm.Object, vm.DefaultConfig.GlobalsSize)
 	symbolTable := vm.NewSymbolTable()
@@ -227,23 +243,14 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		}
 	}
 
-	rl, err := readline.NewFromConfig(&readline.Config{
-		Prompt:          prompt,
-		Stdin:           in,
-		Stdout:          out,
-		Stderr:          out,
-		InterruptPrompt: "\n",
-		EOFPrompt:       "\n",
-		HistoryLimit:    1000,
-		Undo:            true,
-		FuncIsTerminal:  func() bool { return interactive },
-		AutoComplete:    &replCompleter{exports: Exports(), symbolTable: symbolTable},
+	rl, err := newReadline("> ", stdin, stdout, stderr)(&Completer{
+		exports:     Exports(),
+		symbolTable: symbolTable,
 	})
 	if err != nil {
-		_, _ = fmt.Fprintln(out, err.Error())
+		fmt.Fprintln(stderr, err.Error())
 		return
 	}
-	defer rl.Close()
 
 	// embed println function
 	symbol := symbolTable.Define("__repl_println__")
@@ -260,7 +267,7 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 				}
 			}
 			printArgs = append(printArgs, "\n")
-			_, _ = fmt.Fprint(rl.Stdout(), printArgs...)
+			_, _ = fmt.Fprint(stdout, printArgs...)
 			return
 		},
 	}
@@ -270,12 +277,9 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		if ctx.Err() != nil {
 			return
 		}
-		if !interactive {
-			_, _ = fmt.Fprint(out, prompt)
-		}
 		line, readErr := rl.ReadLine()
 		if readErr != nil {
-			if readErr == readline.ErrInterrupt {
+			if strings.ToLower(readErr.Error()) == "interrupt" {
 				continue
 			}
 			return // io.EOF or other error, exit REPL
@@ -285,14 +289,14 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		p := parser.NewParser(srcFile, []byte(line), nil)
 		file, err := p.ParseFile()
 		if err != nil {
-			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
+			_, _ = fmt.Fprintln(stderr, err.Error())
 			continue
 		}
 
 		file = addPrints(file)
 		c := vm.NewCompiler(srcFile, symbolTable, constants, Modules(), nil)
 		if err := c.Compile(file); err != nil {
-			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
+			_, _ = fmt.Fprintln(stderr, err.Error())
 			continue
 		}
 
@@ -300,26 +304,15 @@ func RunREPL(ctx context.Context, in io.Reader, out io.Writer, prompt string, mo
 		machine := vm.NewVM(ctx, bytecode, globals, nil)
 		// Propagate the custom In/Out streams so that stdlib modules (e.g.
 		// fmt.print/println) write to the provided writer instead of os.Stdout.
-		machine.In = in
-		machine.Out = rl.Stdout()
+		machine.In = stdin
+		machine.Out = stdout
 		machine.Args = []string{} // REPL scripts have no args by default
 		if err := machine.Run(); err != nil {
-			_, _ = fmt.Fprintln(rl.Stdout(), err.Error())
+			_, _ = fmt.Fprintln(stdout, err.Error())
 			continue
 		}
 		constants = bytecode.Constants
 	}
-}
-
-func compileSrc(src []byte, inputFile string) (*Program, error) {
-	s := NewScript(src)
-	s.SetName(inputFile)
-	s.SetImports(Modules())
-	s.EnableFileImport(true)
-	if err := s.SetImportDir(filepath.Dir(inputFile)); err != nil {
-		return nil, fmt.Errorf("error setting import dir: %w", err)
-	}
-	return s.Compile()
 }
 
 func addPrints(file *parser.File) *parser.File {
@@ -352,6 +345,22 @@ func addPrints(file *parser.File) *parser.File {
 		InputFile: file.InputFile,
 		Stmts:     stmts,
 	}
+}
+
+func isIdentChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') || r == '_'
+}
+
+func compileSrc(src []byte, inputFile string) (*Program, error) {
+	s := NewScript(src)
+	s.SetName(inputFile)
+	s.SetImports(Modules())
+	s.EnableFileImport(true)
+	if err := s.SetImportDir(filepath.Dir(inputFile)); err != nil {
+		return nil, fmt.Errorf("error setting import dir: %w", err)
+	}
+	return s.Compile()
 }
 
 func basename(s string) string {

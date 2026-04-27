@@ -95,7 +95,7 @@ func TestModulesReturnsAllModules(t *testing.T) {
 	}
 }
 
-// Regression: lazy Exports() must return exports for every module.
+// Regression: lazy Exports() must return Exports for every module.
 func TestExportsReturnsAllExports(t *testing.T) {
 	exports := rumo.Exports()
 	expected := len(rumo.BuiltinModules) + len(rumo.SourceModules)

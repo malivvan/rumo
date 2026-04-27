@@ -24,45 +24,45 @@ func execute(args []string, in io.Reader, out, errOut io.Writer) int {
 	return run(ctx, args, in, out, errOut)
 }
 
-func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		rumo.RunREPL(ctx, in, out, ">> ", rumo.AllModuleNames())
+		rumo.RunREPL(ctx, stdin, stdout, stderr, rumo.AllModuleNames())
 		return 0
 	}
 
 	switch args[0] {
 	case "-h", "--help", "help":
-		usage(errOut)
+		usage(stderr)
 		return 0
 	case "version":
-		_, _ = fmt.Fprintln(out, rumo.Version())
+		_, _ = fmt.Fprintln(stdout, rumo.Version())
 		return 0
 	case "run":
 		if len(args) < 2 {
-			_, _ = fmt.Fprintln(errOut, "usage: rumo run <input_file> [-- args...]")
+			_, _ = fmt.Fprintln(stderr, "usage: rumo run <input_file> [-- args...]")
 			return 1
 		}
 		file, scriptArgs := splitArgs(args[1:])
-		return runFile(ctx, file, scriptArgs, errOut)
+		return runFile(ctx, file, scriptArgs, stderr)
 	case "build":
 		switch len(args) {
 		case 2:
-			return buildFile(args[1], "", out, errOut)
+			return buildFile(args[1], "", stdout, stderr)
 		case 3:
-			return buildFile(args[1], args[2], out, errOut)
+			return buildFile(args[1], args[2], stdout, stderr)
 		default:
-			_, _ = fmt.Fprintln(errOut, "usage: rumo build <input_file> [output_file]")
+			_, _ = fmt.Fprintln(stderr, "usage: rumo build <input_file> [output_file]")
 			return 1
 		}
 	case "-o":
 		if len(args) != 3 {
-			_, _ = fmt.Fprintln(errOut, "usage: rumo -o <output_file> <input_file>")
+			_, _ = fmt.Fprintln(stderr, "usage: rumo -o <output_file> <input_file>")
 			return 1
 		}
-		return buildFile(args[2], args[1], out, errOut)
+		return buildFile(args[2], args[1], stdout, stderr)
 	default:
 		file, scriptArgs := splitArgs(args)
-		return runFile(ctx, file, scriptArgs, errOut)
+		return runFile(ctx, file, scriptArgs, stderr)
 	}
 }
 
@@ -137,4 +137,3 @@ func basename(s string) string {
 	}
 	return s
 }
-
