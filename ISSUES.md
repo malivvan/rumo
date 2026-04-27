@@ -225,7 +225,7 @@ signed packages), this misleads them.
   allocating; convert panics in `MakeObject` to errors that bubble
   through `Unmarshal`.
 
-### 2.5 File-import path containment can be bypassed via symlinks &nbsp; **HIGH**
+### 2.5 File-import path containment can be bypassed via symlinks &nbsp; **HIGH** ✅
 
 `vm/compiler.go:578-592` resolves `modulePath = filepath.Abs(filepath.Join(c.importDir, name))`
 and checks containment with `filepath.Rel`. This is a *lexical*
