@@ -17,7 +17,7 @@ The README claims rumo "must run in all the different environments
 hard blockers prevent a `js/wasm` or `wasip1` build from working at
 runtime, even where it compiles.
 
-### 1.1 `std/os` unconditionally imports `os/exec` & `syscall` &nbsp; **CRIT (browser/wasi)**
+### 1.1 `std/os` unconditionally imports `os/exec` & `syscall` &nbsp; **CRIT (browser/wasi)** &nbsp; 👩⚡
 
 - `std/os/os.go:8-9` imports `os/exec` and `syscall` at package level.
 - `os/exec` in `js/wasm` builds returns "exec: not implemented" on every
@@ -33,7 +33,7 @@ runtime, even where it compiles.
   the heavy parts of `std/os`; provide a `nostdos` tag to omit the
   module entirely; expose a `WithoutOS()` helper alongside `Modules()`.
 
-### 1.2 Native FFI fundamentally cannot work on WASM &nbsp; **HIGH**
+### 1.2 Native FFI fundamentally cannot work on WASM &nbsp; **HIGH** &nbsp; 👩⚡
 
 - `vm/native.go:260` calls `purego.Dlopen` (BSD/Linux/Mac/Windows only).
   No `wasm` backend.
@@ -83,7 +83,7 @@ laptop in CET produces different `time` values for the same inputs.
 - **Fix:** default to `time.UTC`; require an explicit
   `times.date_in(zone, …)` for local construction.
 
-### 1.5 REPL & input handling unusable in browser / WASI &nbsp; **MED**
+### 1.5 REPL & input handling unusable in browser / WASI &nbsp; **MED** &nbsp; 👩⚡
 
 - `rumo.go:201-203` calls `term.IsTerminal(int(fin.Fd()))` —
   `*os.File.Fd()` returns 0 / panics in some non-FD-backed runtimes.
@@ -93,7 +93,7 @@ laptop in CET produces different `time` values for the same inputs.
 - **Fix:** factor the REPL out of the core package, or add a
   `RunREPLLoop` that takes pre-read lines from a callback.
 
-### 1.6 Goroutines used for routines, channels, sleep &nbsp; **MED**
+### 1.6 Goroutines used for routines, channels, sleep &nbsp; **MED** &nbsp; 👩⚡
 
 `vm/routinevm.go` and `std/times/times.go:103` spawn raw goroutines.
 On `js/wasm` the runtime is cooperative — every blocking syscall has
@@ -108,7 +108,7 @@ to yield to the event loop. This means:
   `runtime.Gosched()` from the VM run loop; document that browser
   embeds must spawn the VM in a Worker.
 
-### 1.7 Build matrix omits the platforms the README promises &nbsp; **MED**
+### 1.7 Build matrix omits the platforms the README promises &nbsp; **MED** &nbsp; 👩⚡
 
 `Makefile:64-73` builds only linux/darwin/windows × {386, amd64,
 arm, arm64}. There is no `js/wasm`, no `wasip1`, no CI signal for
@@ -722,3 +722,8 @@ package-level `init()`. Toolchains that compile the package without
 all three files (build tag combos) end up with mismatched indices —
 see 5.10.
 
+
+---
+- ✅ &nbsp; issue is fixed
+- 👩 &nbsp; needs human attention
+- ⚡ &nbsp; js/wasm and wasip1/wasi support
