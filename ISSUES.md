@@ -432,7 +432,7 @@ of pointers before `for x in range(...)` ever runs.
   produces values on demand. Keep `range` as the language-level
   construct and reserve `to_array(range(...))` for materialisation.
 
-### 4.2 `String.IndexGet` & `String.Iterate` decode the full string &nbsp; **MED**
+### 4.2 `String.IndexGet` & `String.Iterate` decode the full string &nbsp; **MED** &nbsp; ✅
 
 `vm/objects.go:1582-1604` populates `[]rune` for the whole string on
 first index access. `s[0]` on a 100 MB string allocates a 100 MB

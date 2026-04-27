@@ -1585,6 +1585,8 @@ func (o *String) Equals(x Object) bool {
 }
 
 // IndexGet returns a character at a given index.
+// It scans the UTF-8 string one rune at a time so that a single index
+// access does not need to decode (and allocate) the full rune slice.
 func (o *String) IndexGet(index Object) (res Object, err error) {
 	intIdx, ok := index.(*Int)
 	if !ok {
@@ -1592,12 +1594,19 @@ func (o *String) IndexGet(index Object) (res Object, err error) {
 		return
 	}
 	idxVal := int(intIdx.Value)
-	o.once.Do(func() { o.runeStr = []rune(o.Value) })
-	if idxVal < 0 || idxVal >= len(o.runeStr) {
+	if idxVal < 0 {
 		res = UndefinedValue
 		return
 	}
-	res = &Char{Value: o.runeStr[idxVal]}
+	i := 0
+	for _, r := range o.Value {
+		if i == idxVal {
+			res = &Char{Value: r}
+			return
+		}
+		i++
+	}
+	res = UndefinedValue
 	return
 }
 
