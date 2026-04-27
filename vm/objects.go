@@ -431,7 +431,7 @@ func (o *BuiltinFunction) String() string {
 
 // Copy returns a copy of the type.
 func (o *BuiltinFunction) Copy() Object {
-	return &BuiltinFunction{Value: o.Value}
+	return &BuiltinFunction{Name: o.Name, Value: o.Value}
 }
 
 // Equals returns true if the value of the type is equal to the value of

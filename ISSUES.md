@@ -571,7 +571,7 @@ environment (or in browser/wasi where `os.ReadFile` is restricted).
 compare equal, breaking deduplication and user-script identity
 checks (`if my_fn == other_fn { … }`).
 
-### 6.2 `BuiltinFunction.Copy` drops the `Name` &nbsp; **LOW**
+### 6.2 `BuiltinFunction.Copy` drops the `Name` &nbsp; **LOW** &nbsp; ✅
 
 `vm/objects.go:358-360`:
 
