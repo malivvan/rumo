@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"io/fs"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/codec"
@@ -56,6 +57,7 @@ type Script struct {
 	maxStringLen     int
 	enableFileImport bool
 	importDir        string
+	importFS         fs.FS // optional virtualised FS; nil → default os.DirFS(importDir)
 	permissions      vm.Permissions
 }
 
@@ -132,6 +134,17 @@ func (s *Script) EnableFileImport(enable bool) {
 	s.enableFileImport = enable
 }
 
+// SetImportFS sets a custom fs.FS used to resolve import and embed paths
+// during compilation.  The FS should be rooted at the same directory that was
+// (or will be) passed to SetImportDir.  This allows sandboxed or virtualised
+// compilation environments (e.g. in-memory filesystems, WASM, wasip1) where
+// direct os.ReadFile calls are unavailable or restricted.
+// When nil (the default), the compiler creates an os.DirFS(importDir)
+// automatically when SetImportDir is called.
+func (s *Script) SetImportFS(fsys fs.FS) {
+	s.importFS = fsys
+}
+
 // SetPermissions configures which privileged os-module operations the script is
 // allowed to perform. By default all operations are permitted; set individual
 // Deny* fields to restrict them.
@@ -164,6 +177,9 @@ func (s *Script) Compile() (*Program, error) {
 	c := vm.NewCompiler(srcFile, symbolTable, nil, s.modules, nil)
 	c.EnableFileImport(s.enableFileImport)
 	c.SetImportDir(s.importDir)
+	if s.importFS != nil {
+		c.SetImportFS(s.importFS)
+	}
 	if err := c.Compile(file); err != nil {
 		return nil, err
 	}

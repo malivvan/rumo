@@ -549,7 +549,7 @@ in UTC. Probably intentional, but undocumented.
   restore the original zone, falling back to UTC if the zone is not
   available on the target system. `FormatVersion` bumped to 5.
 
-### 5.12 Compiler reads files even when the script is "compile only" &nbsp; **MED**
+### 5.12 Compiler reads files even when the script is "compile only" &nbsp; **MED** &nbsp; ✅
 
 `vm/compiler.go:594, 885, 906` (`os.ReadFile`) runs at compile time
 for `import "./mod"` and `embed "*.txt"`. There is no abstraction

@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,7 @@ type Compiler struct {
 	modulePath      string
 	importDir       string
 	importBase      string
+	importFS        fs.FS // virtualised filesystem for imports and embeds; nil falls back to os.*
 	constants       []Object
 	symbolTable     *SymbolTable
 	scopes          []compilationScope
@@ -633,7 +635,7 @@ func (c *Compiler) Compile(node parser.Node) error {
 				}
 			}
 
-			moduleSrc, err := os.ReadFile(modulePath)
+			moduleSrc, err := c.fsReadFile(modulePath)
 			if err != nil {
 				return c.errorf(node, "module file read error: %s",
 					err.Error())
@@ -720,11 +722,67 @@ func (c *Compiler) EnableFileImport(enable bool) {
 }
 
 // SetImportDir sets the initial import directory path for file imports.
+// When no FS has been provided via SetImportFS, a default os.DirFS(dir) is
+// created automatically so that all file reads are routed through the fs.FS
+// abstraction.
 func (c *Compiler) SetImportDir(dir string) {
 	c.importDir = dir
 	if c.importBase == "" {
 		c.importBase = dir
+		if c.importFS == nil {
+			c.importFS = os.DirFS(dir)
+		}
 	}
+}
+
+// SetImportFS sets a custom fs.FS implementation used to resolve import and
+// embed paths.  The FS should be rooted at the same directory as importBase so
+// that security containment checks (isPathWithinBase) still apply correctly.
+// Call SetImportDir first so that importBase is established, then call
+// SetImportFS to override the default os.DirFS with a virtualised filesystem.
+// This enables sandboxed compilation (e.g. in WASM / wasip1 environments) where
+// os.ReadFile is unavailable or restricted.
+func (c *Compiler) SetImportFS(fsys fs.FS) {
+	c.importFS = fsys
+}
+
+// fsReadFile reads the file at absPath. When importFS is configured, the path
+// is translated to a path relative to importBase and read via the FS; otherwise
+// os.ReadFile is used directly.
+func (c *Compiler) fsReadFile(absPath string) ([]byte, error) {
+	if c.importFS != nil && c.importBase != "" {
+		rel, err := filepath.Rel(c.importBase, absPath)
+		if err != nil {
+			return nil, err
+		}
+		rel = filepath.ToSlash(rel)
+		return fs.ReadFile(c.importFS, rel)
+	}
+	return os.ReadFile(absPath)
+}
+
+// fsGlob expands a glob pattern rooted at importDir. When importFS is
+// configured the glob is evaluated against the FS and the matches are returned
+// as absolute paths (importBase + rel match) so that callers need not change
+// their path-handling logic; otherwise filepath.Glob is used directly.
+func (c *Compiler) fsGlob(absPattern string) ([]string, error) {
+	if c.importFS != nil && c.importBase != "" {
+		relPattern, err := filepath.Rel(c.importBase, absPattern)
+		if err != nil {
+			return nil, err
+		}
+		relPattern = filepath.ToSlash(relPattern)
+		relMatches, err := fs.Glob(c.importFS, relPattern)
+		if err != nil {
+			return nil, err
+		}
+		absMatches := make([]string, len(relMatches))
+		for i, m := range relMatches {
+			absMatches[i] = filepath.Join(c.importBase, filepath.FromSlash(m))
+		}
+		return absMatches, nil
+	}
+	return filepath.Glob(absPattern)
 }
 
 func (c *Compiler) compileAssign(
@@ -909,7 +967,7 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 			return c.errorf(node, "embed: absolute paths are not allowed: %s", pattern)
 		}
 		globPattern = filepath.Join(c.importDir, filepath.FromSlash(pattern))
-		matches, err := filepath.Glob(globPattern)
+		matches, err := c.fsGlob(globPattern)
 		if err != nil {
 			return c.errorf(node, "embed: invalid glob pattern %q: %s", pattern, err.Error())
 		}
@@ -924,7 +982,7 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 		if len(matchedPaths) != 1 {
 			return c.errorf(node, "embed: single-file embed matched %d files (expected 1)", len(matchedPaths))
 		}
-		data, err := os.ReadFile(matchedPaths[0])
+		data, err := c.fsReadFile(matchedPaths[0])
 		if err != nil {
 			return c.errorf(node, "embed: failed to read file %q: %s", matchedPaths[0], err.Error())
 		}
@@ -945,7 +1003,7 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 		// Multi-file embed: build a Map constant.
 		mapObj := &Map{Value: make(map[string]Object, len(matchedPaths))}
 		for _, path := range matchedPaths {
-			data, err := os.ReadFile(path)
+			data, err := c.fsReadFile(path)
 			if err != nil {
 				return c.errorf(node, "embed: failed to read file %q: %s", path, err.Error())
 			}
@@ -1325,6 +1383,7 @@ func (c *Compiler) fork(file *parser.SourceFile, modulePath string, symbolTable 
 	child.allowFileImport = c.allowFileImport
 	child.importDir = c.importDir
 	child.importBase = c.importBase
+	child.importFS = c.importFS // propagate virtualised filesystem to child
 	if isFile && c.importDir != "" {
 		child.importDir = filepath.Dir(modulePath)
 	}
