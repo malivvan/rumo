@@ -566,7 +566,7 @@ func nativeResultToRumo(v reflect.Value, kind NativeKind) (Object, error) {
 	case NativeUint16:
 		return &Uint16{Value: uint16(v.Uint())}, nil
 	case NativeInt64:
-		return &Int{Value: v.Int()}, nil
+		return NewInt(v.Int()), nil
 	case NativeUint64:
 		return &Uint64{Value: v.Uint()}, nil
 	case NativeRune:

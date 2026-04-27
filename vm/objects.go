@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/malivvan/rumo/vm/parser"
@@ -31,6 +32,30 @@ func boolObject(b bool) Object {
 		return TrueValue
 	}
 	return FalseValue
+}
+
+// Small integer cache for interning [-128, 127] to avoid per-op heap
+// allocations in tight arithmetic loops (issue 4.8).
+const (
+	intCacheMin = -128
+	intCacheMax = 127
+)
+
+var intCache [intCacheMax - intCacheMin + 1]*Int
+
+func init() {
+	for i := range intCache {
+		intCache[i] = &Int{Value: int64(i + intCacheMin)}
+	}
+}
+
+// NewInt returns an *Int for v. For v in [-128, 127] a pre-allocated cached
+// instance is returned so that arithmetic-heavy scripts do not churn the GC.
+func NewInt(v int64) *Int {
+	if v >= intCacheMin && v <= intCacheMax {
+		return intCache[v-intCacheMin]
+	}
+	return &Int{Value: v}
 }
 
 // Object represents an object in the VM.
@@ -457,7 +482,7 @@ func (o *Bytes) IndexGet(index Object) (res Object, err error) {
 		res = UndefinedValue
 		return
 	}
-	res = &Int{Value: int64(o.Value[idxVal])}
+	res = NewInt(int64(o.Value[idxVal]))
 	return
 }
 
@@ -1163,19 +1188,19 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Sub:
 			r := o.Value - rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Mul:
 			r := o.Value * rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Quo:
 			if rhs.Value == 0 {
 				return nil, ErrDivisionByZero
@@ -1184,7 +1209,7 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Rem:
 			if rhs.Value == 0 {
 				return nil, ErrDivisionByZero
@@ -1193,43 +1218,43 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.And:
 			r := o.Value & rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Or:
 			r := o.Value | rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Xor:
 			r := o.Value ^ rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.AndNot:
 			r := o.Value &^ rhs.Value
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Shl:
 			r := o.Value << uint64(rhs.Value)
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Shr:
 			r := o.Value >> uint64(rhs.Value)
 			if r == o.Value {
 				return o, nil
 			}
-			return &Int{Value: r}, nil
+			return NewInt(r), nil
 		case token.Less:
 			if o.Value < rhs.Value {
 				return TrueValue, nil
@@ -1324,7 +1349,7 @@ func (o *Int) BinaryOp(op token.Token, rhs Object) (Object, error) {
 
 // Copy returns a copy of the type.
 func (o *Int) Copy() Object {
-	return &Int{Value: o.Value}
+	return NewInt(o.Value)
 }
 
 // IsFalsy returns true if the value of the type is falsy.
@@ -1505,8 +1530,7 @@ func (o *ObjectPtr) Equals(x Object) bool {
 type String struct {
 	ObjectImpl
 	Value   string
-	once    sync.Once
-	runeStr []rune
+	runeStr atomic.Pointer[[]rune]
 }
 
 // TypeName returns the name of the type.
@@ -1579,7 +1603,13 @@ func (o *String) IsFalsy() bool {
 
 // Copy returns a copy of the type.
 func (o *String) Copy() Object {
-	return &String{Value: o.Value}
+	c := &String{Value: o.Value}
+	// Propagate the rune cache if it has already been computed so that
+	// the work is not needlessly repeated (issue 4.9).
+	if p := o.runeStr.Load(); p != nil {
+		c.runeStr.Store(p)
+	}
+	return c
 }
 
 // Equals returns true if the value of the type is equal to the value of
@@ -1620,11 +1650,24 @@ func (o *String) IndexGet(index Object) (res Object, err error) {
 
 // Iterate creates a string iterator.
 func (o *String) Iterate() Iterator {
-	o.once.Do(func() { o.runeStr = []rune(o.Value) })
+	rs := o.runeSlice()
 	return &StringIterator{
-		v: o.runeStr,
-		l: len(o.runeStr),
+		v: rs,
+		l: len(rs),
 	}
+}
+
+// runeSlice returns the rune slice for the string, computing and caching it
+// on first access in a lock-free, race-free manner (issue 4.9).
+func (o *String) runeSlice() []rune {
+	if p := o.runeStr.Load(); p != nil {
+		return *p
+	}
+	rs := []rune(o.Value)
+	if o.runeStr.CompareAndSwap(nil, &rs) {
+		return rs
+	}
+	return *o.runeStr.Load()
 }
 
 // CanIterate returns whether the Object can be Iterated.
@@ -1667,7 +1710,7 @@ func (o *Time) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	case *Time:
 		switch op {
 		case token.Sub: // time - time => int (duration)
-			return &Int{Value: int64(o.Value.Sub(rhs.Value))}, nil
+			return NewInt(int64(o.Value.Sub(rhs.Value))), nil
 		case token.Less: // time < time => bool
 			if o.Value.Before(rhs.Value) {
 				return TrueValue, nil

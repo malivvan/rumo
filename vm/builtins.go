@@ -279,17 +279,17 @@ func builtinLen(ctx context.Context, args ...Object) (Object, error) {
 	}
 	switch arg := args[0].(type) {
 	case *Array:
-		return &Int{Value: int64(len(arg.Value))}, nil
+		return NewInt(int64(len(arg.Value))), nil
 	case *ImmutableArray:
-		return &Int{Value: int64(len(arg.Value))}, nil
+		return NewInt(int64(len(arg.Value))), nil
 	case *String:
-		return &Int{Value: int64(len(arg.Value))}, nil
+		return NewInt(int64(len(arg.Value))), nil
 	case *Bytes:
-		return &Int{Value: int64(len(arg.Value))}, nil
+		return NewInt(int64(len(arg.Value))), nil
 	case *Map:
-		return &Int{Value: int64(len(arg.Value))}, nil
+		return NewInt(int64(len(arg.Value))), nil
 	case *ImmutableMap:
-		return &Int{Value: int64(len(arg.Value))}, nil
+		return NewInt(int64(len(arg.Value))), nil
 	case *RangeObject:
 		return &Int{Value: rangeLen(arg.Start, arg.Stop, arg.Step)}, nil
 	default:

@@ -471,9 +471,9 @@ func FromInterface(v interface{}) (Object, error) {
 		}
 		return &String{Value: v}, nil
 	case int64:
-		return &Int{Value: v}, nil
+		return NewInt(v), nil
 	case int:
-		return &Int{Value: int64(v)}, nil
+		return NewInt(int64(v)), nil
 	case int8:
 		return &Int8{Value: v}, nil
 	case int16:

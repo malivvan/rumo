@@ -371,7 +371,7 @@ gets it ignored by the very paths that should respect it.
   function `Default()`, and route every limit check through
   `vm.Config` of the running VM (look it up via context if needed).
 
-### 4.8 `Int.Copy`, `Float64.Copy`, … allocate every call &nbsp; **LOW**
+### 4.8 `Int.Copy`, `Float64.Copy`, … allocate every call &nbsp; **LOW** &nbsp; ✅
 
 Every binary op that returns a value type allocates a new struct.
 The "interner" trick used for `TrueValue`/`FalseValue`/`UndefinedValue`
@@ -381,7 +381,7 @@ allocates N `*Int` objects.
 - **Fix:** intern `[-128, 127]` (or a configurable window) of `*Int`,
   similar to CPython.
 
-### 4.9 `for x in s { … }` over a string repeatedly checks `runeStr` &nbsp; **LOW**
+### 4.9 `for x in s { … }` over a string repeatedly checks `runeStr` &nbsp; **LOW** &nbsp; ✅
 
 `vm/objects.go:1596-1604`. The check is inside the iterator
 construction, not on every iteration, but a script that does

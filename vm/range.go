@@ -77,7 +77,7 @@ func (r *RangeObject) IndexGet(index Object) (Object, error) {
 	if i < 0 || i >= length {
 		return UndefinedValue, nil
 	}
-	return &Int{Value: rangeValueAt(r.Start, r.Stop, r.Step, i)}, nil
+	return NewInt(rangeValueAt(r.Start, r.Stop, r.Step, i)), nil
 }
 
 // rangeValueAt computes the i-th value of range(start, stop, step).
@@ -129,11 +129,11 @@ func (it *RangeIterator) Next() bool {
 
 // Key returns the 0-based index of the current element.
 func (it *RangeIterator) Key() Object {
-	return &Int{Value: it.i - 1}
+	return NewInt(it.i - 1)
 }
 
 // Value returns the current element without allocating the full range.
 func (it *RangeIterator) Value() Object {
-	return &Int{Value: rangeValueAt(it.start, it.stop, it.step, it.i-1)}
+	return NewInt(rangeValueAt(it.start, it.stop, it.step, it.i-1))
 }
 

@@ -480,7 +480,7 @@ func (v *VM) run() {
 
 			switch x := operand.(type) {
 			case *Int:
-				var res Object = &Int{Value: ^x.Value}
+				var res Object = NewInt(^x.Value)
 				v.allocs--
 				if v.allocs == 0 {
 					v.err = ErrObjectAllocLimit
@@ -499,7 +499,7 @@ func (v *VM) run() {
 
 			switch x := operand.(type) {
 			case *Int:
-				var res Object = &Int{Value: -x.Value}
+				var res Object = NewInt(-x.Value)
 				v.allocs--
 				if v.allocs == 0 {
 					v.err = ErrObjectAllocLimit
