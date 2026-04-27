@@ -77,19 +77,20 @@ stdlib: ## Generates standard library
 .PHONY: js
 js: ## Build the js/wasm runtime + web bundle into build/web/
 	@mkdir -p build/web
-	@CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w -X github.com/malivvan/rumo.commit=$(COMMIT) -X github.com/malivvan/rumo.version=$(VERSION)" -o build/web/rumo.wasm ./cmd
+	@CGO_ENABLED=0 GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w -X github.com/malivvan/rumo.commit=$(COMMIT) -X github.com/malivvan/rumo.version=xxx" -o build/web/rumo.wasm ./cmd
 	@install -m 0644 "$(shell go env GOROOT)/lib/wasm/wasm_exec.js" build/web/wasm_exec.js
 	@install -m 0644 cmd/web/index.html build/web/index.html
 	@install -m 0644 cmd/web/rumo.js build/web/rumo.js
 	@install -m 0644 cmd/web/worker.js build/web/worker.js
+	@mkdir -p build/web/demos
+	@install -m 0644 vm/testdata/routine/fmt_with_routine.rumo build/web/demos/fmt_with_routine.rumo
 	@echo "build/web/ ready ($$(du -h build/web/rumo.wasm | cut -f1) wasm) — run 'make serve/js' to launch a local server"
 
 JS_SERVE_PORT ?= 8080
 
 .PHONY: serve/js
-serve/js: js ## Build then serve build/web/ at http://localhost:$(JS_SERVE_PORT)
-	@echo "serving build/web/ at http://localhost:$(JS_SERVE_PORT) (Ctrl-C to stop)"
-	@cd build/web && python3 -m http.server $(JS_SERVE_PORT)
+serve/js: js ## Build then serve build/web/ with COOP/COEP at http://localhost:$(JS_SERVE_PORT)
+	@go run ./cmd/web -dir build/web -addr :$(JS_SERVE_PORT)
 
 .PHONY: clean
 clean: ## Clean build artifacts

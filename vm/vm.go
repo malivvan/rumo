@@ -290,6 +290,10 @@ func (v *VM) Abort() {
 	v.childCtl.Unlock()
 }
 
+func (v *VM) Globals() []Object {
+	return v.globals
+}
+
 // addChild registers a child VM and/or a context cancel function with the
 // parent. The returned token (> 0) identifies the cancel entry; pass it to
 // delChild so the entry can be removed. A token of 0 means no cancel function

@@ -633,3 +633,14 @@ func updateConstIndexes(insts []byte, indexMap map[int]int) {
 func inferModuleName(mod *ImmutableMap) string {
 	return mod.moduleName
 }
+
+// FixDecodedObject re-binds module references and canonicalises decoded
+// builtins / bools / undefined values inside o. Use it on objects produced
+// by UnmarshalLive (e.g. globals shipped from another worker) before letting
+// a VM call them — without it, *BuiltinFunction values have a nil Value
+// pointer and *ImmutableMap module proxies are still detached from their
+// host implementations.
+func FixDecodedObject(o Object, modules *ModuleMap) (Object, error) {
+	return fixDecodedObject(o, modules)
+}
+

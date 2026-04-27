@@ -1,16 +1,39 @@
-// SharedWorker bootstrap. Loads the Go WASM runtime once and serves every
-// page tab that connects through the standard SharedWorker MessagePort
-// protocol. The runtime itself (in main_js.go) installs the global `rumo`
-// API and registers an `onconnect` handler that the Go side controls.
+// Worker bootstrap shared by TWO roles, both of which load the same
+// rumo.wasm:
+//
+//   1. SharedWorker  "rumo-coordinator" — the singleton coordinator
+//                                          (shared FS, monitor, routine
+//                                          + chan registry across tabs).
+//   2. DedicatedWorker (any name)       — a per-VM vm-host. Used both for
+//                                          top-level rumo.run/runCompiled/
+//                                          spawn calls AND for per-`go fn()`
+//                                          children. DedicatedWorker is
+//                                          required because SharedWorker
+//                                          contexts cannot construct
+//                                          further SharedWorkers
+//                                          (https://crbug.com/1102827) and
+//                                          we need recursive `go fn()`
+//                                          fan-out.
+//
+// The Go side (cmd/main_js.go) detects the scope at startup
+// (SharedWorkerGlobalScope vs DedicatedWorkerGlobalScope) and installs
+// either an `onconnect` handler (SharedWorker) or an `onmessage` handler
+// (DedicatedWorker). The bootstrap below queues whichever events arrive
+// before wasm is ready and replays them once the Go-side handler is
+// installed.
 
 importScripts("./wasm_exec.js");
+
+const isShared =
+    typeof SharedWorkerGlobalScope !== "undefined" &&
+    self instanceof SharedWorkerGlobalScope;
 
 const go = new Go();
 const wasmReady = WebAssembly.instantiateStreaming(fetch("./rumo.wasm"), go.importObject)
     .then((res) => {
         // go.run never resolves under normal use — main() calls select{}.
-        // We deliberately don't await it; the Go side will wire onconnect
-        // synchronously during startup.
+        // We deliberately don't await it; the Go side wires its handler
+        // synchronously during startup before yielding to the JS event loop.
         go.run(res.instance);
         return true;
     })
@@ -19,26 +42,38 @@ const wasmReady = WebAssembly.instantiateStreaming(fetch("./rumo.wasm"), go.impo
         throw err;
     });
 
-// Until the wasm has wired its own onconnect handler, queue connections so
-// no port is dropped. The Go side is expected to overwrite self.onconnect
-// shortly after instantiation; we forward any pre-startup connections to it
-// after the promise resolves.
+// Queue events that arrive before the Go-side handler is installed so we
+// don't drop them. We snapshot the bootstrap handler reference so we can
+// tell after wasmReady resolves whether the Go side has replaced it.
 const pending = [];
-self.onconnect = (e) => {
-    pending.push(e);
-};
+let bootstrapHandler;
+if (isShared) {
+    bootstrapHandler = (e) => { pending.push(e); };
+    self.onconnect = bootstrapHandler;
+} else {
+    bootstrapHandler = (e) => { pending.push(e); };
+    self.onmessage = bootstrapHandler;
+}
 
 wasmReady.then(() => {
-    // The Go installer should have replaced self.onconnect by now.
-    if (typeof self.onconnect !== "function" || pending.length === 0) {
-        return;
-    }
-    for (const e of pending) {
-        try {
-            self.onconnect(e);
-        } catch (err) {
-            console.error("rumo: pending connect dispatch failed", err);
+    if (isShared) {
+        if (typeof self.onconnect !== "function" || self.onconnect === bootstrapHandler) {
+            return;
+        }
+        for (const e of pending) {
+            try { self.onconnect(e); }
+            catch (err) { console.error("rumo: pending connect dispatch failed", err); }
+        }
+    } else {
+        if (typeof self.onmessage !== "function" || self.onmessage === bootstrapHandler) {
+            return;
+        }
+        for (const e of pending) {
+            try { self.onmessage(e); }
+            catch (err) { console.error("rumo: pending message dispatch failed", err); }
         }
     }
     pending.length = 0;
 });
+
+

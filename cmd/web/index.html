@@ -133,6 +133,11 @@
         <button id="spawn">spawn (routine)</button>
         <button id="cancel" disabled>cancel routine</button>
         <button id="clear">clear output</button>
+        <select id="demo" style="margin-left:0.5rem; font-size:0.85rem; padding:0.35rem;">
+            <option value="">— load demo —</option>
+            <option value="ping-pong">ping/pong (chan + go)</option>
+            <option value="fmt-routine">fmt_with_routine (3 child SharedWorkers)</option>
+        </select>
     </div>
 
     <div class="row">
@@ -255,6 +260,38 @@ fmt.println("done.")
 
         $("clear").onclick = () => { out.textContent = ""; };
 
+        // ─── demo loader ────────────────────────────────────────────────────
+        const PING_PONG_DEMO = $("src").value;
+        const DEMO_URLS = {
+            "fmt-routine": "./demos/fmt_with_routine.rumo",
+        };
+        const DEMO_INLINE = {
+            "ping-pong": PING_PONG_DEMO,
+        };
+        $("demo").onchange = async (e) => {
+            const key = e.target.value;
+            e.target.value = "";
+            if (!key) return;
+            try {
+                let src = DEMO_INLINE[key];
+                if (src === undefined) {
+                    const url = DEMO_URLS[key];
+                    if (!url) { append("\n[demo] unknown: " + key + "\n"); return; }
+                    const r = await fetch(url, { cache: "no-store" });
+                    if (!r.ok) throw new Error(r.status + " " + r.statusText);
+                    src = await r.text();
+                }
+                $("src").value = src;
+                srcInfo.textContent = "(loaded demo: " + key + ")";
+                lastBytecode = null;
+                $("runc").disabled = true;
+                out.textContent = "";
+                $("run").click();
+            } catch (err) {
+                append("\n[demo load error] " + err.message + "\n");
+            }
+        };
+
         $("fsAdd").onclick = async () => {
             const name = $("fsName").value.trim();
             if (!name) {
@@ -307,20 +344,50 @@ fmt.println("done.")
                 body.innerHTML = '<tr class="empty"><td colspan="8" class="empty">(none)</td></tr>';
                 return;
             }
-            body.innerHTML = list.map(r => {
+            // Build a tree by parentId. Routines whose parent isn't in the
+            // current snapshot (e.g. already pruned) are promoted to roots so
+            // they remain visible.
+            const byId = new Map();
+            for (const r of list) byId.set(r.id, { r, children: [] });
+            const roots = [];
+            for (const node of byId.values()) {
+                const pid = node.r.parentId || 0;
+                if (pid && byId.has(pid)) {
+                    byId.get(pid).children.push(node);
+                } else {
+                    roots.push(node);
+                }
+            }
+            const sortFn = (a, b) => a.r.id - b.r.id;
+            roots.sort(sortFn);
+            for (const n of byId.values()) n.children.sort(sortFn);
+
+            const rows = [];
+            const walk = (node, depth, prefix, isLast) => {
+                const r = node.r;
                 const dur = r.endedAtMs ? r.durationMs + "ms" : fmtAge(r.durationMs);
                 const worker = r.workerName ? escapeHTML(r.workerName) : "<span class=\"small\">—</span>";
-                return `<tr class="r-${r.state}">
+                // tree-glyph prefix, classic └─ / ├─ style
+                let glyph = "";
+                if (depth > 0) {
+                    glyph = prefix + (isLast ? "└─ " : "├─ ");
+                }
+                const nameCell = `<span class="small" style="color:#888">${escapeHTML(glyph)}</span>${escapeHTML(r.name)}`;
+                rows.push(`<tr class="r-${r.state}">
                     <td>${r.id}</td>
                     <td>${escapeHTML(r.kind)}</td>
-                    <td>${escapeHTML(r.name)}</td>
+                    <td>${nameCell}</td>
                     <td class="small">${worker}</td>
                     <td>${r.state}</td>
                     <td>${dur}</td>
                     <td>${fmtBytes(r.bytesOut)}</td>
                     <td class="err">${r.error ? escapeHTML(r.error) : ""}</td>
-                </tr>`;
-            }).join("");
+                </tr>`);
+                const childPrefix = depth === 0 ? "" : prefix + (isLast ? "   " : "│  ");
+                node.children.forEach((c, i) => walk(c, depth + 1, childPrefix, i === node.children.length - 1));
+            };
+            roots.forEach((n, i) => walk(n, 0, "", i === roots.length - 1));
+            body.innerHTML = rows.join("");
         }
 
         $("rPrune").onclick = async () => {

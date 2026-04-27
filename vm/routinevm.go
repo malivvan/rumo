@@ -58,6 +58,18 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		}
 	}
 
+	// If a Spawner is installed (e.g. by the js/wasm runtime), delegate the
+	// routine launch to it. The handle's methods are exposed to the script as
+	// the same {result, wait, cancel} surface as the goroutine path so that
+	// scripts run unchanged on either backend.
+	if cfg := vm.config; cfg != nil && cfg.Spawner != nil {
+		handle, err := cfg.Spawner(ctx, fn, args[1:])
+		if err != nil {
+			return nil, err
+		}
+		return wrapRoutineHandle(handle), nil
+	}
+
 	gvm := &routineVM{
 		doneChan: make(chan struct{}),
 	}
@@ -367,13 +379,57 @@ func builtinChan(ctx context.Context, args ...Object) (Object, error) {
 		return nil, ErrWrongNumArguments
 	}
 
-	oc := &objchan{ch: make(chan Object, size)}
-	obj := map[string]Object{
-		"send":  &BuiltinFunction{Value: oc.send},
-		"recv":  &BuiltinFunction{Value: oc.recv},
-		"close": &BuiltinFunction{Value: oc.closeChan},
+	// If a ChanFactory is installed (js/wasm uses one to return a remote-
+	// backed channel), delegate the construction. Native build leaves the
+	// factory nil and falls through to the local Go-channel implementation.
+	if cfg := ConfigFromContext(ctx); cfg != nil && cfg.ChanFactory != nil {
+		return cfg.ChanFactory(size)
 	}
-	return &Map{Value: obj}, nil
+
+	return NewLocalChan(size), nil
+}
+
+// wrapRoutineHandle adapts a RoutineHandle (typically the SharedWorker-backed
+// implementation in cmd/main_js.go) into the script-visible {result, wait,
+// cancel} object returned by `go fn(...)`.
+func wrapRoutineHandle(h RoutineHandle) Object {
+	result := func(ctx context.Context, args ...Object) (Object, error) {
+		if len(args) != 0 {
+			return nil, ErrWrongNumArguments
+		}
+		return h.Result(ctx)
+	}
+	wait := func(ctx context.Context, args ...Object) (Object, error) {
+		if len(args) > 1 {
+			return nil, ErrWrongNumArguments
+		}
+		secs := int64(-1)
+		if len(args) == 1 {
+			n, ok := ToInt(args[0])
+			if !ok {
+				return nil, ErrInvalidArgumentType{
+					Name: "first", Expected: "int(compatible)", Found: args[0].TypeName(),
+				}
+			}
+			secs = int64(n)
+		}
+		if h.Wait(ctx, secs) {
+			return TrueValue, nil
+		}
+		return FalseValue, nil
+	}
+	cancel := func(ctx context.Context, args ...Object) (Object, error) {
+		if len(args) != 0 {
+			return nil, ErrWrongNumArguments
+		}
+		h.Cancel()
+		return nil, nil
+	}
+	return &Map{Value: map[string]Object{
+		"result": &BuiltinFunction{Value: result},
+		"wait":   &BuiltinFunction{Value: wait},
+		"cancel": &BuiltinFunction{Value: cancel},
+	}}
 }
 
 // Sends an obj to the channel, will block if channel is full and the VM has not been aborted.

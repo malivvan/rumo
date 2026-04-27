@@ -44,6 +44,7 @@ const (
 	_rangeObject      byte = 105
 	_userType         byte = 106
 	_nativeLoader     byte = 107
+	_chan             byte = 108
 )
 
 var _typeMap = map[byte]func() Object{
@@ -76,6 +77,7 @@ var _typeMap = map[byte]func() Object{
 	_rangeObject:      func() Object { return &RangeObject{} },
 	_userType:         func() Object { return &UserType{} },
 	_nativeLoader:     func() Object { return &Native{} },
+	_chan:             func() Object { return &Chan{} },
 }
 
 // MakeObject creates a new object based on the given type code.
@@ -90,8 +92,18 @@ func MakeObject(code byte) Object {
 }
 
 // SizeOfObjectPtr returns the size of the given object pointer.
+//
+// Must mirror the marshaler used in the _compiledFunction Free-slice
+// path, which calls MarshalObject(*ObjectPtr) — that dispatches to the
+// _objectPtr case which writes a 1-byte type tag plus the inner value.
+// Returning only SizeOfObject(*op.Value) would under-count by one byte
+// per free variable and cause MarshalSlice's trailing sentinel write to
+// panic with "slice bounds out of range" once the slice is non-empty.
 func SizeOfObjectPtr(op *ObjectPtr) int {
-	return SizeOfObject(*op.Value)
+	if op == nil || op.Value == nil {
+		return codec.SizeByte() + SizeOfObject(nil)
+	}
+	return codec.SizeByte() + SizeOfObject(*op.Value)
 }
 
 // TypeOfObject returns the type code of the given object.
@@ -155,6 +167,8 @@ func TypeOfObject(o Object) byte {
 		return _userType
 	case *Native:
 		return _nativeLoader
+	case *Chan:
+		return _chan
 	default:
 		return 0
 	}
@@ -266,6 +280,10 @@ func SizeOfObject(o Object) int {
 			s += len(f.Params) * codec.SizeByte()
 		}
 		return codec.SizeByte() + s
+	case _chan:
+		// channels travel as just their int64 id; the receiver upgrades the
+		// core via ResolveChans (see chan.go) before any send/recv call.
+		return codec.SizeByte() + codec.SizeInt64()
 	default:
 		panic("sizeof: unsupported type: " + o.TypeName())
 	}
@@ -413,6 +431,10 @@ func MarshalObject(n int, b []byte, o Object) int {
 				n = codec.MarshalByte(n, b, byte(p))
 			}
 		}
+	case _chan:
+		c := o.(*Chan)
+		n = codec.MarshalByte(n, b, _chan)
+		n = codec.MarshalInt64(n, b, c.id)
 	default:
 		panic("marshal: unsupported type: " + o.TypeName())
 	}
@@ -746,6 +768,16 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 			}
 		}
 		return n, nl, nil
+	case _chan:
+		c := o.(*Chan)
+		n, c.id, err = codec.UnmarshalInt64(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		// core stays nil here — caller (live codec / runtime) must run
+		// ResolveChans() to bind it to a LocalChanCore (if owner) or
+		// RemoteChanCore (otherwise) before any send/recv call.
+		return n, c, nil
 	}
 	return nn, nil, errors.New("unmarshal: unsupported type: " + o.TypeName())
 }

@@ -99,6 +99,44 @@ type Config struct {
 	// Permissions restricts which privileged os-module operations are allowed.
 	// The zero value of Permissions allows all operations.
 	Permissions Permissions
+
+	// Spawner overrides the in-process goroutine used by the `go fn(...)` /
+	// routine.start primitive. When non-nil, the VM calls Spawner instead of
+	// launching a child VM via `go func() { vm.RunCompiled(...) }()`. The
+	// returned RoutineHandle is wrapped in the script-visible
+	// {result, wait, cancel} object.
+	//
+	// Native builds leave Spawner nil so behaviour is unchanged. The js/wasm
+	// runtime installs a Spawner that posts a `runVM` message to a fresh
+	// SharedWorker per call, realising the "every `go` is its own worker"
+	// model.
+	Spawner func(ctx context.Context, fn Object, args []Object) (RoutineHandle, error)
+
+	// ChanFactory overrides the backing implementation returned by the `chan`
+	// builtin. When nil, builtinChan returns the local Go-channel-backed
+	// implementation. The js/wasm runtime installs a factory that returns a
+	// channel proxy whose send/recv route through the coordinator
+	// SharedWorker, so values can travel across worker boundaries.
+	ChanFactory func(buf int) (Object, error)
+}
+
+// RoutineHandle is the abstract interface satisfied by both the goroutine-
+// backed routineVM and the SharedWorker-backed remote routine. The result of
+// `go fn(...)` is wrapped in a script-level Map exposing {result, wait,
+// cancel}; those methods all delegate to the methods below.
+type RoutineHandle interface {
+	// Result blocks until the routine completes and returns its value or an
+	// Error wrapper. ctx is the caller's VM context (used by the host to
+	// abort if the parent VM is being torn down).
+	Result(ctx context.Context) (Object, error)
+
+	// Wait blocks until the routine completes or `seconds` elapses (negative
+	// means wait forever). Returns true if completed in time.
+	Wait(ctx context.Context, seconds int64) bool
+
+	// Cancel signals the routine to abort. It must be safe to call multiple
+	// times and from any goroutine.
+	Cancel()
 }
 
 // defaultCfg holds the canonical default limits as a value type.

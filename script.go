@@ -336,7 +336,29 @@ type Program struct {
 	permissions   vm.Permissions
 	stdin         io.Reader
 	stdout        io.Writer
+	spawner       func(ctx context.Context, fn vm.Object, args []vm.Object) (vm.RoutineHandle, error)
+	chanFactory   func(buf int) (vm.Object, error)
 	lock          sync.RWMutex
+}
+
+// SetSpawner installs a custom routine spawner on the program. The js/wasm
+// runtime uses this to make `go fn(...)` create a fresh SharedWorker per
+// routine. When nil (the default), the VM falls back to the goroutine-backed
+// implementation in vm/routinevm.go.
+func (p *Program) SetSpawner(s func(ctx context.Context, fn vm.Object, args []vm.Object) (vm.RoutineHandle, error)) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.spawner = s
+}
+
+// SetChanFactory installs a custom channel factory on the program. The
+// js/wasm runtime uses this to return a remote-backed channel whose
+// send/recv hop through the coordinator SharedWorker. When nil, the VM
+// falls back to the local Go-channel implementation.
+func (p *Program) SetChanFactory(f func(buf int) (vm.Object, error)) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.chanFactory = f
 }
 
 // SetStdin overrides the reader used for the script's standard input. When nil
@@ -512,9 +534,11 @@ func (p *Program) Run() error {
 	permissions := p.permissions
 	stdin := p.stdin
 	stdout := p.stdout
+	spawner := p.spawner
+	chanFactory := p.chanFactory
 	p.lock.RUnlock()
 
-	v := vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions})
+	v := vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions, Spawner: spawner, ChanFactory: chanFactory})
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {
@@ -550,9 +574,11 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 	permissions := p.permissions
 	stdin := p.stdin
 	stdout := p.stdout
+	spawner := p.spawner
+	chanFactory := p.chanFactory
 	p.lock.RUnlock()
 
-	v := vm.NewVM(ctx, bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions})
+	v := vm.NewVM(ctx, bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions, Spawner: spawner, ChanFactory: chanFactory})
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {
