@@ -52,7 +52,8 @@ var Module = module.NewBuiltin().
 	Func("duration_seconds(d int) (s float)														returns the duration in seconds", timesDurationSeconds).
 	Func("duration_string(d int) (s string)														returns the string representation of the duration", timesDurationString).
 	Func("month_string(m int) (s string)														returns the string representation of the month", timesMonthString).
-	Func("date(year int, month int, day int, hour int, min int, sec int, nsec int) (t time)		returns a time corresponding to the given date and time", timesDate).
+	Func("date(year int, month int, day int, hour int, min int, sec int, nsec int) (t time)		returns a time in UTC corresponding to the given date and time", timesDate).
+	Func("date_in(zone string, year int, month int, day int, hour int, min int, sec int, nsec int) (t time)	returns a time in the given timezone corresponding to the given date and time", timesDateIn).
 	Func("now() (t time)																		returns the current local time", timesNow).
 	Func("parse(format string, value string) (t time)											parses a formatted string and returns the time value it represents", timesParse).
 	Func("unix(sec int, nsec int) (t time)														returns the local Time corresponding to the given Unix time", timesUnix).
@@ -370,8 +371,100 @@ func timesDate(ctx context.Context, args ...vm.Object) (ret vm.Object, err error
 	}
 
 	ret = &vm.Time{
-		Value: time.Date(i1,
-			time.Month(i2), i3, i4, i5, i6, i7, time.Now().Location()),
+		Value: time.Date(i1, time.Month(i2), i3, i4, i5, i6, i7, time.UTC),
+	}
+
+	return
+}
+
+func timesDateIn(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+	if len(args) != 8 {
+		err = vm.ErrWrongNumArguments
+		return
+	}
+
+	s1, ok := vm.ToString(args[0])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "first",
+			Expected: "string(compatible)",
+			Found:    args[0].TypeName(),
+		}
+		return
+	}
+
+	loc, locErr := time.LoadLocation(s1)
+	if locErr != nil {
+		ret = module.WrapError(locErr)
+		return
+	}
+
+	i1, ok := vm.ToInt(args[1])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "second",
+			Expected: "int(compatible)",
+			Found:    args[1].TypeName(),
+		}
+		return
+	}
+	i2, ok := vm.ToInt(args[2])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "third",
+			Expected: "int(compatible)",
+			Found:    args[2].TypeName(),
+		}
+		return
+	}
+	i3, ok := vm.ToInt(args[3])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "fourth",
+			Expected: "int(compatible)",
+			Found:    args[3].TypeName(),
+		}
+		return
+	}
+	i4, ok := vm.ToInt(args[4])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "fifth",
+			Expected: "int(compatible)",
+			Found:    args[4].TypeName(),
+		}
+		return
+	}
+	i5, ok := vm.ToInt(args[5])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "sixth",
+			Expected: "int(compatible)",
+			Found:    args[5].TypeName(),
+		}
+		return
+	}
+	i6, ok := vm.ToInt(args[6])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "seventh",
+			Expected: "int(compatible)",
+			Found:    args[6].TypeName(),
+		}
+		return
+	}
+	i7, ok := vm.ToInt(args[7])
+	if !ok {
+		err = vm.ErrInvalidArgumentType{
+			Name:     "eighth",
+			Expected: "int(compatible)",
+			Found:    args[7].TypeName(),
+		}
+		return
+	}
+
+	ret = &vm.Time{
+		Value: time.Date(i1, time.Month(i2), i3, i4, i5, i6, i7, loc),
 	}
 
 	return

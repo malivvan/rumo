@@ -57,7 +57,7 @@ target OS's actual constants once the bytecode crosses platforms.
   is used. This is a property of "language must run on every
   platform" - the *script bytecode* should be portable, not the host.
 
-### 1.3 `times.date` leaks the host's local timezone &nbsp; **HIGH**
+### 1.3 `times.date` leaks the host's local timezone &nbsp; **HIGH** &nbsp; ✅
 
 `std/times/times.go:386` constructs a date with
 `time.Now().Location()`. The script writer expects a deterministic
