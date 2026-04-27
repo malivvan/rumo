@@ -7,7 +7,7 @@
 
 ## 1. Security
 
-### 1.1 Default permissions allow everything &nbsp; **HIGH**
+### 1.1 Default permissions allow everything &nbsp; **HIGH** &nbsp; ✅
 
 `script.go:62` &mdash; `Script.permissions` is a zero-value `vm.Permissions`
 struct (every `Deny*` field is `false`). Combined with `KNOWN_ISSUES.md` 2.2
@@ -22,7 +22,7 @@ even documents this:
 ```
 
 `os.exit(1)` from a script will tear the host process down. This is the
-same shape of issue as `KNOWN_ISSUES.md` 2.2 but for *capabilities* rather
+same shape of issue as `ISSUES.md` 1.11 but for *capabilities* rather
 than *resources*; the same fix shape applies (deny-by-default with an
 `Unrestricted()` opt-in helper).
 
@@ -143,6 +143,16 @@ call. In a tight loop this is a memory amplifier.
 no maximum. A line of 4 GB exhausts memory before the parser ever runs.
 This is the fallback path used when the `readline` build tag is not set
 (otherwise `readline.go` is used).
+
+
+### 1.11 Default limits effectively unbounded &nbsp; **HIGH** &nbsp; ✅
+
+`MaxStringLen = 2_147_483_647`, `MaxBytesLen = 2_147_483_647`,
+`MaxAllocs = -1`. Embedders running untrusted scripts get *zero*
+out-of-the-box protection.
+
+- **Fix:** ship safe defaults (e.g. 16 MB / 16 MB / 10 M allocs) and
+  document `vm.Unlimited()` for users who knowingly opt in.
 
 ---
 

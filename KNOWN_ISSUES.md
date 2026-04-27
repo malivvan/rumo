@@ -37,15 +37,6 @@
   listing the toolchain capabilities required to load it, and refuse
   the file when the runtime lacks them.
 
-### 1.3 REPL & input handling unusable in browser / WASI &nbsp; **MED**
-
-- `rumo.go:201-203` calls `term.IsTerminal(int(fin.Fd()))` —
-  `*os.File.Fd()` returns 0 / panics in some non-FD-backed runtimes.
-- `readline` cannot share the JS event loop. Embedding rumo into a
-  browser via Go's `js/wasm` will require an alternative driver. There
-  is no abstraction layer (`Reader`/`Writer` only) to support that.
-- **Fix:** factor the REPL out of the core package, or add a
-  `RunREPLLoop` that takes pre-read lines from a callback.
 
 ### 1.4 Goroutines used for routines, channels, sleep &nbsp; **MED**
 
@@ -85,12 +76,3 @@ where mutex contention is emulated.
   constant-pool / fresh) that skips the lock. Or split into
   `Map` (locked) vs. `LocalMap` (unsynchronised).
 
-
-### 2.2 Default limits effectively unbounded &nbsp; **HIGH**
-
-`MaxStringLen = 2_147_483_647`, `MaxBytesLen = 2_147_483_647`,
-`MaxAllocs = -1`. Embedders running untrusted scripts get *zero*
-out-of-the-box protection.
-
-- **Fix:** ship safe defaults (e.g. 16 MB / 16 MB / 10 M allocs) and
-  document `vm.Unlimited()` for users who knowingly opt in.
