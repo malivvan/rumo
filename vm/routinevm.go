@@ -9,10 +9,8 @@ import (
 	"time"
 )
 
-func init() {
-	addBuiltinFunction("cancel", builtinCancel)
-	addBuiltinFunction("chan", builtinChan)
-}
+// NOTE: builtinCancel and builtinChan are registered in builtins.go init()
+// to keep ALL builtin indices in one deterministic table (issue 6.6).
 
 type ret struct {
 	val Object

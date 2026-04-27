@@ -10,12 +10,28 @@ func addBuiltinFunction(name string, fn CallableFunc) {
 	builtinFuncs = append(builtinFuncs, &BuiltinFunction{Name: name, Value: fn})
 }
 
+// init registers ALL built-in functions in one place with a fixed, explicit
+// order.  Every call to addBuiltinFunction appends to builtinFuncs; the
+// position of each function in that slice becomes its OpGetBuiltin index baked
+// into bytecode.  Having a single init() in a single file makes the ordering
+// deterministic regardless of build-tag combinations or file additions
+// (addresses issue 6.6: "init()-driven builtin registration spans 3 files").
+//
+// Rules for future changes:
+//   - Append new builtins at the END of this list.
+//   - Never remove or reorder existing entries (that would shift indices and
+//     break existing bytecode).
+//   - Builtins that are implemented in other files (e.g. routinevm.go) must
+//     be registered here, not in a separate init() in that file.
 func init() {
+	// --- core operations ---
 	addBuiltinFunction("len", builtinLen)
 	addBuiltinFunction("copy", builtinCopy)
 	addBuiltinFunction("append", builtinAppend)
 	addBuiltinFunction("delete", builtinDelete)
 	addBuiltinFunction("splice", builtinSplice)
+
+	// --- type constructors ---
 	addBuiltinFunction("string", builtinString)
 	addBuiltinFunction("int", builtinInt)
 	addBuiltinFunction("int8", builtinInt8)
@@ -42,6 +58,8 @@ func init() {
 	addBuiltinFunction("immutable_array", builtinImmutableArray)
 	addBuiltinFunction("map", builtinMap)
 	addBuiltinFunction("immutable_map", builtinImmutableMap)
+
+	// --- type predicates ---
 	addBuiltinFunction("is_int", builtinIsInt)
 	addBuiltinFunction("is_int8", builtinIsInt8)
 	addBuiltinFunction("is_int16", builtinIsInt16)
@@ -73,10 +91,18 @@ func init() {
 	addBuiltinFunction("is_undefined", builtinIsUndefined)
 	addBuiltinFunction("is_function", builtinIsFunction)
 	addBuiltinFunction("is_callable", builtinIsCallable)
+
+	// --- misc ---
 	addBuiltinFunction("type_name", builtinTypeName)
 	addBuiltinFunction("format", builtinFormat)
 	addBuiltinFunction("range", builtinRange)
 	addBuiltinFunction("args", builtinArgs)
+
+	// --- concurrency (implemented in routinevm.go) ---
+	// These are registered here so their indices are part of the same
+	// deterministic table; routinevm.go must NOT have its own init().
+	addBuiltinFunction("cancel", builtinCancel)
+	addBuiltinFunction("chan", builtinChan)
 }
 
 // GetAllBuiltinFunctions returns all builtin function objects.

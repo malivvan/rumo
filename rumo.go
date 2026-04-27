@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
@@ -38,31 +37,22 @@ func Commit() string {
 	return commit
 }
 
-// Modules returns the lazily-initialized module map containing all standard
-// library modules. The map is computed on first call and cached for subsequent
-// calls. (Issue #11: avoids eager init that forces all stdlib into every binary.)
+// Modules returns a fresh module map containing all currently registered
+// standard library modules. A new map is built on every call so that modules
+// added to BuiltinModules or SourceModules after startup are always reflected.
+// Callers that need a stable snapshot should capture the result once and reuse
+// it; callers that want to pick up late-registered modules should call Modules
+// each time they create a new Script or VM.
 func Modules() *vm.ModuleMap {
-	modulesOnce.Do(func() {
-		modulesCache = GetModuleMap(AllModuleNames()...)
-	})
-	return modulesCache
+	return GetModuleMap(AllModuleNames()...)
 }
 
-// Exports returns the lazily-initialized export map of all standard library
-// modules. The map is computed on first call and cached for subsequent calls.
+// Exports returns a fresh export map of all currently registered standard
+// library modules. Like Modules, it is recomputed on every call so that
+// modules added after startup are visible.
 func Exports() map[string]map[string]*module.Export {
-	exportsOnce.Do(func() {
-		exportsCache = GetExportMap(AllModuleNames()...)
-	})
-	return exportsCache
+	return GetExportMap(AllModuleNames()...)
 }
-
-var (
-	modulesOnce  sync.Once
-	modulesCache *vm.ModuleMap
-	exportsOnce  sync.Once
-	exportsCache map[string]map[string]*module.Export
-)
 
 // CompileOnly compiles the source code and writes the compiled binary into
 // outputFile.

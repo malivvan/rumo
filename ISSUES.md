@@ -615,7 +615,7 @@ internal state behind its back.
 
 - **Fix:** call `v.value.Copy()` (deep) here, or change the doc.
 
-### 6.5 `Modules()` / `Exports()` use `sync.Once` but recompute on test runs that swap modules &nbsp; **LOW**
+### 6.5 `Modules()` / `Exports()` use `sync.Once` but recompute on test runs that swap modules &nbsp; **LOW** &nbsp; ✅
 
 The lazy init in `rumo.go:44-58` is correct for a single binary, but
 embedders that add custom modules after first use will silently miss
@@ -625,7 +625,7 @@ them because the cache is computed once.
   `Modules()` call, or keep the map mutable (and accept the locking
   cost).
 
-### 6.6 `init()`-driven builtin registration spans 3 files &nbsp; **LOW**
+### 6.6 `init()`-driven builtin registration spans 3 files &nbsp; **LOW** &nbsp; ✅
 
 `builtins.go`, `routinevm.go` (`go`/`chan`/`cancel`),
 `builtins_new.go` are all written into `builtinFuncs` via
@@ -633,8 +633,3 @@ package-level `init()`. Toolchains that compile the package without
 all three files (build tag combos) end up with mismatched indices —
 see 5.10.
 
-
----
-- ✅ &nbsp; issue is fixed
-- 👩 &nbsp; needs human attention
-- ⚡ &nbsp; js/wasm and wasip1/wasi support

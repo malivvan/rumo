@@ -106,11 +106,18 @@ func TestExportsReturnsAllExports(t *testing.T) {
 	}
 }
 
-// Regression: Modules() must return the same cached instance on repeated calls.
+// Modules() now returns a fresh ModuleMap on every call so that modules
+// registered after startup are always visible (issue 6.5 fix).  The test
+// verifies that successive calls return equivalent content, not the same
+// pointer.
 func TestModulesReturnsCachedSingleton(t *testing.T) {
 	m1 := rumo.Modules()
 	m2 := rumo.Modules()
-	require.True(t, m1 == m2, "Modules() should return the same cached instance")
+	require.Equal(t, m1.Len(), m2.Len(), "Modules() should return maps with the same number of entries")
+	for _, name := range rumo.AllModuleNames() {
+		require.NotNil(t, m1.Get(name), "module %q missing from first Modules() call", name)
+		require.NotNil(t, m2.Get(name), "module %q missing from second Modules() call", name)
+	}
 }
 
 // Regression: Exports() must return the same cached instance on repeated calls.
