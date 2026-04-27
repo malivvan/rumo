@@ -290,6 +290,28 @@ func (r *routineRegistry) get(id int64) *routine {
 func (r *routineRegistry) del(id int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.delLocked(id)
+}
+
+// delLocked removes the routine and re-parents any surviving children to the
+// removed routine's own parent. This keeps the routine tree on the page-side
+// monitor connected when an intermediate `go` routine finishes (and gets
+// auto-pruned 2s later) while its own `go` child is still running. Without
+// reparenting, the grandchild's parentId would dangle and renderRoutines
+// would promote it to a top-level root, visually breaking the tree.
+//
+// Caller must hold r.mu.
+func (r *routineRegistry) delLocked(id int64) {
+	rt, ok := r.items[id]
+	if !ok {
+		return
+	}
+	grandparent := rt.parentID
+	for _, child := range r.items {
+		if child.parentID == id {
+			child.parentID = grandparent
+		}
+	}
 	delete(r.items, id)
 }
 
@@ -313,11 +335,20 @@ func (r *routineRegistry) prune() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n := 0
+	// Collect ids first so we can iterate ids in stable order and use the
+	// reparenting delLocked helper without mutating during range.
+	ids := make([]int64, 0, len(r.items))
 	for id, rt := range r.items {
 		if rt.state.Load() != routineRunning {
-			delete(r.items, id)
-			n++
+			ids = append(ids, id)
 		}
+	}
+	for _, id := range ids {
+		if _, ok := r.items[id]; !ok {
+			continue
+		}
+		r.delLocked(id)
+		n++
 	}
 	return n
 }

@@ -1,0 +1,15 @@
+fmt := import("fmt")
+times := import("times")
+
+c1 := chan(1)
+    r1 := go func() {
+      go func() {
+        for i := 0; i < 12; i++ {
+                fmt.println("Hello from writeRoutine:" + i)
+                times.sleep(250*times.millisecond)
+            }
+       c1.send("aaa")
+    }()
+}()
+r1.wait()
+c1.recv()
