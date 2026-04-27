@@ -6,12 +6,94 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
 )
+
+// NativeSupported reports whether the current build includes FFI (native)
+// support.  It returns true when compiled with -tags native.
+func NativeSupported() bool { return true }
+
+// resolveLibPath returns the absolute, symlink-resolved path for a shared
+// library name.  For names that contain a path separator the path is made
+// absolute and all symlinks are resolved.  For bare names (e.g. "libm.so.6")
+// the function searches the dynamic-linker search path in the same order the
+// OS linker would: LD_LIBRARY_PATH (Linux) / DYLD_LIBRARY_PATH (macOS),
+// followed by a set of well-known standard directories.  If no file is found
+// the original name is returned unchanged.
+func resolveLibPath(name string) string {
+	if strings.ContainsRune(name, '/') {
+		abs, err := filepath.Abs(name)
+		if err != nil {
+			return name
+		}
+		real, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			return abs
+		}
+		return real
+	}
+
+	// Bare library name: build a candidate search list.
+	var dirs []string
+	if v := os.Getenv("LD_LIBRARY_PATH"); v != "" { // Linux
+		dirs = append(dirs, filepath.SplitList(v)...)
+	}
+	if v := os.Getenv("DYLD_LIBRARY_PATH"); v != "" { // macOS
+		dirs = append(dirs, filepath.SplitList(v)...)
+	}
+	if v := os.Getenv("DYLD_FALLBACK_LIBRARY_PATH"); v != "" { // macOS fallback
+		dirs = append(dirs, filepath.SplitList(v)...)
+	}
+	// Standard system paths.
+	dirs = append(dirs, "/usr/local/lib", "/usr/lib", "/lib")
+	// Architecture-specific Linux multilib paths.
+	switch runtime.GOARCH {
+	case "amd64":
+		dirs = append(dirs, "/usr/lib/x86_64-linux-gnu", "/lib/x86_64-linux-gnu")
+	case "arm64":
+		dirs = append(dirs, "/usr/lib/aarch64-linux-gnu", "/lib/aarch64-linux-gnu")
+	case "386":
+		dirs = append(dirs, "/usr/lib/i386-linux-gnu", "/lib/i386-linux-gnu")
+	case "arm":
+		dirs = append(dirs, "/usr/lib/arm-linux-gnueabihf", "/lib/arm-linux-gnueabihf")
+	}
+	for _, dir := range dirs {
+		candidate := filepath.Join(dir, name)
+		if _, err := os.Stat(candidate); err == nil {
+			if real, err := filepath.EvalSymlinks(candidate); err == nil {
+				return real
+			}
+			return candidate
+		}
+	}
+	return name
+}
+
+// ResolveNativePath checks whether the shared library identified by name is
+// loadable via the same dlopen mechanism the vm package uses at runtime.
+// If the library can be opened it returns the resolved absolute path;
+// otherwise it returns an empty string.  This lets callers distinguish
+// "path stored in bytecode but not present on this system" from "path present
+// and ready", and also provides the concrete on-disk path for display.
+func ResolveNativePath(name string) string {
+	if name == "" {
+		return ""
+	}
+	handle, err := purego.Dlopen(name, purego.RTLD_LAZY)
+	if err != nil {
+		return ""
+	}
+	_ = purego.Dlclose(handle)
+	return resolveLibPath(name)
+}
 
 // ----------------------------------------------------------------------------
 // Native allow-list
@@ -60,46 +142,9 @@ func isNativePathAllowed(path string) bool {
 // ----------------------------------------------------------------------------
 // Native library type system
 // ----------------------------------------------------------------------------
-
-// NativeKind identifies a rumo <-> C type mapping used by the native runtime.
-// Each kind corresponds to exactly one C ABI type per the rumo Type Mapping
-// table in doc/types.md.
-type NativeKind int
-
-const (
-	NativeInvalid NativeKind = iota
-	NativeVoid               // no value (return only)
-
-	NativeByte   // signed char / Go byte (treated as signed 8-bit)
-	NativeInt8   // signed char / int8
-	NativeUint8  // unsigned char / uint8
-	NativeInt16  // short int / int16
-	NativeUint16 // short unsigned int / uint16
-	NativeInt32  // int / int32 (used for rumo Int)
-	NativeUint32 // unsigned int / uint32 (used for rumo Uint)
-	NativeInt64  // long long int / int64
-	NativeUint64 // long long unsigned int / uint64
-
-	NativeBool    // bool
-	NativeFloat32 // float <=> float32
-	NativeFloat64 // double <=> float64
-	NativeRune    // wchar_t / int32 character
-	NativeString  // const char* (null-terminated)
-	NativePtr     // void*
-	NativeBytes   // void* (pointer to slice data) + length
-
-	// NativeInt is the rumo "int" which is implementation-defined as 32- or
-	// 64-bit. We treat it as a C long (64-bit on modern targets) for ABI
-	// convenience, matching the previous behavior.
-	NativeInt = NativeInt64
-	// NativeUInt is the rumo "uint" equivalent of NativeInt.
-	NativeUInt = NativeUint64
-	// NativeFloat is a backward-compatible alias for NativeFloat32 per the
-	// new Type Mapping where "float" denotes a 32-bit IEEE 754 value.
-	NativeFloat = NativeFloat32
-	// NativeDouble is the explicit 64-bit floating-point kind.
-	NativeDouble = NativeFloat64
-)
+// NativeKind, NativeInt/UInt/Float/Double aliases, and NativeFuncSpec are
+// defined in native_types.go (no build tag) so they are available in both
+// native and non-native builds for encoding/decoding bytecode.
 
 // nativeKindByName resolves a user-facing type keyword such as "int" or
 // "float" to its internal NativeKind.  Names are case sensitive.
@@ -215,13 +260,6 @@ func (k NativeKind) goType() reflect.Type {
 	return nil
 }
 
-// NativeFuncSpec is the compile-time description of a single native function
-// binding captured from a `native ... { ... }` statement.
-type NativeFuncSpec struct {
-	Name   string
-	Params []NativeKind
-	Return NativeKind // NativeVoid = no return
-}
 
 // ----------------------------------------------------------------------------
 // Native loader (constant placed in the bytecode)
@@ -248,6 +286,9 @@ func (o *Native) TypeName() string { return "native-loader" }
 func (o *Native) String() string {
 	return fmt.Sprintf("<native-loader %q>", o.Path)
 }
+
+// NativePath returns the shared library path embedded in this loader constant.
+func (o *Native) NativePath() string { return o.Path }
 
 // Copy returns a copy of the loader.  The cached handle is intentionally not
 // copied so the clone will dlopen on first use, just like the original.

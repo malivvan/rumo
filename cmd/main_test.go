@@ -369,6 +369,89 @@ if len(a) != 2 { error("wrong arg count") }
 	}
 }
 
+// TestInfoCommandShowsCompatibility verifies that "rumo info <file>" prints
+// the per-module availability marks (✓/✗) and the native FFI line, and that
+// the Can Run line reflects the overall compatibility verdict.
+func TestInfoCommandShowsCompatibility(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Compile a script that imports a known-good stdlib module ("fmt").
+	src := `fmt := import("fmt"); fmt.println("hi")`
+	srcFile := filepath.Join(tempDir, "script.rumo")
+	outFile := filepath.Join(tempDir, "script.out")
+	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	var buildOut bytes.Buffer
+	var buildErr bytes.Buffer
+	if code := run(context.Background(), []string{"build", srcFile, outFile},
+		strings.NewReader(""), &buildOut, &buildErr); code != 0 {
+		t.Fatalf("build failed: %s", buildErr.String())
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{"info", outFile},
+		strings.NewReader(""), &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("info failed (exit %d): %s", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+
+	// "Can Run:" line must be present.
+	if !strings.Contains(output, "Can Run:") {
+		t.Errorf("output missing 'Can Run:' line:\n%s", output)
+	}
+	// Current interpreter has fmt, so the module should show ✓.
+	if !strings.Contains(output, "✓ fmt") {
+		t.Errorf("output missing '✓ fmt' for available module:\n%s", output)
+	}
+	// Native Libs line must be present.
+	if !strings.Contains(output, "Native Libs:") {
+		t.Errorf("output missing 'Native Libs:' line:\n%s", output)
+	}
+}
+
+// TestInfoCommandNoModules verifies that a compiled script with no module
+// imports still produces a valid info output with a "Can Run: ✓" line.
+func TestInfoCommandNoModules(t *testing.T) {
+	tempDir := t.TempDir()
+
+	src := `x := 1 + 2`
+	srcFile := filepath.Join(tempDir, "nomods.rumo")
+	outFile := filepath.Join(tempDir, "nomods.out")
+	if err := os.WriteFile(srcFile, []byte(src), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	var buildOut bytes.Buffer
+	var buildErr bytes.Buffer
+	if code := run(context.Background(), []string{"build", srcFile, outFile},
+		strings.NewReader(""), &buildOut, &buildErr); code != 0 {
+		t.Fatalf("build failed: %s", buildErr.String())
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	exitCode := run(context.Background(), []string{"info", outFile},
+		strings.NewReader(""), &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("info failed (exit %d): %s", exitCode, stderr.String())
+	}
+
+	output := stdout.String()
+	// Script has no imports, so CanRun should be true (✓).
+	if !strings.Contains(output, "Can Run:         ✓") {
+		t.Errorf("expected 'Can Run:         ✓' for no-module script:\n%s", output)
+	}
+	// Should still have Modules: (none).
+	if !strings.Contains(output, "Modules:         (none)") {
+		t.Errorf("expected 'Modules:         (none)':\n%s", output)
+	}
+}
+
 // TestSplitArgsHandlesSeparator is a unit test for the splitArgs helper:
 // everything after "--" becomes script args, and the file is separate.
 func TestSplitArgsHandlesSeparator(t *testing.T) {

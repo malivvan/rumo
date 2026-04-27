@@ -43,6 +43,7 @@ const (
 	_builtinFunction  byte = 104
 	_rangeObject      byte = 105
 	_userType         byte = 106
+	_nativeLoader     byte = 107
 )
 
 var _typeMap = map[byte]func() Object{
@@ -74,6 +75,7 @@ var _typeMap = map[byte]func() Object{
 	_error:            func() Object { return &Error{} },
 	_rangeObject:      func() Object { return &RangeObject{} },
 	_userType:         func() Object { return &UserType{} },
+	_nativeLoader:     func() Object { return &Native{} },
 }
 
 // MakeObject creates a new object based on the given type code.
@@ -151,6 +153,8 @@ func TypeOfObject(o Object) byte {
 		return _rangeObject
 	case *UserType:
 		return _userType
+	case *Native:
+		return _nativeLoader
 	default:
 		return 0
 	}
@@ -250,6 +254,17 @@ func SizeOfObject(o Object) int {
 		s += codec.SizeInt(ut.NumParams) // NumParams
 		s += codec.SizeString(ut.Result)
 		s += codec.SizeString(ut.Underlying)
+		return codec.SizeByte() + s
+	case _nativeLoader:
+		nl := o.(*Native)
+		s := codec.SizeString(nl.Path)
+		s += codec.SizeInt(len(nl.Funcs))
+		for _, f := range nl.Funcs {
+			s += codec.SizeString(f.Name)
+			s += codec.SizeByte() // Return kind
+			s += codec.SizeInt(len(f.Params))
+			s += len(f.Params) * codec.SizeByte()
+		}
 		return codec.SizeByte() + s
 	default:
 		panic("sizeof: unsupported type: " + o.TypeName())
@@ -385,6 +400,19 @@ func MarshalObject(n int, b []byte, o Object) int {
 		n = codec.MarshalInt(n, b, ut.NumParams)
 		n = codec.MarshalString(n, b, ut.Result)
 		n = codec.MarshalString(n, b, ut.Underlying)
+	case _nativeLoader:
+		nl := o.(*Native)
+		n = codec.MarshalByte(n, b, _nativeLoader)
+		n = codec.MarshalString(n, b, nl.Path)
+		n = codec.MarshalInt(n, b, len(nl.Funcs))
+		for _, f := range nl.Funcs {
+			n = codec.MarshalString(n, b, f.Name)
+			n = codec.MarshalByte(n, b, byte(f.Return))
+			n = codec.MarshalInt(n, b, len(f.Params))
+			for _, p := range f.Params {
+				n = codec.MarshalByte(n, b, byte(p))
+			}
+		}
 	default:
 		panic("marshal: unsupported type: " + o.TypeName())
 	}
@@ -679,6 +707,45 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 			return nn, nil, err
 		}
 		return n, ut, nil
+	case _nativeLoader:
+		nl := o.(*Native)
+		n, nl.Path, err = codec.UnmarshalString(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		var numFuncs int
+		n, numFuncs, err = codec.UnmarshalInt(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		nl.Funcs = make([]NativeFuncSpec, numFuncs)
+		for i := range nl.Funcs {
+			n, nl.Funcs[i].Name, err = codec.UnmarshalString(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			var retByte byte
+			n, retByte, err = codec.UnmarshalByte(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			nl.Funcs[i].Return = NativeKind(retByte)
+			var numParams int
+			n, numParams, err = codec.UnmarshalInt(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			nl.Funcs[i].Params = make([]NativeKind, numParams)
+			for j := range nl.Funcs[i].Params {
+				var pb byte
+				n, pb, err = codec.UnmarshalByte(n, b)
+				if err != nil {
+					return nn, nil, err
+				}
+				nl.Funcs[i].Params[j] = NativeKind(pb)
+			}
+		}
+		return n, nl, nil
 	}
 	return nn, nil, errors.New("unmarshal: unsupported type: " + o.TypeName())
 }

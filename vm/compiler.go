@@ -72,6 +72,7 @@ type Compiler struct {
 	trace           io.Writer
 	indent          int
 	warnings        []*CompilerWarning
+	embeds          []EmbedFile // files baked in via //embed directives
 }
 
 // Warnings returns all non-fatal diagnostics emitted during compilation.
@@ -712,6 +713,7 @@ func (c *Compiler) Bytecode() *Bytecode {
 			SourceMap:    c.currentSourceMap(),
 		},
 		Constants: c.constants,
+		Embeds:    c.embeds,
 	}
 }
 
@@ -977,7 +979,8 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 		matchedPaths = append(matchedPaths, matches...)
 	}
 
-	// For single-file embeds, require exactly one file match.
+	// For single-file embeds require exactly one match; for multi-file embeds
+	// build a Map. In both cases record each file in c.embeds.
 	if kind == embedString || kind == embedBytes {
 		if len(matchedPaths) != 1 {
 			return c.errorf(node, "embed: single-file embed matched %d files (expected 1)", len(matchedPaths))
@@ -998,6 +1001,10 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 			}
 			obj = &Bytes{Value: data}
 		}
+		// Record embed metadata.
+		rel, _ := filepath.Rel(c.importDir, matchedPaths[0])
+		rel = filepath.ToSlash(rel)
+		c.embeds = append(c.embeds, EmbedFile{Name: rel, Size: len(data)})
 		c.emit(node, parser.OpConstant, c.addConstant(obj))
 	} else {
 		// Multi-file embed: build a Map constant.
@@ -1026,6 +1033,8 @@ func (c *Compiler) compileEmbed(node *parser.EmbedStmt) error {
 				valObj = &Bytes{Value: data}
 			}
 			mapObj.Value[rel] = valObj
+			// Record embed metadata.
+			c.embeds = append(c.embeds, EmbedFile{Name: rel, Size: len(data)})
 		}
 		c.emit(node, parser.OpConstant, c.addConstant(mapObj))
 	}

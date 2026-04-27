@@ -1,0 +1,6 @@
+fmt := import("fmt")
+
+//embed index.txt
+txt := ""
+
+fmt.println(txt)

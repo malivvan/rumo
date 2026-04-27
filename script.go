@@ -46,7 +46,9 @@ const Magic = "RUMO"
 //	3 – Ptr serialisation removed
 //	4 – various encoding hardening
 //	5 – Time encoding now includes timezone name (fixes silent UTC coercion)
-const FormatVersion uint16 = 5
+//	6 – Embed table appended to bytecode body; every //embed directive is
+//	     recorded so tools like rumo.Stat can report embedded files.
+const FormatVersion uint16 = 6
 
 // Script can simplify compilation and execution of embedded scripts.
 type Script struct {
@@ -393,6 +395,19 @@ func (p *Program) UnmarshalWithModules(b []byte, modules *vm.ModuleMap) (err err
 	err = p.bytecode.Unmarshal(body[n:], modules)
 	if err != nil {
 		return err
+	}
+
+	// Refuse to run bytecode that requires native FFI support when the
+	// current interpreter was not compiled with -tags native.  A deserialized
+	// Native constant without the real implementation is a bare stub that
+	// panics or returns an opaque error on the first Call — surfacing the
+	// incompatibility here produces a clear, actionable error instead.
+	if !vm.NativeSupported() {
+		for _, c := range p.bytecode.Constants {
+			if _, ok := c.(*vm.Native); ok {
+				return fmt.Errorf("bytecode requires native FFI support; rebuild the interpreter with -tags native")
+			}
+		}
 	}
 
 	return nil

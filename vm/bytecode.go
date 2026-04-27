@@ -20,6 +20,21 @@ type Bytecode struct {
 	FileSet      *parser.SourceFileSet
 	MainFunction *CompiledFunction
 	Constants    []Object
+	// Embeds records every file that was embedded at compile time via an
+	// //embed directive, in compilation order.  It is serialized as part of
+	// the bytecode body so that tools like rumo.Stat can report embedded
+	// files without re-running the compiler.
+	Embeds []EmbedFile
+}
+
+// EmbedFile describes a single file that was baked into the bytecode by an
+// //embed directive at compile time.
+type EmbedFile struct {
+	// Name is the path of the file relative to the script's import directory,
+	// using forward slashes (e.g. "assets/logo.png").
+	Name string
+	// Size is the byte length of the file's content at compile time.
+	Size int
 }
 
 // collectBuiltinIndices scans bytecode instructions and returns the set of
@@ -172,6 +187,47 @@ func (b *Bytecode) Equals(other *Bytecode) bool {
 	return true
 }
 
+// sizeEmbedTable returns the encoded byte size of the embed table.
+func sizeEmbedTable(embeds []EmbedFile) int {
+	n := codec.SizeInt(len(embeds))
+	for _, e := range embeds {
+		n += codec.SizeString(e.Name) + codec.SizeInt(e.Size)
+	}
+	return n
+}
+
+// marshalEmbedTable writes the embed table into b starting at offset n.
+func marshalEmbedTable(n int, b []byte, embeds []EmbedFile) int {
+	n = codec.MarshalInt(n, b, len(embeds))
+	for _, e := range embeds {
+		n = codec.MarshalString(n, b, e.Name)
+		n = codec.MarshalInt(n, b, e.Size)
+	}
+	return n
+}
+
+// unmarshalEmbedTable reads the embed table produced by marshalEmbedTable.
+func unmarshalEmbedTable(n int, data []byte) (int, []EmbedFile, error) {
+	var count int
+	var err error
+	n, count, err = codec.UnmarshalInt(n, data)
+	if err != nil {
+		return n, nil, fmt.Errorf("embed table: %w", err)
+	}
+	embeds := make([]EmbedFile, count)
+	for i := range embeds {
+		n, embeds[i].Name, err = codec.UnmarshalString(n, data)
+		if err != nil {
+			return n, nil, fmt.Errorf("embed table entry %d name: %w", i, err)
+		}
+		n, embeds[i].Size, err = codec.UnmarshalInt(n, data)
+		if err != nil {
+			return n, nil, fmt.Errorf("embed table entry %d size: %w", i, err)
+		}
+	}
+	return n, embeds, nil
+}
+
 // Marshal writes Bytecode data to the writer.
 // The encoding begins with a builtin name table that maps the OpGetBuiltin
 // indices used in this bytecode to their canonical names.  On Unmarshal the
@@ -188,11 +244,13 @@ func (b *Bytecode) Marshal() ([]byte, error) {
 	n := 0
 	c := make([]byte,
 		sizeBuiltinNameTable(indices)+
-			parser.SizeFileSet(b.FileSet)+SizeOfObject(b.MainFunction)+codec.SizeSlice[Object](b.Constants, SizeOfObject))
+			parser.SizeFileSet(b.FileSet)+SizeOfObject(b.MainFunction)+codec.SizeSlice[Object](b.Constants, SizeOfObject)+
+			sizeEmbedTable(b.Embeds))
 	n = marshalBuiltinNameTable(n, c, indices)
 	n = parser.MarshalFileSet(n, c, b.FileSet)
 	n = MarshalObject(n, c, b.MainFunction)
 	n = codec.MarshalSlice(n, c, b.Constants, MarshalObject)
+	n = marshalEmbedTable(n, c, b.Embeds)
 	if n != len(c) {
 		return nil, fmt.Errorf("encoded length mismatch: %d != %d", n, len(c))
 	}
@@ -270,6 +328,14 @@ func (b *Bytecode) Unmarshal(data []byte, modules *ModuleMap) (err error) {
 	n, b.Constants, err = codec.UnmarshalSlice[Object](n, data, UnmarshalObject)
 	if err != nil {
 		return err
+	}
+
+	// Embed table (append-only; present in format version 6+).
+	if n < len(data) {
+		n, b.Embeds, err = unmarshalEmbedTable(n, data)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Patch OpGetBuiltin operands in all compiled functions using the remap
