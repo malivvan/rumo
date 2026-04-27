@@ -13,7 +13,7 @@ import (
 
 	"path/filepath"
 	"sync"
-	"unsafe"
+	"sync/atomic"
 
 	"github.com/malivvan/rumo/vm/parser"
 )
@@ -208,6 +208,7 @@ func (s *Script) Compile() (*Program, error) {
 		}
 	}
 	return &Program{
+		id:            programIDCounter.Add(1),
 		globalIndices: indices,
 		bytecode:      bytecode,
 		globals:       globals,
@@ -275,7 +276,13 @@ func (s *Script) prepCompile() (symbolTable *vm.SymbolTable, globals []vm.Object
 
 // Program is a compiled instance of the user script. Use Script.Compile() to
 // create Compiled object.
+// programIDCounter is incremented for every new Program to give it a
+// stable, portable unique identity used for consistent lock ordering in
+// Program.Equals (replacing the old unsafe.Pointer comparison).
+var programIDCounter atomic.Int64
+
 type Program struct {
+	id            int64
 	globalIndices map[string]int
 	bytecode      *vm.Bytecode
 	globals       []vm.Object
@@ -495,6 +502,7 @@ func (p *Program) Clone() *Program {
 	defer p.lock.RUnlock()
 
 	clone := &Program{
+		id:            programIDCounter.Add(1),
 		globalIndices: p.globalIndices,
 		bytecode:      p.bytecode,
 		globals:       make([]vm.Object, len(p.globals)),
@@ -593,11 +601,12 @@ func (p *Program) Equals(other *Program) bool {
 		return true
 	}
 
-	// Acquire locks in a consistent order (by pointer address) to avoid
+	// Acquire locks in a consistent order (by stable integer ID) to avoid
 	// deadlock when two goroutines call a.Equals(b) and b.Equals(a)
-	// concurrently.
+	// concurrently.  Using integer IDs instead of pointer addresses avoids
+	// undefined behaviour under moving GCs (issue 6.3).
 	first, second := &p.lock, &other.lock
-	if uintptr(unsafe.Pointer(first)) > uintptr(unsafe.Pointer(second)) {
+	if p.id > other.id {
 		first, second = second, first
 	}
 	first.RLock()

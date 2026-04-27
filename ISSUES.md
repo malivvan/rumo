@@ -585,7 +585,7 @@ func (o *BuiltinFunction) Copy() Object {
 and for the type-name string. After a `Copy()`, marshaling produces
 a builtin with name "" that can't be unmarshalled.
 
-### 6.3 `unsafe.Pointer` arithmetic in `Program.Equals` &nbsp; **LOW**
+### 6.3 `unsafe.Pointer` arithmetic in `Program.Equals` &nbsp; **LOW** &nbsp; ✅
 
 `script.go:534-538`:
 
