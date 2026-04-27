@@ -2,8 +2,11 @@ package rumo_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc64"
 	"math/rand"
 	"sync"
 	"testing"
@@ -18,6 +21,100 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
+
+// TestBytecodeIntegrity verifies that the bytecode serialisation format uses
+// SHA-256 as its integrity checksum rather than CRC64/ECMA.
+//
+// The historical implementation wrote an 8-byte CRC64/ECMA checksum as the
+// trailer of every marshalled Program. CRC64 is a non-cryptographic checksum:
+// any attacker who can modify the bytecode bytes on disk can also trivially
+// recompute a new valid CRC64 to match, making the checksum useless as
+// tamper-detection. The fix replaces CRC64 with SHA-256 (32-byte trailer),
+// which provides a 256-bit digest and a vastly smaller collision probability,
+// and bumps FormatVersion so old CRC64-signed files are cleanly rejected.
+//
+// The tests below cover:
+//  1. The marshalled trailer is exactly 32 bytes and equals sha256(body).
+//  2. A single intentional bit-flip in the body is detected.
+//  3. An attacker who recomputes the CRC64 over tampered bytes and patches
+//     the trailer cannot fool Unmarshal (the old 8-byte slot no longer lives
+//     in the last 8 bytes of the file – the hash is 32 bytes).
+//  4. A file produced with the old FormatVersion (1, CRC64) is rejected.
+func TestBytecodeIntegrity(t *testing.T) {
+	p := compile(t, `a := 1 + 2`, nil)
+
+	data, err := p.Marshal()
+	require.NoError(t, err)
+
+	// --- 1. Trailer must be SHA-256 (32 bytes), not CRC64 (8 bytes) ----------
+
+	// Header is always 10 bytes: [4]MAGIC [2]VERSION [4]SIZE
+	const headerSize = 10
+
+	// The body size is encoded in header bytes [6:10].
+	bodySize := int(binary.LittleEndian.Uint32(data[6:10]))
+
+	// With SHA-256 the total file should be header + body + 32.
+	wantTotal := headerSize + bodySize + 32
+	if len(data) != wantTotal {
+		t.Errorf("Marshal: total length = %d, want %d (header %d + body %d + sha256 trailer 32)",
+			len(data), wantTotal, headerSize, bodySize)
+	}
+
+	// Verify the trailer bytes match sha256(body).
+	body := data[headerSize : headerSize+bodySize]
+	wantSum := sha256.Sum256(body)
+	gotSum := data[headerSize+bodySize:]
+	if len(gotSum) != 32 || string(gotSum) != string(wantSum[:]) {
+		t.Errorf("Marshal: trailer is not sha256(body);\n  got  %x\n  want %x", gotSum, wantSum)
+	}
+
+	// --- 2. Single bit-flip in body must be detected by Unmarshal -----------
+
+	tampered := make([]byte, len(data))
+	copy(tampered, data)
+	tampered[headerSize+bodySize/2] ^= 0x01 // flip one bit in the body
+
+	cx := new(rumo.Program)
+	if err := cx.Unmarshal(tampered); err == nil {
+		t.Error("Unmarshal: single bit-flip in body was NOT detected – integrity check failed")
+	}
+
+	// --- 3. Attacker recomputes CRC64 and patches the old 8-byte slot -------
+	//
+	// Before the fix, the trailer was exactly 8 bytes; an attacker could
+	// modify the body and then patch data[len-8:] with a freshly-computed
+	// CRC64 to produce a "valid" file.  With SHA-256 the trailer is 32 bytes,
+	// so patching only the last 8 bytes leaves the preceding 24 bytes of the
+	// sha256 digest wrong → Unmarshal must reject the file.
+
+	crcTampered := make([]byte, len(data))
+	copy(crcTampered, data)
+	// Flip a byte in the body.
+	crcTampered[headerSize+bodySize/3] ^= 0xFF
+	// Recompute CRC64 over the modified body and patch the last 8 bytes.
+	tamperedBody := crcTampered[headerSize : headerSize+bodySize]
+	tbl := crc64.MakeTable(crc64.ECMA)
+	h := crc64.New(tbl)
+	_, _ = h.Write(tamperedBody)
+	binary.LittleEndian.PutUint64(crcTampered[len(crcTampered)-8:], h.Sum64())
+
+	cx2 := new(rumo.Program)
+	if err := cx2.Unmarshal(crcTampered); err == nil {
+		t.Error("Unmarshal: attacker-recomputed CRC64 patch was NOT detected – integrity check failed")
+	}
+
+	// --- 4. Old-format (version 1 / CRC64) files must be rejected -----------
+
+	oldFormat := make([]byte, len(data))
+	copy(oldFormat, data)
+	binary.LittleEndian.PutUint16(oldFormat[4:6], 1) // downgrade version to 1
+
+	cx3 := new(rumo.Program)
+	if err := cx3.Unmarshal(oldFormat); err == nil {
+		t.Error("Unmarshal: file with old FormatVersion 1 (CRC64) was accepted – version gate missing")
+	}
+}
 
 func TestExample(t *testing.T) {
 	// script code

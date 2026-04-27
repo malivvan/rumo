@@ -2,6 +2,7 @@ package vm
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/malivvan/rumo/vm/codec"
@@ -70,10 +71,12 @@ var _typeMap = map[byte]func() Object{
 }
 
 // MakeObject creates a new object based on the given type code.
+// Returns nil if the type code is not recognised; callers should check
+// for nil and convert it to an error rather than letting it propagate.
 func MakeObject(code byte) Object {
 	fn, exists := _typeMap[code]
 	if !exists {
-		panic("unknown type code: " + string(code))
+		return nil
 	}
 	return fn()
 }
@@ -313,6 +316,9 @@ func MarshalObject(n int, b []byte, o Object) int {
 
 // UnmarshalObject unmarshals the given byte slice into an object.
 func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
+	if nn >= len(b) {
+		return nn, nil, errors.New("unmarshal: buffer too small to read type code")
+	}
 	if b[nn] == 0 {
 		return nn + 1, nil, nil
 	}
@@ -322,6 +328,9 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		return nn, nil, err
 	}
 	o = MakeObject(t)
+	if o == nil {
+		return nn, nil, fmt.Errorf("unmarshal: unknown object type code: %d", t)
+	}
 	switch t {
 	case _undefined:
 		return n, o, nil

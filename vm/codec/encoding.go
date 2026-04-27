@@ -122,6 +122,13 @@ func UnmarshalSlice[T any](n int, b []byte, unmarshaler interface{}) (int, []T, 
 	}
 	s := int(us)
 
+	// Guard against length-bomb: a claimed count larger than the remaining
+	// buffer cannot possibly be satisfied (every element needs at least 1
+	// byte), so reject it immediately without allocating.
+	if s > len(b)-n {
+		return 0, nil, ErrBufTooSmall
+	}
+
 	var t T
 	ts := make([]T, s)
 

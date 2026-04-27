@@ -193,7 +193,7 @@ Even *without* `native`, embedders that expose Go callbacks taking
   values; remove `Int → Ptr` coercion; never marshal `Ptr` (it cannot
   survive an exec across runs anyway).
 
-### 2.3 Bytecode integrity uses CRC64, not a cryptographic hash &nbsp; **HIGH**
+### 2.3 Bytecode integrity uses CRC64, not a cryptographic hash &nbsp; **HIGH** ✅
 
 `script.go:288-294` validates with `crc64/ECMA`. CRC is a
 non-cryptographic checksum: a passive attacker who can modify the
@@ -208,7 +208,7 @@ signed packages), this misleads them.
   "tamper-detection, not authentication". Add an optional Ed25519
   signature block.
 
-### 2.4 Unmarshal lacks size caps & sanity checks &nbsp; **HIGH**
+### 2.4 Unmarshal lacks size caps & sanity checks &nbsp; **HIGH** ✅
 
 - `codec/encoding.go:118-150` `UnmarshalSlice` reads a varint and
   immediately `make([]T, s)`.

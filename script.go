@@ -3,13 +3,13 @@ package rumo
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/codec"
 
-	"hash/crc64"
 	"path/filepath"
 	"sync"
 	"unsafe"
@@ -18,7 +18,7 @@ import (
 )
 
 // Magic is a magic number every encoded Program starts with.
-// format: [4]MAGIC [2]VERSION [4]SIZE [N]DATA [8]CRC64(ECMA)
+// format: [4]MAGIC [2]VERSION [4]SIZE [N]DATA [32]SHA256(DATA)
 const Magic = "RUMO"
 
 // FormatVersion is the current bytecode format version.
@@ -26,7 +26,12 @@ const Magic = "RUMO"
 // Increment this constant whenever the on-disk format changes in an
 // incompatible way so that old compiled files produce a clear error
 // ("incompatible bytecode version") instead of cryptic decode failures.
-const FormatVersion uint16 = 1
+//
+// Version history:
+//
+//	1: initial format; trailer was an 8-byte CRC64/ECMA checksum.
+//	2: trailer replaced with a 32-byte SHA-256 digest.
+const FormatVersion uint16 = 2
 
 // Script can simplify compilation and execution of embedded scripts.
 type Script struct {
@@ -265,13 +270,13 @@ func (p *Program) UnmarshalWithModules(b []byte, modules *vm.ModuleMap) (err err
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
-	// header: [4]MAGIC [2]VERSION [4]SIZE = 10 bytes; tail: [8]CRC64
-	if len(b) < 18 {
+	// header: [4]MAGIC [2]VERSION [4]SIZE = 10 bytes; tail: [32]SHA256
+	if len(b) < 42 {
 		return fmt.Errorf("invalid byte slice length: %d", len(b))
 	}
 	head := b[:10]
-	body := b[10 : len(b)-8]
-	tail := b[len(b)-8:]
+	body := b[10 : len(b)-32]
+	tail := b[len(b)-32:]
 
 	if string(head[:4]) != Magic {
 		return fmt.Errorf("invalid magic number: %q", string(head[:4]))
@@ -284,14 +289,9 @@ func (p *Program) UnmarshalWithModules(b []byte, modules *vm.ModuleMap) (err err
 	if size != uint32(len(body)) {
 		return fmt.Errorf("invalid size: %d != %d", size, len(body))
 	}
-	hash := binary.LittleEndian.Uint64(tail[:8])
-	crc := crc64.New(crc64.MakeTable(crc64.ECMA))
-	_, err = crc.Write(body)
-	if err != nil {
-		return fmt.Errorf("failed to calculate crc64: %w", err)
-	}
-	if crc.Sum64() != hash {
-		return fmt.Errorf("invalid crc64: %d != %d", hash, crc.Sum64())
+	wantSum := sha256.Sum256(body)
+	if string(tail) != string(wantSum[:]) {
+		return fmt.Errorf("invalid sha256 checksum: file may be corrupted or tampered")
 	}
 
 	n := 0
@@ -349,12 +349,9 @@ func (p *Program) Marshal() ([]byte, error) {
 	binary.LittleEndian.PutUint16(head[4:6], FormatVersion)
 	binary.LittleEndian.PutUint32(head[6:10], uint32(len(body)))
 
-	var tail [8]byte
-	crc := crc64.New(crc64.MakeTable(crc64.ECMA))
-	if _, err := crc.Write(body); err != nil {
-		return nil, fmt.Errorf("failed to calculate crc64: %w", err)
-	}
-	binary.LittleEndian.PutUint64(tail[:], crc.Sum64())
+	var tail [32]byte
+	sum := sha256.Sum256(body)
+	copy(tail[:], sum[:])
 
 	return append(append(head[:], body...), tail[:]...), nil
 }

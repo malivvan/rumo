@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -561,5 +562,115 @@ func TestStackOverflowFromDeepRecursionDoesNotPanic(t *testing.T) {
 	}
 	if !strings.Contains(runErr.Error(), "stack overflow") {
 		t.Fatalf("expected 'stack overflow' in error, got: %v", runErr)
+	}
+}
+
+// TestMakeObjectUnknownTypeDoesNotPanic verifies that MakeObject returns nil
+// instead of panicking when it receives a type byte not in _typeMap.
+func TestMakeObjectUnknownTypeDoesNotPanic(t *testing.T) {
+	var panicked bool
+	var panicVal interface{}
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+				panicVal = r
+			}
+		}()
+		// 0xFF is not a valid type code; currently panics with
+		// "unknown type code: …"; after the fix it returns nil.
+		_ = MakeObject(0xFF)
+	}()
+
+	if panicked {
+		t.Fatalf("MakeObject panicked instead of returning nil for unknown type code 0xFF: %v", panicVal)
+	}
+}
+
+// TestUnmarshalObjectUnknownTypeDoesNotPanic verifies that UnmarshalObject
+// returns an error (not a panic) when the first byte is an unknown type code.
+// Before the fix, MakeObject panics inside UnmarshalObject, crashing the host.
+func TestUnmarshalObjectUnknownTypeDoesNotPanic(t *testing.T) {
+	const badType = byte(0xFF)
+	buf := []byte{badType}
+
+	var panicked bool
+	var panicVal interface{}
+	var err error
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				panicked = true
+				panicVal = r
+			}
+		}()
+		_, _, err = UnmarshalObject(0, buf)
+	}()
+
+	if panicked {
+		t.Fatalf("UnmarshalObject panicked instead of returning an error for unknown type byte 0xFF: %v", panicVal)
+	}
+	if err == nil {
+		t.Fatal("UnmarshalObject should have returned an error for unknown type byte, got nil")
+	}
+}
+
+// TestUnmarshalSliceLengthBombDoesNotAllocate verifies that reading an Object
+// array constant from a buffer whose varint-encoded length far exceeds the
+// remaining bytes does not cause a giant backing-slice allocation.
+//
+// A varint-encoded claim of 1<<20 Objects in a tiny buffer should return
+// ErrBufTooSmall immediately.  Before the fix, codec.UnmarshalSlice calls
+// make([]Object, 1<<20) — allocating ~8 MB of interface{} pointers — before
+// discovering the buffer is empty.  With a claim of 1<<31-1 the allocation
+// would be ~16 GB and crash the host process.
+func TestUnmarshalSliceLengthBombDoesNotAllocate(t *testing.T) {
+	const claimedLen = 1 << 20 // 1 048 576 elements
+
+	// Encode the claimed length as an unsigned varint into a tiny buffer.
+	var rawBuf [10]byte
+	n := 0
+	v := uint(claimedLen)
+	for v >= 0x80 {
+		rawBuf[n] = byte(v) | 0x80
+		v >>= 7
+		n++
+	}
+	rawBuf[n] = byte(v)
+	n++
+
+	// Build a 1+n byte payload: type tag _array + the length varint.
+	// No actual element bytes follow — the buffer is intentionally too small.
+	arrayPayload := make([]byte, 1+n)
+	arrayPayload[0] = _array // type tag for an Array constant
+	copy(arrayPayload[1:], rawBuf[:n])
+
+	var ms1, ms2 runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&ms1)
+
+	// Before the fix, UnmarshalSlice allocates make([]Object, 1<<20) before
+	// discovering the buffer is empty, and then the first element read panics
+	// with an index-out-of-bounds (b[n] with n >= len(b)). Wrap in recover.
+	func() {
+		defer func() { recover() }() //nolint
+		_, _, _ = UnmarshalObject(0, arrayPayload)
+	}()
+
+	runtime.GC()
+	runtime.ReadMemStats(&ms2)
+
+	allocatedBytes := int64(ms2.TotalAlloc - ms1.TotalAlloc)
+	// Before fix: make([]Object, 1<<20) allocates at least 8 MB.
+	// After fix: immediate ErrBufTooSmall without any significant allocation.
+	const maxAllowedAlloc = 1 << 16 // 64 KB generous upper bound
+	if allocatedBytes > maxAllowedAlloc {
+		t.Errorf(
+			"UnmarshalSlice allocated %d bytes for a buffer claiming %d elements — "+
+				"length cap missing: should reject s > len(b) without allocating",
+			allocatedBytes, claimedLen,
+		)
 	}
 }
