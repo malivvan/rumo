@@ -1090,3 +1090,70 @@ func TestIssue25_MapIterateConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestCyclicStructures verifies that Equals, Copy, String, and ToInterface
+// do not stack-overflow (issue 5.9) when Array/Map objects form cycles.
+func TestCyclicStructures(t *testing.T) {
+	// --- Array self-reference ---
+	arrA := &vm.Array{}
+	arrA.Value = []vm.Object{arrA} // arr = [arr]
+
+	// String must not overflow and must contain the cycle sentinel.
+	s := arrA.String()
+	if s == "" {
+		t.Fatal("String() returned empty for cyclic array")
+	}
+
+	// Equals must return true when comparing to itself.
+	if !arrA.Equals(arrA) {
+		t.Error("cyclic array should equal itself")
+	}
+
+	// Copy must not overflow and must return a fresh array.
+	c := arrA.Copy()
+	if c == nil {
+		t.Fatal("Copy() returned nil for cyclic array")
+	}
+	if c == vm.Object(arrA) {
+		t.Error("Copy() returned the same pointer for cyclic array")
+	}
+
+	// ToInterface must not overflow.
+	iface := vm.ToInterface(arrA)
+	if iface == nil {
+		t.Fatal("ToInterface() returned nil for cyclic array")
+	}
+
+	// --- Map self-reference ---
+	mapA := &vm.Map{Value: make(map[string]vm.Object)}
+	mapA.Value["self"] = mapA // map = {self: map}
+
+	ms := mapA.String()
+	if ms == "" {
+		t.Fatal("String() returned empty for cyclic map")
+	}
+	if !mapA.Equals(mapA) {
+		t.Error("cyclic map should equal itself")
+	}
+	mc := mapA.Copy()
+	if mc == nil {
+		t.Fatal("Copy() returned nil for cyclic map")
+	}
+	miface := vm.ToInterface(mapA)
+	if miface == nil {
+		t.Fatal("ToInterface() returned nil for cyclic map")
+	}
+
+	// --- Mutual cycle: a = [b], b = [a] ---
+	arrB := &vm.Array{}
+	arrC := &vm.Array{Value: []vm.Object{arrB}}
+	arrB.Value = []vm.Object{arrC}
+
+	if !arrC.Equals(arrC) {
+		t.Error("mutual-cycle array should equal itself")
+	}
+	_ = arrC.String()
+	_ = arrC.Copy()
+	_ = vm.ToInterface(arrC)
+}
+

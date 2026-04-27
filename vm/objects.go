@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/malivvan/rumo/vm/parser"
 	"github.com/malivvan/rumo/vm/token"
@@ -196,11 +197,23 @@ func (o *Array) TypeName() string {
 }
 
 func (o *Array) String() string {
+	return o.stringWithVisited(make(map[uintptr]bool))
+}
+
+func (o *Array) stringWithVisited(vis map[uintptr]bool) string {
+	key := uintptr(unsafe.Pointer(o))
+	if vis[key] {
+		return "[...]"
+	}
+	vis[key] = true
+	defer delete(vis, key)
 	o.mu.RLock()
-	defer o.mu.RUnlock()
+	snap := make([]Object, len(o.Value))
+	copy(snap, o.Value)
+	o.mu.RUnlock()
 	var elements []string
-	for _, e := range o.Value {
-		elements = append(elements, e.String())
+	for _, e := range snap {
+		elements = append(elements, elemString(e, vis))
 	}
 	return fmt.Sprintf("[%s]", strings.Join(elements, ", "))
 }
@@ -229,13 +242,24 @@ func (o *Array) BinaryOp(op token.Token, rhs Object) (Object, error) {
 
 // Copy returns a copy of the type.
 func (o *Array) Copy() Object {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-	var c []Object
-	for _, elem := range o.Value {
-		c = append(c, elem.Copy())
+	return o.copyWithMemo(make(map[uintptr]Object))
+}
+
+func (o *Array) copyWithMemo(memo map[uintptr]Object) Object {
+	key := uintptr(unsafe.Pointer(o))
+	if existing, ok := memo[key]; ok {
+		return existing
 	}
-	return &Array{Value: c}
+	o.mu.RLock()
+	snap := make([]Object, len(o.Value))
+	copy(snap, o.Value)
+	o.mu.RUnlock()
+	c := &Array{Value: make([]Object, len(snap))}
+	memo[key] = c // register before recursing to break cycles
+	for i, elem := range snap {
+		c.Value[i] = copyElem(elem, memo)
+	}
+	return c
 }
 
 // IsFalsy returns true if the value of the type is falsy.
@@ -248,24 +272,50 @@ func (o *Array) IsFalsy() bool {
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *Array) Equals(x Object) bool {
+	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
+}
+
+func (o *Array) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
+	oPtr := uintptr(unsafe.Pointer(o))
+	var xArr *Array
+	var xIArr *ImmutableArray
+	var xPtr uintptr
+	switch x := xObj.(type) {
+	case *Array:
+		xArr = x
+		xPtr = uintptr(unsafe.Pointer(x))
+	case *ImmutableArray:
+		xIArr = x
+		xPtr = uintptr(unsafe.Pointer(x))
+	default:
+		return false
+	}
+	lo, hi := oPtr, xPtr
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	pairKey := [2]uintptr{lo, hi}
+	if vis[pairKey] {
+		return true // assume equal on cycle
+	}
+	vis[pairKey] = true
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	var xVal []Object
-	switch x := x.(type) {
-	case *Array:
-		x.mu.RLock()
-		defer x.mu.RUnlock()
-		xVal = x.Value
-	case *ImmutableArray:
-		xVal = x.Value
-	default:
-		return false
+	if xArr != nil {
+		if xArr != o {
+			xArr.mu.RLock()
+			defer xArr.mu.RUnlock()
+		}
+		xVal = xArr.Value
+	} else {
+		xVal = xIArr.Value
 	}
 	if len(o.Value) != len(xVal) {
 		return false
 	}
 	for i, e := range o.Value {
-		if !e.Equals(xVal[i]) {
+		if !equalsElem(e, xVal[i], vis) {
 			return false
 		}
 	}
@@ -1006,9 +1056,19 @@ func (o *ImmutableArray) TypeName() string {
 }
 
 func (o *ImmutableArray) String() string {
+	return o.stringWithVisited(make(map[uintptr]bool))
+}
+
+func (o *ImmutableArray) stringWithVisited(vis map[uintptr]bool) string {
+	key := uintptr(unsafe.Pointer(o))
+	if vis[key] {
+		return "[...]"
+	}
+	vis[key] = true
+	defer delete(vis, key)
 	var elements []string
 	for _, e := range o.Value {
-		elements = append(elements, e.String())
+		elements = append(elements, elemString(e, vis))
 	}
 	return fmt.Sprintf("[%s]", strings.Join(elements, ", "))
 }
@@ -1030,11 +1090,20 @@ func (o *ImmutableArray) BinaryOp(op token.Token, rhs Object) (Object, error) {
 
 // Copy returns a copy of the type.
 func (o *ImmutableArray) Copy() Object {
-	var c []Object
-	for _, elem := range o.Value {
-		c = append(c, elem.Copy())
+	return o.copyWithMemo(make(map[uintptr]Object))
+}
+
+func (o *ImmutableArray) copyWithMemo(memo map[uintptr]Object) Object {
+	key := uintptr(unsafe.Pointer(o))
+	if existing, ok := memo[key]; ok {
+		return existing
 	}
-	return &Array{Value: c}
+	c := &Array{Value: make([]Object, len(o.Value))}
+	memo[key] = c
+	for i, elem := range o.Value {
+		c.Value[i] = copyElem(elem, memo)
+	}
+	return c
 }
 
 // IsFalsy returns true if the value of the type is falsy.
@@ -1045,20 +1114,46 @@ func (o *ImmutableArray) IsFalsy() bool {
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *ImmutableArray) Equals(x Object) bool {
-	var xVal []Object
-	switch x := x.(type) {
+	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
+}
+
+func (o *ImmutableArray) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
+	oPtr := uintptr(unsafe.Pointer(o))
+	var xArr *Array
+	var xIArr *ImmutableArray
+	var xPtr uintptr
+	switch x := xObj.(type) {
 	case *Array:
-		xVal = x.Value
+		xArr = x
+		xPtr = uintptr(unsafe.Pointer(x))
 	case *ImmutableArray:
-		xVal = x.Value
+		xIArr = x
+		xPtr = uintptr(unsafe.Pointer(x))
 	default:
 		return false
+	}
+	lo, hi := oPtr, xPtr
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	pairKey := [2]uintptr{lo, hi}
+	if vis[pairKey] {
+		return true
+	}
+	vis[pairKey] = true
+	var xVal []Object
+	if xArr != nil {
+		xArr.mu.RLock()
+		defer xArr.mu.RUnlock()
+		xVal = xArr.Value
+	} else {
+		xVal = xIArr.Value
 	}
 	if len(o.Value) != len(xVal) {
 		return false
 	}
 	for i, e := range o.Value {
-		if !e.Equals(xVal[i]) {
+		if !equalsElem(e, xVal[i], vis) {
 			return false
 		}
 	}
@@ -1107,20 +1202,39 @@ func (o *ImmutableMap) TypeName() string {
 }
 
 func (o *ImmutableMap) String() string {
+	return o.stringWithVisited(make(map[uintptr]bool))
+}
+
+func (o *ImmutableMap) stringWithVisited(vis map[uintptr]bool) string {
+	key := uintptr(unsafe.Pointer(o))
+	if vis[key] {
+		return "{...}"
+	}
+	vis[key] = true
+	defer delete(vis, key)
 	var pairs []string
 	for k, v := range o.Value {
-		pairs = append(pairs, fmt.Sprintf("%s: %s", k, v.String()))
+		pairs = append(pairs, fmt.Sprintf("%s: %s", k, elemString(v, vis)))
 	}
 	return fmt.Sprintf("{%s}", strings.Join(pairs, ", "))
 }
 
 // Copy returns a copy of the type.
 func (o *ImmutableMap) Copy() Object {
-	c := make(map[string]Object)
-	for k, v := range o.Value {
-		c[k] = v.Copy()
+	return o.copyWithMemo(make(map[uintptr]Object))
+}
+
+func (o *ImmutableMap) copyWithMemo(memo map[uintptr]Object) Object {
+	key := uintptr(unsafe.Pointer(o))
+	if existing, ok := memo[key]; ok {
+		return existing
 	}
-	return &Map{Value: c}
+	c := &Map{Value: make(map[string]Object, len(o.Value))}
+	memo[key] = c
+	for k, v := range o.Value {
+		c.Value[k] = copyElem(v, memo)
+	}
+	return c
 }
 
 // IsFalsy returns true if the value of the type is falsy.
@@ -1145,21 +1259,46 @@ func (o *ImmutableMap) IndexGet(index Object) (res Object, err error) {
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *ImmutableMap) Equals(x Object) bool {
-	var xVal map[string]Object
-	switch x := x.(type) {
+	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
+}
+
+func (o *ImmutableMap) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
+	oPtr := uintptr(unsafe.Pointer(o))
+	var xMap *Map
+	var xIMap *ImmutableMap
+	var xPtr uintptr
+	switch x := xObj.(type) {
 	case *Map:
-		xVal = x.Value
+		xMap = x
+		xPtr = uintptr(unsafe.Pointer(x))
 	case *ImmutableMap:
-		xVal = x.Value
+		xIMap = x
+		xPtr = uintptr(unsafe.Pointer(x))
 	default:
 		return false
+	}
+	lo, hi := oPtr, xPtr
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	pairKey := [2]uintptr{lo, hi}
+	if vis[pairKey] {
+		return true
+	}
+	vis[pairKey] = true
+	var xVal map[string]Object
+	if xMap != nil {
+		xMap.mu.RLock()
+		defer xMap.mu.RUnlock()
+		xVal = xMap.Value
+	} else {
+		xVal = xIMap.Value
 	}
 	if len(o.Value) != len(xVal) {
 		return false
 	}
 	for k, v := range o.Value {
-		tv := xVal[k]
-		if !v.Equals(tv) {
+		if !equalsElem(v, xVal[k], vis) {
 			return false
 		}
 	}
@@ -1402,24 +1541,51 @@ func (o *Map) TypeName() string {
 }
 
 func (o *Map) String() string {
+	return o.stringWithVisited(make(map[uintptr]bool))
+}
+
+func (o *Map) stringWithVisited(vis map[uintptr]bool) string {
+	key := uintptr(unsafe.Pointer(o))
+	if vis[key] {
+		return "{...}"
+	}
+	vis[key] = true
+	defer delete(vis, key)
 	o.mu.RLock()
-	defer o.mu.RUnlock()
-	var pairs []string
+	snap := make(map[string]Object, len(o.Value))
 	for k, v := range o.Value {
-		pairs = append(pairs, fmt.Sprintf("%s: %s", k, v.String()))
+		snap[k] = v
+	}
+	o.mu.RUnlock()
+	var pairs []string
+	for k, v := range snap {
+		pairs = append(pairs, fmt.Sprintf("%s: %s", k, elemString(v, vis)))
 	}
 	return fmt.Sprintf("{%s}", strings.Join(pairs, ", "))
 }
 
 // Copy returns a copy of the type.
 func (o *Map) Copy() Object {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-	c := make(map[string]Object)
-	for k, v := range o.Value {
-		c[k] = v.Copy()
+	return o.copyWithMemo(make(map[uintptr]Object))
+}
+
+func (o *Map) copyWithMemo(memo map[uintptr]Object) Object {
+	key := uintptr(unsafe.Pointer(o))
+	if existing, ok := memo[key]; ok {
+		return existing
 	}
-	return &Map{Value: c}
+	o.mu.RLock()
+	snap := make(map[string]Object, len(o.Value))
+	for k, v := range o.Value {
+		snap[k] = v
+	}
+	o.mu.RUnlock()
+	c := &Map{Value: make(map[string]Object, len(snap))}
+	memo[key] = c // register before recursing to break cycles
+	for k, v := range snap {
+		c.Value[k] = copyElem(v, memo)
+	}
+	return c
 }
 
 // IsFalsy returns true if the value of the type is falsy.
@@ -1432,25 +1598,50 @@ func (o *Map) IsFalsy() bool {
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *Map) Equals(x Object) bool {
+	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
+}
+
+func (o *Map) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
+	oPtr := uintptr(unsafe.Pointer(o))
+	var xMap *Map
+	var xIMap *ImmutableMap
+	var xPtr uintptr
+	switch x := xObj.(type) {
+	case *Map:
+		xMap = x
+		xPtr = uintptr(unsafe.Pointer(x))
+	case *ImmutableMap:
+		xIMap = x
+		xPtr = uintptr(unsafe.Pointer(x))
+	default:
+		return false
+	}
+	lo, hi := oPtr, xPtr
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	pairKey := [2]uintptr{lo, hi}
+	if vis[pairKey] {
+		return true // assume equal on cycle
+	}
+	vis[pairKey] = true
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	var xVal map[string]Object
-	switch x := x.(type) {
-	case *Map:
-		x.mu.RLock()
-		defer x.mu.RUnlock()
-		xVal = x.Value
-	case *ImmutableMap:
-		xVal = x.Value
-	default:
-		return false
+	if xMap != nil {
+		if xMap != o {
+			xMap.mu.RLock()
+			defer xMap.mu.RUnlock()
+		}
+		xVal = xMap.Value
+	} else {
+		xVal = xIMap.Value
 	}
 	if len(o.Value) != len(xVal) {
 		return false
 	}
 	for k, v := range o.Value {
-		tv := xVal[k]
-		if !v.Equals(tv) {
+		if !equalsElem(v, xVal[k], vis) {
 			return false
 		}
 	}
@@ -1837,3 +2028,64 @@ func (o *Undefined) Key() Object {
 func (o *Undefined) Value() Object {
 	return o
 }
+
+// --- Cycle-detection helpers (issue 5.9) ---
+//
+// equalsElem, copyElem, and elemString propagate the per-call visited/memo
+// maps into container types so that cyclic Array/Map structures do not cause
+// infinite recursion in Equals, Copy, or String.
+
+// equalsElem calls the cycle-safe equalsWithVisited for container types;
+// for all other types it delegates to the normal Equals method.
+func equalsElem(a, b Object, vis map[[2]uintptr]bool) bool {
+	switch a := a.(type) {
+	case *Array:
+		return a.equalsWithVisited(b, vis)
+	case *ImmutableArray:
+		return a.equalsWithVisited(b, vis)
+	case *Map:
+		return a.equalsWithVisited(b, vis)
+	case *ImmutableMap:
+		return a.equalsWithVisited(b, vis)
+	case *StructInstance:
+		return a.equalsWithVisited(b, vis)
+	}
+	return a.Equals(b)
+}
+
+// copyElem calls the cycle-safe copyWithMemo for container types;
+// for all other types it delegates to the normal Copy method.
+func copyElem(o Object, memo map[uintptr]Object) Object {
+	switch o := o.(type) {
+	case *Array:
+		return o.copyWithMemo(memo)
+	case *ImmutableArray:
+		return o.copyWithMemo(memo)
+	case *Map:
+		return o.copyWithMemo(memo)
+	case *ImmutableMap:
+		return o.copyWithMemo(memo)
+	case *StructInstance:
+		return o.copyWithMemo(memo)
+	}
+	return o.Copy()
+}
+
+// elemString calls the cycle-safe stringWithVisited for container types;
+// for all other types it delegates to the normal String method.
+func elemString(o Object, vis map[uintptr]bool) string {
+	switch o := o.(type) {
+	case *Array:
+		return o.stringWithVisited(vis)
+	case *ImmutableArray:
+		return o.stringWithVisited(vis)
+	case *Map:
+		return o.stringWithVisited(vis)
+	case *ImmutableMap:
+		return o.stringWithVisited(vis)
+	case *StructInstance:
+		return o.stringWithVisited(vis)
+	}
+	return o.String()
+}
+

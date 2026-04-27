@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/malivvan/rumo/vm/token"
 )
@@ -529,17 +530,26 @@ func (s *StructInstance) TypeName() string {
 }
 
 func (s *StructInstance) String() string {
+	return s.stringWithVisited(make(map[uintptr]bool))
+}
+
+func (s *StructInstance) stringWithVisited(vis map[uintptr]bool) string {
+	key := uintptr(unsafe.Pointer(s))
+	if vis[key] {
+		return s.TypeName() + "{...}"
+	}
+	vis[key] = true
+	defer delete(vis, key)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var parts []string
 	if s.Type != nil {
-		// Preserve declared field order.
 		for _, f := range s.Type.Fields {
-			parts = append(parts, fmt.Sprintf("%s: %s", f, s.Values[f].String()))
+			parts = append(parts, fmt.Sprintf("%s: %s", f, elemString(s.Values[f], vis)))
 		}
 	} else {
 		for k, v := range s.Values {
-			parts = append(parts, fmt.Sprintf("%s: %s", k, v.String()))
+			parts = append(parts, fmt.Sprintf("%s: %s", k, elemString(v, vis)))
 		}
 	}
 	name := "struct"
@@ -551,35 +561,65 @@ func (s *StructInstance) String() string {
 
 // Copy returns a deep copy of the instance.
 func (s *StructInstance) Copy() Object {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	c := make(map[string]Object, len(s.Values))
-	for k, v := range s.Values {
-		c[k] = v.Copy()
+	return s.copyWithMemo(make(map[uintptr]Object))
+}
+
+func (s *StructInstance) copyWithMemo(memo map[uintptr]Object) Object {
+	key := uintptr(unsafe.Pointer(s))
+	if existing, ok := memo[key]; ok {
+		return existing
 	}
-	return &StructInstance{Type: s.Type, Values: c}
+	s.mu.RLock()
+	snap := make(map[string]Object, len(s.Values))
+	for k, v := range s.Values {
+		snap[k] = v
+	}
+	s.mu.RUnlock()
+	c := &StructInstance{Type: s.Type, Values: make(map[string]Object, len(snap))}
+	memo[key] = c
+	for k, v := range snap {
+		c.Values[k] = copyElem(v, memo)
+	}
+	return c
 }
 
 // Equals returns true if s and x are instances of the same user type and
 // every field compares equal.
 func (s *StructInstance) Equals(x Object) bool {
-	other, ok := x.(*StructInstance)
+	return s.equalsWithVisited(x, make(map[[2]uintptr]bool))
+}
+
+func (s *StructInstance) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
+	other, ok := xObj.(*StructInstance)
 	if !ok {
 		return false
 	}
 	if s.Type != other.Type {
 		return false
 	}
+	sPtr := uintptr(unsafe.Pointer(s))
+	oPtr := uintptr(unsafe.Pointer(other))
+	lo, hi := sPtr, oPtr
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	pairKey := [2]uintptr{lo, hi}
+	if vis[pairKey] {
+		return true
+	}
+	vis[pairKey] = true
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	other.mu.RLock()
-	defer other.mu.RUnlock()
+	if other != s {
+		other.mu.RLock()
+		defer other.mu.RUnlock()
+	}
 	if len(s.Values) != len(other.Values) {
 		return false
 	}
 	for k, v := range s.Values {
 		ov, ok := other.Values[k]
-		if !ok || !v.Equals(ov) {
+		if !ok || !equalsElem(v, ov, vis) {
 			return false
 		}
 	}

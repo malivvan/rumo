@@ -486,7 +486,7 @@ NaN written twice dedups. Inconsistent.
 returns `ErrDivisionByZero`. Mixed-type operations behave
 inconsistently.
 
-### 5.9 `Equals` is O(∞) for cyclic structures &nbsp; **MED**
+### 5.9 `Equals` is O(∞) for cyclic structures &nbsp; **MED** &nbsp; ✅
 
 `Array.Equals`, `Map.Equals` recurse. Two cyclic arrays compare
 forever (well, stack overflow). Same with `Copy`, `String()`,

@@ -406,6 +406,10 @@ func ToTime(o Object) (v time.Time, ok bool) {
 
 // ToInterface attempts to convert an object o to an interface{} value
 func ToInterface(o Object) (res interface{}) {
+	return toInterfaceWithMemo(o, make(map[uintptr]interface{}))
+}
+
+func toInterfaceWithMemo(o Object, memo map[uintptr]interface{}) (res interface{}) {
 	switch o := o.(type) {
 	case *Int:
 		res = o.Value
@@ -440,25 +444,49 @@ func ToInterface(o Object) (res interface{}) {
 	case *Ptr:
 		res = o.Value
 	case *Array:
-		res = make([]interface{}, len(o.Value))
-		for i, val := range o.Value {
-			res.([]interface{})[i] = ToInterface(val)
+		key := uintptr(unsafe.Pointer(o))
+		if existing, ok := memo[key]; ok {
+			return existing
 		}
+		sl := make([]interface{}, len(o.Value))
+		memo[key] = sl
+		for i, val := range o.Value {
+			sl[i] = toInterfaceWithMemo(val, memo)
+		}
+		res = sl
 	case *ImmutableArray:
-		res = make([]interface{}, len(o.Value))
+		key := uintptr(unsafe.Pointer(o))
+		if existing, ok := memo[key]; ok {
+			return existing
+		}
+		sl := make([]interface{}, len(o.Value))
+		memo[key] = sl
 		for i, val := range o.Value {
-			res.([]interface{})[i] = ToInterface(val)
+			sl[i] = toInterfaceWithMemo(val, memo)
 		}
+		res = sl
 	case *Map:
-		res = make(map[string]interface{})
-		for key, v := range o.Value {
-			res.(map[string]interface{})[key] = ToInterface(v)
+		key := uintptr(unsafe.Pointer(o))
+		if existing, ok := memo[key]; ok {
+			return existing
 		}
+		m := make(map[string]interface{})
+		memo[key] = m
+		for k, v := range o.Value {
+			m[k] = toInterfaceWithMemo(v, memo)
+		}
+		res = m
 	case *ImmutableMap:
-		res = make(map[string]interface{})
-		for key, v := range o.Value {
-			res.(map[string]interface{})[key] = ToInterface(v)
+		key := uintptr(unsafe.Pointer(o))
+		if existing, ok := memo[key]; ok {
+			return existing
 		}
+		m := make(map[string]interface{})
+		memo[key] = m
+		for k, v := range o.Value {
+			m[k] = toInterfaceWithMemo(v, memo)
+		}
+		res = m
 	case *Time:
 		res = o.Value
 	case *Error:
