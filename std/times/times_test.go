@@ -17,7 +17,7 @@ func TestTimes(t *testing.T) {
 		t.Skipf("skipping test on %s", runtime.GOOS)
 	}
 
-	time1 := time.Date(1982, 9, 28, 19, 21, 44, 999, time.Now().Location())
+	time1 := time.Date(1982, 9, 28, 19, 21, 44, 999, time.UTC)
 	time2 := time.Now()
 
 	// TODO: maybe
