@@ -41,6 +41,7 @@ type Script struct {
 	input            []byte
 	maxAllocs        int64
 	maxConstObjects  int
+	maxStringLen     int
 	enableFileImport bool
 	importDir        string
 	permissions      vm.Permissions
@@ -126,6 +127,12 @@ func (s *Script) SetPermissions(p vm.Permissions) {
 	s.permissions = p
 }
 
+// SetMaxStringLen sets the maximum byte-length for string values produced
+// during script execution. Zero (the default) defers to DefaultConfig.
+func (s *Script) SetMaxStringLen(n int) {
+	s.maxStringLen = n
+}
+
 // Compile compiles the script with all the defined variables and returns Program object.
 func (s *Script) Compile() (*Program, error) {
 	symbolTable, globals, err := s.prepCompile()
@@ -177,6 +184,7 @@ func (s *Script) Compile() (*Program, error) {
 		bytecode:      bytecode,
 		globals:       globals,
 		maxAllocs:     s.maxAllocs,
+		maxStringLen:  s.maxStringLen,
 		permissions:   s.permissions,
 	}, nil
 }
@@ -244,6 +252,7 @@ type Program struct {
 	bytecode      *vm.Bytecode
 	globals       []vm.Object
 	maxAllocs     int64
+	maxStringLen  int
 	args          []string
 	permissions   vm.Permissions
 	lock          sync.RWMutex
@@ -261,6 +270,13 @@ func (p *Program) SetPermissions(perm vm.Permissions) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.permissions = perm
+}
+
+// SetMaxStringLen updates the maximum string length for future Run/RunContext calls.
+func (p *Program) SetMaxStringLen(n int) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.maxStringLen = n
 }
 
 // Bytecode returns the compiled bytecode of the Program.
@@ -381,11 +397,12 @@ func (p *Program) Run() error {
 	copy(globals, p.globals)
 	bytecode := p.bytecode
 	maxAllocs := p.maxAllocs
+	maxStringLen := p.maxStringLen
 	args := p.args
 	permissions := p.permissions
 	p.lock.RUnlock()
 
-	v := vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, Permissions: permissions})
+	v := vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions})
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {
@@ -410,11 +427,12 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 	copy(globals, p.globals)
 	bytecode := p.bytecode
 	maxAllocs := p.maxAllocs
+	maxStringLen := p.maxStringLen
 	args := p.args
 	permissions := p.permissions
 	p.lock.RUnlock()
 
-	v := vm.NewVM(ctx, bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, Permissions: permissions})
+	v := vm.NewVM(ctx, bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, MaxStringLen: maxStringLen, Permissions: permissions})
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {
@@ -453,6 +471,7 @@ func (p *Program) Clone() *Program {
 		bytecode:      p.bytecode,
 		globals:       make([]vm.Object, len(p.globals)),
 		maxAllocs:     p.maxAllocs,
+		maxStringLen:  p.maxStringLen,
 		permissions:   p.permissions,
 	}
 	// deep-copy global objects so mutations in the clone do not affect

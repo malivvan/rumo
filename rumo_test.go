@@ -404,6 +404,78 @@ func TestOSPermissionDenyExit(t *testing.T) {
 	}
 }
 
+// os.expand_env has two accounting defects. First, the accumulator inside the
+// os.Expand callback tracks only the byte-lengths of substituted values, ignoring
+// the literal template text. A template that is mostly literal characters and
+// references a variable that expands to the empty string contributes zero to the
+// accumulator even though the result string will be as large as the template.
+// Second, both the early-exit check inside the callback and the post-expand check
+// read vm.DefaultConfig.MaxStringLen directly instead of the per-VM MaxStringLen
+// set by the embedder. A VM created with a strict MaxStringLen will have expand_env
+// silently bypass that limit, producing strings larger than the configured cap.
+//
+// The fix reads the per-VM MaxStringLen from the execution context and uses it for
+// both the early-exit accumulator (which is now seeded with the template length as
+// a conservative upper bound) and the definitive post-expand length check.
+
+// runExpandEnvTest compiles and runs a script that calls os.expand_env with the
+// given template string, applying the per-VM MaxStringLen limit.
+func runExpandEnvTest(t *testing.T, template string, maxStringLen int) error {
+	t.Helper()
+	s := rumo.NewScript([]byte(`os := import("os"); out := os.expand_env("` + template + `")`))
+	s.SetImports(rumo.GetModuleMap("os"))
+	s.SetMaxStringLen(maxStringLen)
+	_, err := s.Run()
+	return err
+}
+
+// TestExpandEnvRespectsPerVMMaxStringLen verifies that expand_env enforces the
+// per-VM MaxStringLen when a substituted value causes the result to exceed it.
+func TestExpandEnvRespectsPerVMMaxStringLen(t *testing.T) {
+	const key = "RUMO_EXPAND_PERVM"
+	os.Setenv(key, strings.Repeat("A", 100))
+	t.Cleanup(func() { os.Unsetenv(key) })
+
+	err := runExpandEnvTest(t, "$"+key, 50)
+	if err == nil {
+		t.Fatal("expected ErrStringLimit when substituted result (100 bytes) exceeds per-VM MaxStringLen (50), got nil")
+	}
+}
+
+// TestExpandEnvLiteralTextCountedInLimit verifies that literal template text is
+// included in the length accounting, not just the substituted values. A template
+// that consists mostly of literal characters plus a zero-length substitution must
+// be rejected when the template itself exceeds MaxStringLen.
+func TestExpandEnvLiteralTextCountedInLimit(t *testing.T) {
+	// $EMPTY_VAR expands to "" so only the 40-char literal contributes to the result.
+	const key = "RUMO_EXPAND_EMPTY"
+	os.Setenv(key, "")
+	t.Cleanup(func() { os.Unsetenv(key) })
+
+	// Template literal: 40 'A's + "$RUMO_EXPAND_EMPTY" = ~58 chars
+	// Substitution: "" (zero bytes)
+	// Result: 40 'A's = 40 bytes
+	// MaxStringLen: 30 → result (40) exceeds limit
+	template := strings.Repeat("A", 40) + "$" + key
+	err := runExpandEnvTest(t, template, 30)
+	if err == nil {
+		t.Fatal("expected ErrStringLimit when literal template text (40 bytes) exceeds per-VM MaxStringLen (30), got nil")
+	}
+}
+
+// TestExpandEnvBelowLimitSucceeds verifies that expand_env works normally when
+// the result stays within the configured MaxStringLen.
+func TestExpandEnvBelowLimitSucceeds(t *testing.T) {
+	const key = "RUMO_EXPAND_SMALL"
+	os.Setenv(key, "hello")
+	t.Cleanup(func() { os.Unsetenv(key) })
+
+	err := runExpandEnvTest(t, "$"+key, 100)
+	if err != nil {
+		t.Fatalf("unexpected error when result is within limit: %v", err)
+	}
+}
+
 // VM defaults Args to os.Args — leaks host binary arguments into sandboxed scripts.
 // When Program.SetArgs is not called, the script should see an empty argument list,
 // not the host process's os.Args. When SetArgs is called the script must see exactly

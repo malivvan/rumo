@@ -254,7 +254,7 @@ analogue to Lua's `loadstring` / Deno's `--allow-*`.
 - **Fix:** add a per-VM permissions struct (read/write/exec/env) and
   consult it at every privileged builtin entry; default to *deny*.
 
-### 2.7 `expand_env` length accounting under-counts &nbsp; **MED**
+### 2.7 `expand_env` length accounting under-counts &nbsp; **MED** ✅
 
 `std/os/os.go:228-249` only counts the *value bytes substituted*
 into the result, not the literal text of the template. A 100MB

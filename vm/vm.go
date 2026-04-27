@@ -120,6 +120,11 @@ func (v *VM) Permissions() Permissions {
 	return v.config.Permissions
 }
 
+// Config returns a copy of the VM's configuration.
+func (v *VM) Config() Config {
+	return *v.config
+}
+
 // Run starts the execution.
 func (v *VM) Run() (err error) {
 	atomic.StoreInt64(&v.aborting, 0)

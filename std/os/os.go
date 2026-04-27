@@ -327,24 +327,34 @@ func osExpandEnv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 			Found:    args[0].TypeName(),
 		}
 	}
-	var vlen int
+	// Use the per-VM MaxStringLen. permsFromCtx already reaches into the VM;
+	// we do the same for Config to avoid reading DefaultConfig directly.
+	maxLen := vm.DefaultConfig.MaxStringLen
+	if v, ok2 := ctx.Value(vm.ContextKey("vm")).(*vm.VM); ok2 && v != nil {
+		if cfg := v.Config(); cfg.MaxStringLen > 0 {
+			maxLen = cfg.MaxStringLen
+		}
+	}
+
+	// Seed the accumulator with the template length as a conservative upper
+	// bound: the result is always ≤ len(template) + sum(len(substitutions)).
+	// This ensures that a large template with an empty substitution is caught
+	// early rather than only by the post-expand check.
+	vlen := len(s1)
 	var failed bool
 	s := os.Expand(s1, func(k string) string {
 		if failed {
 			return ""
 		}
 		v := os.Getenv(k)
-
-		// this does not count the other texts that are not being replaced
-		// but the code checks the final length at the end
 		vlen += len(v)
-		if vlen > vm.DefaultConfig.MaxStringLen {
+		if vlen > maxLen {
 			failed = true
 			return ""
 		}
 		return v
 	})
-	if failed || len(s) > vm.DefaultConfig.MaxStringLen {
+	if failed || len(s) > maxLen {
 		return nil, vm.ErrStringLimit
 	}
 	return &vm.String{Value: s}, nil
