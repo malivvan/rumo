@@ -394,7 +394,7 @@ underused given that constants are reused.
 
 ## 5. Correctness traps
 
-### 5.1 `is_int32` aliases `is_char`; `is_uint32` aliases `is_uint` &nbsp; **HIGH**
+### 5.1 `is_int32` aliases `is_char`; `is_uint32` aliases `is_uint` &nbsp; **HIGH** &nbsp; ✅
 
 `vm/builtins.go:47-52`:
 

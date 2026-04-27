@@ -35,6 +35,7 @@ const (
 	_uint             byte = 22
 	_uint64           byte = 23
 	_ptr              byte = 24
+	_int32            byte = 25
 	_arrayIterator    byte = 100
 	_mapIterator      byte = 101
 	_stringIterator   byte = 102
@@ -51,6 +52,7 @@ var _typeMap = map[byte]func() Object{
 	_int:              func() Object { return &Int{} },
 	_int8:             func() Object { return &Int8{} },
 	_int16:            func() Object { return &Int16{} },
+	_int32:            func() Object { return &Int32{} },
 	_byte:             func() Object { return &Byte{} },
 	_uint8:            func() Object { return &Uint8{} },
 	_uint16:           func() Object { return &Uint16{} },
@@ -105,6 +107,8 @@ func TypeOfObject(o Object) byte {
 		return _int8
 	case *Int16:
 		return _int16
+	case *Int32:
+		return _int32
 	case *Byte:
 		return _byte
 	case *Uint8:
@@ -168,6 +172,8 @@ func SizeOfObject(o Object) int {
 		return codec.SizeByte() + codec.SizeByte()
 	case _int16:
 		return codec.SizeByte() + codec.SizeInt16()
+	case _int32:
+		return codec.SizeByte() + codec.SizeInt32()
 	case _byte, _uint8:
 		return codec.SizeByte() + codec.SizeByte()
 	case _uint16:
@@ -259,6 +265,9 @@ func MarshalObject(n int, b []byte, o Object) int {
 	case _int16:
 		n = codec.MarshalByte(n, b, _int16)
 		n = codec.MarshalInt16(n, b, o.(*Int16).Value)
+	case _int32:
+		n = codec.MarshalByte(n, b, _int32)
+		n = codec.MarshalInt32(n, b, o.(*Int32).Value)
 	case _byte:
 		n = codec.MarshalByte(n, b, _byte)
 		n = codec.MarshalByte(n, b, o.(*Byte).Value)
@@ -405,6 +414,12 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		return n, o, nil
 	case _int16:
 		n, o.(*Int16).Value, err = codec.UnmarshalInt16(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, o, nil
+	case _int32:
+		n, o.(*Int32).Value, err = codec.UnmarshalInt32(n, b)
 		if err != nil {
 			return nn, nil, err
 		}

@@ -200,6 +200,25 @@ func (o *Uint16) BinaryOp(op token.Token, rhs Object) (Object, error) {
 	return unsignedIntBinaryOp(op, uint64(o.Value), rv, func(r uint64) Object { return &Uint16{Value: uint16(r)} })
 }
 
+// Int32 represents a signed 32-bit integer.
+type Int32 struct {
+	ObjectImpl
+	Value int32
+}
+
+func (o *Int32) String() string       { return strconv.FormatInt(int64(o.Value), 10) }
+func (o *Int32) TypeName() string     { return "int32" }
+func (o *Int32) Copy() Object         { return &Int32{Value: o.Value} }
+func (o *Int32) IsFalsy() bool        { return o.Value == 0 }
+func (o *Int32) Equals(x Object) bool { t, ok := x.(*Int32); return ok && o.Value == t.Value }
+func (o *Int32) BinaryOp(op token.Token, rhs Object) (Object, error) {
+	rv, ok := ToInt64(rhs)
+	if !ok {
+		return nil, ErrInvalidOperator
+	}
+	return signedIntBinaryOp(op, int64(o.Value), rv, func(r int64) Object { return &Int32{Value: int32(r)} })
+}
+
 // Uint represents an unsigned 32-bit integer (per rumo Type Mapping).
 type Uint struct {
 	ObjectImpl

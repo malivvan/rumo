@@ -40,6 +40,25 @@ func builtinInt16(ctx context.Context, args ...Object) (Object, error) {
 	return UndefinedValue, nil
 }
 
+// builtinInt32 converts x to Int32.
+func builtinInt32(ctx context.Context, args ...Object) (Object, error) {
+	argsLen := len(args)
+	if !(argsLen == 1 || argsLen == 2) {
+		return nil, ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*Int32); ok {
+		return args[0], nil
+	}
+	v, ok := ToInt64(args[0])
+	if ok {
+		return &Int32{Value: int32(v)}, nil
+	}
+	if argsLen == 2 {
+		return args[1], nil
+	}
+	return UndefinedValue, nil
+}
+
 // builtinInt64 converts x to Int64 (same as Int).
 func builtinInt64(ctx context.Context, args ...Object) (Object, error) {
 	return builtinInt(ctx, args...)
@@ -293,7 +312,31 @@ func builtinIsInt16(_ context.Context, args ...Object) (Object, error) {
 	return FalseValue, nil
 }
 
+func builtinIsInt32(_ context.Context, args ...Object) (Object, error) {
+	if len(args) != 1 {
+		return nil, ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*Int32); ok {
+		return TrueValue, nil
+	}
+	return FalseValue, nil
+}
+
 func builtinIsUint(_ context.Context, args ...Object) (Object, error) {
+	if len(args) != 1 {
+		return nil, ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*Uint); ok {
+		return TrueValue, nil
+	}
+	return FalseValue, nil
+}
+
+// builtinIsUint32 checks for *Uint (the rumo uint type, which stores uint32).
+// It is a distinct function from builtinIsUint even though they return
+// identical results, because is_uint32 and is_uint should not share a
+// function pointer — that alias was listed as a bug in ISSUES.md 5.1.
+func builtinIsUint32(_ context.Context, args ...Object) (Object, error) {
 	if len(args) != 1 {
 		return nil, ErrWrongNumArguments
 	}

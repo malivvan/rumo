@@ -353,6 +353,85 @@ func Test_builtinSplice(t *testing.T) {
 	}
 }
 
+// is_int32 incorrectly aliased builtinIsChar, so is_int32(char('A')) returned
+// true even though *Char is a Unicode code point, not a 32-bit signed integer.
+// Similarly is_uint32 shared the same function pointer as is_uint rather than
+// having its own dedicated implementation.  Both functions now check for their
+// proper *Int32 / *Uint types respectively.
+func TestIsInt32IsUint32AliasedWrong(t *testing.T) {
+	fns := make(map[string]func(context.Context, ...vm.Object) (vm.Object, error))
+	for _, f := range vm.GetAllBuiltinFunctions() {
+		switch f.Name {
+		case "is_int32", "is_uint32", "is_char", "is_uint":
+			fns[f.Name] = f.Value
+		}
+	}
+	for _, name := range []string{"is_int32", "is_uint32", "is_char", "is_uint"} {
+		if fns[name] == nil {
+			t.Fatalf("builtin %q not found", name)
+		}
+	}
+
+	ctx := context.Background()
+
+	// is_int32 must NOT accept a *Char value.
+	got, err := fns["is_int32"](ctx, &vm.Char{Value: 'A'})
+	if err != nil {
+		t.Fatalf("is_int32(char): unexpected error: %v", err)
+	}
+	if got != vm.FalseValue {
+		t.Errorf("is_int32(char('A')) = %v, want false: *Char is a Unicode code point, not int32", got)
+	}
+
+	// is_int32 must accept a genuine *Int32 value.
+	got, err = fns["is_int32"](ctx, &vm.Int32{Value: 42})
+	if err != nil {
+		t.Fatalf("is_int32(int32(42)): unexpected error: %v", err)
+	}
+	if got != vm.TrueValue {
+		t.Errorf("is_int32(int32(42)) = %v, want true", got)
+	}
+
+	// is_int32 must NOT accept a plain *Int (int64).
+	got, err = fns["is_int32"](ctx, &vm.Int{Value: 42})
+	if err != nil {
+		t.Fatalf("is_int32(int(42)): unexpected error: %v", err)
+	}
+	if got != vm.FalseValue {
+		t.Errorf("is_int32(int(42)) = %v, want false: *Int is int64, not int32", got)
+	}
+
+	// is_char must still accept *Char (regression: is_char must not be broken).
+	got, err = fns["is_char"](ctx, &vm.Char{Value: 'A'})
+	if err != nil {
+		t.Fatalf("is_char(char): unexpected error: %v", err)
+	}
+	if got != vm.TrueValue {
+		t.Errorf("is_char(char('A')) = %v, want true", got)
+	}
+
+	// is_uint32 and is_uint must both accept *Uint (uint32 in rumo), but
+	// is_uint32 must be a distinct function, not a shared alias.
+	for _, name := range []string{"is_uint32", "is_uint"} {
+		got, err = fns[name](ctx, &vm.Uint{Value: 5})
+		if err != nil {
+			t.Fatalf("%s(uint(5)): unexpected error: %v", name, err)
+		}
+		if got != vm.TrueValue {
+			t.Errorf("%s(uint(5)) = %v, want true", name, got)
+		}
+	}
+
+	// is_uint32 must NOT accept a plain *Int.
+	got, err = fns["is_uint32"](ctx, &vm.Int{Value: 5})
+	if err != nil {
+		t.Fatalf("is_uint32(int(5)): unexpected error: %v", err)
+	}
+	if got != vm.FalseValue {
+		t.Errorf("is_uint32(int(5)) = %v, want false", got)
+	}
+}
+
 // TestRangeLazyMaterialization verifies that range(start, stop) returns a lazy
 // RangeObject rather than a pre-allocated slice of all values. Prior to the fix,
 // builtinRange created a full *Array with every element materialised upfront,

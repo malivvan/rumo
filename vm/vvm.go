@@ -191,6 +191,9 @@ func ToInt64(o Object) (v int64, ok bool) {
 	case *Int16:
 		v = int64(o.Value)
 		ok = true
+	case *Int32:
+		v = int64(o.Value)
+		ok = true
 	case *Byte:
 		v = int64(int8(o.Value))
 		ok = true
@@ -254,6 +257,9 @@ func ToUint64(o Object) (v uint64, ok bool) {
 	case *Int16:
 		v = uint64(o.Value)
 		ok = true
+	case *Int32:
+		v = uint64(o.Value)
+		ok = true
 	case *Byte:
 		v = uint64(o.Value)
 		ok = true
@@ -300,6 +306,9 @@ func ToFloat64(o Object) (v float64, ok bool) {
 		v = float64(o.Value)
 		ok = true
 	case *Int16:
+		v = float64(o.Value)
+		ok = true
+	case *Int32:
 		v = float64(o.Value)
 		ok = true
 	case *Byte:
@@ -403,6 +412,8 @@ func ToInterface(o Object) (res interface{}) {
 	case *Int8:
 		res = o.Value
 	case *Int16:
+		res = o.Value
+	case *Int32:
 		res = o.Value
 	case *Byte:
 		res = o.Value
