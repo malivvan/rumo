@@ -59,7 +59,8 @@ type Compiler struct {
 	modulePath      string
 	importDir       string
 	importBase      string
-	importFS        fs.FS // virtualised filesystem for imports and embeds; nil falls back to os.*
+	importEntryDir  string // directory of the entrypoint file; used as base for display paths in FileSet
+	importFS        fs.FS  // virtualised filesystem for imports and embeds; nil falls back to os.*
 	constants       []Object
 	symbolTable     *SymbolTable
 	scopes          []compilationScope
@@ -734,6 +735,10 @@ func (c *Compiler) SetImportDir(dir string) {
 		if c.importFS == nil {
 			c.importFS = os.DirFS(dir)
 		}
+	} else if c.importEntryDir == "" {
+		// Second call (importBase already set): record the entrypoint's directory
+		// so that display paths in the FileSet are relative to where the script lives.
+		c.importEntryDir = dir
 	}
 }
 
@@ -1296,11 +1301,19 @@ func (c *Compiler) compileModule(
 		return compiledModule, nil
 	}
 
-	// Use a display name relative to importBase for clean, portable error messages.
-	// The absolute modulePath is still used as the cache key and for file I/O.
+	// Use a display name relative to the entrypoint directory (importEntryDir) for
+	// portable, user-facing paths in the FileSet.  Fall back to importBase when
+	// importEntryDir has not been set (e.g. standalone Compiler usage without Script).
+	// We allow ".." in display paths (e.g. "../cli/one.rumo") because the security
+	// containment check above already verified the path is within importBase; the
+	// display name only needs to avoid leaking absolute OS paths.
 	displayPath := modulePath
-	if c.importBase != "" {
-		if rel, err := filepath.Rel(c.importBase, modulePath); err == nil && !strings.HasPrefix(rel, "..") {
+	displayBase := c.importEntryDir
+	if displayBase == "" {
+		displayBase = c.importBase
+	}
+	if displayBase != "" {
+		if rel, err := filepath.Rel(displayBase, modulePath); err == nil {
 			displayPath = rel
 		}
 	}
@@ -1415,7 +1428,8 @@ func (c *Compiler) fork(file *parser.SourceFile, modulePath string, symbolTable 
 	child.allowFileImport = c.allowFileImport
 	child.importDir = c.importDir
 	child.importBase = c.importBase
-	child.importFS = c.importFS // propagate virtualised filesystem to child
+	child.importEntryDir = c.importEntryDir  // propagate entrypoint dir for consistent display paths
+	child.importFS = c.importFS               // propagate virtualised filesystem to child
 	if isFile && c.importDir != "" {
 		child.importDir = filepath.Dir(modulePath)
 	}

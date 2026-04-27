@@ -200,8 +200,10 @@ func (s *Script) Compile() (*Program, error) {
 		return nil, err
 	}
 
-	// Use the FS-relative path as the source file name for error messages.
-	srcName := s.path
+	// Use only the base filename as the source name so that SourceFile paths
+	// in the FileSet (and thus Info.SourceFiles) are relative to the entrypoint
+	// directory rather than the FS root.
+	srcName := filepath.Base(filepath.FromSlash(s.path))
 
 	fileSet := parser.NewFileSet()
 	srcFile := fileSet.AddFile(srcName, -1, len(input))
