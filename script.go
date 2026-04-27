@@ -31,7 +31,9 @@ const Magic = "RUMO"
 //
 //	1: initial format; trailer was an 8-byte CRC64/ECMA checksum.
 //	2: trailer replaced with a 32-byte SHA-256 digest.
-const FormatVersion uint16 = 2
+//	3: ImmutableMap encoding prepends an out-of-band module-name string so
+//	   the __module_name__ namespace cannot be spoofed by user script data.
+const FormatVersion uint16 = 3
 
 // Script can simplify compilation and execution of embedded scripts.
 type Script struct {

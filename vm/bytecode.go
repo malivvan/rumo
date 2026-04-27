@@ -349,8 +349,5 @@ func updateConstIndexes(insts []byte, indexMap map[int]int) {
 }
 
 func inferModuleName(mod *ImmutableMap) string {
-	if modName, ok := mod.Value["__module_name__"].(*String); ok {
-		return modName.Value
-	}
-	return ""
+	return mod.moduleName
 }

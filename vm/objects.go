@@ -391,8 +391,7 @@ func (m *BuiltinModule) AsImmutableMap(moduleName string) *ImmutableMap {
 	for k, v := range m.Attrs {
 		attrs[k] = v.Copy()
 	}
-	attrs["__module_name__"] = &String{Value: moduleName}
-	return &ImmutableMap{Value: attrs}
+	return &ImmutableMap{Value: attrs, moduleName: moduleName}
 }
 
 // Bytes represents a byte array.
@@ -1040,7 +1039,8 @@ func (o *ImmutableArray) CanIterate() bool {
 // ImmutableMap represents an immutable map object.
 type ImmutableMap struct {
 	ObjectImpl
-	Value map[string]Object
+	Value      map[string]Object
+	moduleName string // set only by AsImmutableMap; not present in user-constructed maps
 }
 
 // TypeName returns the name of the type.

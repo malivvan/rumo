@@ -361,3 +361,95 @@ func TestBuiltinFunctionRoundTripUnknownName(t *testing.T) {
 	require.Error(t, err, "expected error for unknown builtin name")
 }
 
+// A user-supplied ImmutableMap that happens to contain a "__module_name__" key
+// must not be mistaken for a legitimately compiled builtin-module constant.
+// Before the fix, fixDecodedObject replaced any ImmutableMap whose Value map
+// contained {"__module_name__": "x"} with the real "x" builtin module,
+// allowing either crafted bytecode or RemoveDuplicates cross-contamination to
+// escalate script privileges.  After the fix the module name is tracked
+// out-of-band (ImmutableMap.ModuleName), so user data with that string key
+// is inert.
+func TestImmutableMap_ModuleNameNotSpoofable(t *testing.T) {
+	const modName = "testmod"
+
+	// Build a real module with a recognisable sentinel attribute.
+	realMod := vm.NewModuleMap()
+	realMod.AddBuiltinModule(modName, map[string]vm.Object{
+		"secret": &vm.String{Value: "REAL_SECRET"},
+	})
+
+	// Build a fake ImmutableMap that only has __module_name__ in its Value map
+	// — exactly what user script code or crafted bytecode can produce.
+	fakeMap := &vm.ImmutableMap{
+		Value: map[string]vm.Object{
+			"__module_name__": &vm.String{Value: modName},
+			"secret":          &vm.String{Value: "FAKE_VALUE"},
+		},
+	}
+
+	// Wrap it in bytecode so we can round-trip through Marshal/Unmarshal.
+	b := &vm.Bytecode{
+		FileSet:      parser.NewFileSet(),
+		MainFunction: &vm.CompiledFunction{Instructions: []byte{}},
+		Constants:    []vm.Object{fakeMap},
+	}
+
+	data, err := b.Marshal()
+	require.NoError(t, err)
+
+	restored := &vm.Bytecode{}
+	err = restored.Unmarshal(data, realMod)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(restored.Constants))
+
+	im, ok := restored.Constants[0].(*vm.ImmutableMap)
+	require.True(t, ok, "constant must remain an ImmutableMap")
+
+	// The fake map must NOT have been replaced by the real module.
+	// Its "secret" attribute must still carry the fake value, not "REAL_SECRET".
+	secretObj, exists := im.Value["secret"]
+	require.True(t, exists, `"secret" key must still be present`)
+	secretStr, ok := secretObj.(*vm.String)
+	require.True(t, ok, `"secret" must be a *String`)
+	require.Equal(t, "FAKE_VALUE", secretStr.Value,
+		"user ImmutableMap must not be replaced by the real module")
+}
+
+// RemoveDuplicates must not conflate a legitimate module constant with a
+// user-constructed ImmutableMap that carries the same __module_name__ value.
+func TestRemoveDuplicates_ModuleNameIsolation(t *testing.T) {
+	const modName = "mymod"
+
+	// real module ImmutableMap (produced by AsImmutableMap)
+	realMod := &vm.BuiltinModule{Attrs: map[string]vm.Object{
+		"val": &vm.String{Value: "real"},
+	}}
+	realMap := realMod.AsImmutableMap(modName)
+
+	// user-constructed ImmutableMap that spoofs the same module name
+	fakeMap := &vm.ImmutableMap{
+		Value: map[string]vm.Object{
+			"__module_name__": &vm.String{Value: modName},
+			"val":             &vm.String{Value: "fake"},
+		},
+	}
+
+	// Both constants are referenced from the main function.
+	b := &vm.Bytecode{
+		FileSet: parser.NewFileSet(),
+		MainFunction: &vm.CompiledFunction{
+			Instructions: concatInsts(
+				vm.MakeInstruction(parser.OpConstant, 0), // real module
+				vm.MakeInstruction(parser.OpConstant, 1), // fake map
+			),
+		},
+		Constants: []vm.Object{realMap, fakeMap},
+	}
+
+	b.RemoveDuplicates()
+
+	// After deduplication the two constants must remain distinct: the fake map
+	// must not have been collapsed onto the real module (or vice versa).
+	require.Equal(t, 2, len(b.Constants),
+		"RemoveDuplicates must keep real module and user map as separate constants")
+}

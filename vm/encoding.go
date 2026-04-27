@@ -190,7 +190,8 @@ func SizeOfObject(o Object) int {
 	case _immutableArray:
 		return codec.SizeByte() + codec.SizeSlice(o.(*ImmutableArray).Value, SizeOfObject)
 	case _immutableMap:
-		return codec.SizeByte() + codec.SizeMap(o.(*ImmutableMap).Value, codec.SizeString, SizeOfObject)
+		im := o.(*ImmutableMap)
+		return codec.SizeByte() + codec.SizeString(im.moduleName) + codec.SizeMap(im.Value, codec.SizeString, SizeOfObject)
 	case _objectPtr:
 		v := o.(*ObjectPtr)
 		if v.Value != nil {
@@ -284,8 +285,10 @@ func MarshalObject(n int, b []byte, o Object) int {
 		n = codec.MarshalByte(n, b, _immutableArray)
 		n = codec.MarshalSlice(n, b, o.(*ImmutableArray).Value, MarshalObject)
 	case _immutableMap:
+		im := o.(*ImmutableMap)
 		n = codec.MarshalByte(n, b, _immutableMap)
-		n = codec.MarshalMap(n, b, o.(*ImmutableMap).Value, codec.MarshalString, MarshalObject)
+		n = codec.MarshalString(n, b, im.moduleName)
+		n = codec.MarshalMap(n, b, im.Value, codec.MarshalString, MarshalObject)
 	case _objectPtr:
 		n = codec.MarshalByte(n, b, _objectPtr)
 		if o.(*ObjectPtr).Value != nil {
@@ -452,11 +455,16 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		}
 		return n, o, nil
 	case _immutableMap:
-		n, o.(*ImmutableMap).Value, err = codec.UnmarshalMap[string, Object](n, b, codec.UnmarshalString, UnmarshalObject)
+		im := o.(*ImmutableMap)
+		n, im.moduleName, err = codec.UnmarshalString(n, b)
 		if err != nil {
 			return nn, nil, err
 		}
-		return n, o, nil
+		n, im.Value, err = codec.UnmarshalMap[string, Object](n, b, codec.UnmarshalString, UnmarshalObject)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, im, nil
 	case _objectPtr:
 		var v Object
 		n, v, err = UnmarshalObject(n, b)
