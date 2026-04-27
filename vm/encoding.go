@@ -42,6 +42,7 @@ const (
 	_bytesIterator    byte = 103
 	_builtinFunction  byte = 104
 	_rangeObject      byte = 105
+	_userType         byte = 106
 )
 
 var _typeMap = map[byte]func() Object{
@@ -72,6 +73,7 @@ var _typeMap = map[byte]func() Object{
 	_builtinFunction:  func() Object { return &BuiltinFunction{} },
 	_error:            func() Object { return &Error{} },
 	_rangeObject:      func() Object { return &RangeObject{} },
+	_userType:         func() Object { return &UserType{} },
 }
 
 // MakeObject creates a new object based on the given type code.
@@ -147,6 +149,8 @@ func TypeOfObject(o Object) byte {
 		return _error
 	case *RangeObject:
 		return _rangeObject
+	case *UserType:
+		return _userType
 	default:
 		return 0
 	}
@@ -234,6 +238,19 @@ func SizeOfObject(o Object) int {
 		return codec.SizeByte() + SizeOfObject(o.(*Error).Value)
 	case _rangeObject:
 		return codec.SizeByte() + codec.SizeInt64()*3
+	case _userType:
+		ut := o.(*UserType)
+		s := codec.SizeString(ut.Name)
+		s += codec.SizeByte() // Kind
+		s += codec.SizeSlice[string](ut.Fields, codec.SizeString)
+		s += codec.SizeSlice[string](ut.FieldTypes, codec.SizeString)
+		s += codec.SizeSlice[string](ut.Params, codec.SizeString)
+		s += codec.SizeSlice[string](ut.ParamTypes, codec.SizeString)
+		s += codec.SizeBool()            // VarArgs
+		s += codec.SizeInt(ut.NumParams) // NumParams
+		s += codec.SizeString(ut.Result)
+		s += codec.SizeString(ut.Underlying)
+		return codec.SizeByte() + s
 	default:
 		panic("sizeof: unsupported type: " + o.TypeName())
 	}
@@ -355,6 +372,19 @@ func MarshalObject(n int, b []byte, o Object) int {
 		n = codec.MarshalInt64(n, b, r.Start)
 		n = codec.MarshalInt64(n, b, r.Stop)
 		n = codec.MarshalInt64(n, b, r.Step)
+	case _userType:
+		ut := o.(*UserType)
+		n = codec.MarshalByte(n, b, _userType)
+		n = codec.MarshalString(n, b, ut.Name)
+		n = codec.MarshalByte(n, b, byte(ut.Kind))
+		n = codec.MarshalSlice[string](n, b, ut.Fields, codec.MarshalString)
+		n = codec.MarshalSlice[string](n, b, ut.FieldTypes, codec.MarshalString)
+		n = codec.MarshalSlice[string](n, b, ut.Params, codec.MarshalString)
+		n = codec.MarshalSlice[string](n, b, ut.ParamTypes, codec.MarshalString)
+		n = codec.MarshalBool(n, b, ut.VarArgs)
+		n = codec.MarshalInt(n, b, ut.NumParams)
+		n = codec.MarshalString(n, b, ut.Result)
+		n = codec.MarshalString(n, b, ut.Underlying)
 	default:
 		panic("marshal: unsupported type: " + o.TypeName())
 	}
@@ -604,6 +634,51 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 			return nn, nil, err
 		}
 		return n, r, nil
+	case _userType:
+		ut := o.(*UserType)
+		n, ut.Name, err = codec.UnmarshalString(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		var kindByte byte
+		n, kindByte, err = codec.UnmarshalByte(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		ut.Kind = UserTypeKind(kindByte)
+		n, ut.Fields, err = codec.UnmarshalSlice[string](n, b, codec.UnmarshalString)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, ut.FieldTypes, err = codec.UnmarshalSlice[string](n, b, codec.UnmarshalString)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, ut.Params, err = codec.UnmarshalSlice[string](n, b, codec.UnmarshalString)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, ut.ParamTypes, err = codec.UnmarshalSlice[string](n, b, codec.UnmarshalString)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, ut.VarArgs, err = codec.UnmarshalBool(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, ut.NumParams, err = codec.UnmarshalInt(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, ut.Result, err = codec.UnmarshalString(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, ut.Underlying, err = codec.UnmarshalString(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		return n, ut, nil
 	}
 	return nn, nil, errors.New("unmarshal: unsupported type: " + o.TypeName())
 }
