@@ -42,12 +42,12 @@ var Module = module.NewBuiltin().
 	Const("seek_cur int", int64(io.SeekCurrent)).
 	Const("seek_end int", int64(io.SeekEnd)).
 	Func("args() (args []string)", osArgs).
-	Func("chdir(dir string) error", os.Chdir).
+	Func("chdir(dir string) error", osChdir).
 	Func("chmod(name string, mode int) error", func(s string, i int64) error { return os.Chmod(s, os.FileMode(i)) }).
 	Func("chown(name string, uid int, gid int) error", os.Chown).
-	Func("clearenv()", os.Clearenv).
+	Func("clearenv()", osClearenv).
 	Func("environ() (env []string)", os.Environ).
-	Func("exit(code int)", os.Exit).
+	Func("exit(code int)", osExit).
 	Func("expand_env(s string) (result string)", osExpandEnv).
 	Func("getegid() (egid int)", os.Getegid).
 	Func("getenv(s string) (value string)", os.Getenv).
@@ -69,11 +69,11 @@ var Module = module.NewBuiltin().
 	Func("remove(name string) error", os.Remove).
 	Func("remove_all(name string) error", os.RemoveAll).
 	Func("rename(oldpath string, newpath string) error", os.Rename).
-	Func("setenv(key string, value string) error", os.Setenv).
+	Func("setenv(key string, value string) error", osSetenv).
 	Func("symlink(oldname string, newname string) error", os.Symlink).
 	Func("temp_dir() (dir string)", os.TempDir).
 	Func("truncate(name string, size int) error", os.Truncate).
-	Func("unsetenv(key string) error", os.Unsetenv).
+	Func("unsetenv(key string) error", osUnsetenv).
 	Func("create(name string) (file imap(file))", osCreate).
 	Func("open(name string) (file imap(file))", osOpen).
 	Func("open_file(name string, flag int, perm int) (file imap(file))", osOpenFile).
@@ -84,7 +84,92 @@ var Module = module.NewBuiltin().
 	Func("stat(name string) (fileinfo imap(fileinfo))", osStat).
 	Func("read_file(name string) (content bytes)", osReadFile)
 
+// permsFromCtx extracts the VM's Permissions from the execution context.
+// Returns zero-value Permissions (all allowed) when no VM is present.
+func permsFromCtx(ctx context.Context) vm.Permissions {
+	v, ok := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
+	if !ok || v == nil {
+		return vm.Permissions{}
+	}
+	return v.Permissions()
+}
+
+func osExit(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyExit {
+		return nil, vm.ErrNotPermitted
+	}
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	code, ok := vm.ToInt(args[0])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "int(compatible)", Found: args[0].TypeName()}
+	}
+	os.Exit(code)
+	return vm.UndefinedValue, nil
+}
+
+func osChdir(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyChdir {
+		return nil, vm.ErrNotPermitted
+	}
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	dir, ok := vm.ToString(args[0])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "string(compatible)", Found: args[0].TypeName()}
+	}
+	return module.WrapError(os.Chdir(dir)), nil
+}
+
+func osSetenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyEnvWrite {
+		return nil, vm.ErrNotPermitted
+	}
+	if len(args) != 2 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	k, ok := vm.ToString(args[0])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "string(compatible)", Found: args[0].TypeName()}
+	}
+	v, ok := vm.ToString(args[1])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "string(compatible)", Found: args[1].TypeName()}
+	}
+	return module.WrapError(os.Setenv(k, v)), nil
+}
+
+func osUnsetenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyEnvWrite {
+		return nil, vm.ErrNotPermitted
+	}
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	k, ok := vm.ToString(args[0])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "string(compatible)", Found: args[0].TypeName()}
+	}
+	return module.WrapError(os.Unsetenv(k)), nil
+}
+
+func osClearenv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyEnvWrite {
+		return nil, vm.ErrNotPermitted
+	}
+	if len(args) != 0 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	os.Clearenv()
+	return vm.UndefinedValue, nil
+}
+
 func osReadFile(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+	if permsFromCtx(ctx).DenyFileRead {
+		return nil, vm.ErrNotPermitted
+	}
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
@@ -124,6 +209,9 @@ func osStat(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 }
 
 func osCreate(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyFileWrite {
+		return nil, vm.ErrNotPermitted
+	}
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
@@ -139,6 +227,9 @@ func osCreate(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osOpen(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyFileRead {
+		return nil, vm.ErrNotPermitted
+	}
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
@@ -168,6 +259,17 @@ func osOpenFile(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	i3, ok := vm.ToInt(args[2])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "third", Expected: "int(compatible)", Found: args[2].TypeName()}
+	}
+	const writeFlags = os.O_WRONLY | os.O_RDWR | os.O_CREATE | os.O_TRUNC | os.O_EXCL | os.O_APPEND
+	perms := permsFromCtx(ctx)
+	if i2&writeFlags != 0 {
+		if perms.DenyFileWrite {
+			return nil, vm.ErrNotPermitted
+		}
+	} else {
+		if perms.DenyFileRead {
+			return nil, vm.ErrNotPermitted
+		}
 	}
 	res, err := os.OpenFile(s1, i2, os.FileMode(i3))
 	if err != nil {
@@ -249,6 +351,9 @@ func osExpandEnv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osExec(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyExec {
+		return nil, vm.ErrNotPermitted
+	}
 	if len(args) == 0 {
 		return nil, vm.ErrWrongNumArguments
 	}
@@ -276,6 +381,9 @@ func osExec(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osFindProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyExec {
+		return nil, vm.ErrNotPermitted
+	}
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
@@ -295,6 +403,9 @@ func osFindProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osStartProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if permsFromCtx(ctx).DenyExec {
+		return nil, vm.ErrNotPermitted
+	}
 	if len(args) != 4 {
 		return nil, vm.ErrWrongNumArguments
 	}

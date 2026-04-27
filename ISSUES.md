@@ -236,7 +236,7 @@ embedded into bytecode constants.
 - **Fix:** call `filepath.EvalSymlinks` on both `c.importBase` and
   `modulePath` before comparing; deny resolution failures.
 
-### 2.6 `std/os` exposes process & environment without sandboxing &nbsp; **HIGH**
+### 2.6 `std/os` exposes process & environment without sandboxing &nbsp; **HIGH** ✅
 
 - `os.exec`, `os.start_process`: arbitrary process launch.
 - `os.exit`: terminates the *host* program. There is no

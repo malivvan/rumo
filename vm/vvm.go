@@ -11,6 +11,30 @@ import (
 
 
 
+// Permissions controls which privileged operations in the os standard-library
+// module are available to scripts. The zero value (all fields false) permits
+// every operation, preserving backward-compatible behaviour. Set individual
+// Deny* fields to true to prevent scripts from exercising those capabilities.
+type Permissions struct {
+	// DenyExec prevents os.exec and os.start_process from launching subprocesses.
+	DenyExec bool
+	// DenyExit prevents os.exit from terminating the host process; it returns
+	// an error to the script instead.
+	DenyExit bool
+	// DenyEnvWrite prevents os.setenv, os.unsetenv, and os.clearenv from
+	// mutating the host process's environment.
+	DenyEnvWrite bool
+	// DenyChdir prevents os.chdir from changing the host process's working
+	// directory.
+	DenyChdir bool
+	// DenyFileRead prevents os.read_file and read-only os.open from reading
+	// files on behalf of the script.
+	DenyFileRead bool
+	// DenyFileWrite prevents os.create and write-mode os.open_file from
+	// creating or writing files on behalf of the script.
+	DenyFileWrite bool
+}
+
 // Config holds the VM limits. Pass a *Config to NewVM to override the
 // defaults. Passing nil selects DefaultConfig. Zero values in a non-nil
 // Config are filled in from DefaultConfig by the eval method.
@@ -32,6 +56,10 @@ type Config struct {
 
 	// MaxBytesLen is the maximum length for bytes values.
 	MaxBytesLen int
+
+	// Permissions restricts which privileged os-module operations are allowed.
+	// The zero value of Permissions allows all operations.
+	Permissions Permissions
 }
 
 // DefaultConfig is the Config used when nil is passed to NewVM.

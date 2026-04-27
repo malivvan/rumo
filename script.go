@@ -43,6 +43,7 @@ type Script struct {
 	maxConstObjects  int
 	enableFileImport bool
 	importDir        string
+	permissions      vm.Permissions
 }
 
 // NewScript creates a Script instance with an input script.
@@ -118,6 +119,13 @@ func (s *Script) EnableFileImport(enable bool) {
 	s.enableFileImport = enable
 }
 
+// SetPermissions configures which privileged os-module operations the script is
+// allowed to perform. By default all operations are permitted; set individual
+// Deny* fields to restrict them.
+func (s *Script) SetPermissions(p vm.Permissions) {
+	s.permissions = p
+}
+
 // Compile compiles the script with all the defined variables and returns Program object.
 func (s *Script) Compile() (*Program, error) {
 	symbolTable, globals, err := s.prepCompile()
@@ -169,6 +177,7 @@ func (s *Script) Compile() (*Program, error) {
 		bytecode:      bytecode,
 		globals:       globals,
 		maxAllocs:     s.maxAllocs,
+		permissions:   s.permissions,
 	}, nil
 }
 
@@ -236,6 +245,7 @@ type Program struct {
 	globals       []vm.Object
 	maxAllocs     int64
 	args          []string
+	permissions   vm.Permissions
 	lock          sync.RWMutex
 }
 
@@ -244,6 +254,13 @@ func (p *Program) SetArgs(args []string) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	p.args = args
+}
+
+// SetPermissions updates the permission policy for future Run/RunContext calls.
+func (p *Program) SetPermissions(perm vm.Permissions) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	p.permissions = perm
 }
 
 // Bytecode returns the compiled bytecode of the Program.
@@ -365,9 +382,10 @@ func (p *Program) Run() error {
 	bytecode := p.bytecode
 	maxAllocs := p.maxAllocs
 	args := p.args
+	permissions := p.permissions
 	p.lock.RUnlock()
 
-	v := vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs})
+	v := vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, Permissions: permissions})
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {
@@ -393,9 +411,10 @@ func (p *Program) RunContext(ctx context.Context) (err error) {
 	bytecode := p.bytecode
 	maxAllocs := p.maxAllocs
 	args := p.args
+	permissions := p.permissions
 	p.lock.RUnlock()
 
-	v := vm.NewVM(ctx, bytecode, globals, &vm.Config{MaxAllocs: maxAllocs})
+	v := vm.NewVM(ctx, bytecode, globals, &vm.Config{MaxAllocs: maxAllocs, Permissions: permissions})
 	// Always override Args so the script never inherits os.Args from the VM default.
 	// Default to an empty slice when the caller did not call SetArgs.
 	if args == nil {
@@ -434,6 +453,7 @@ func (p *Program) Clone() *Program {
 		bytecode:      p.bytecode,
 		globals:       make([]vm.Object, len(p.globals)),
 		maxAllocs:     p.maxAllocs,
+		permissions:   p.permissions,
 	}
 	// deep-copy global objects so mutations in the clone do not affect
 	// the original (or vice versa). (Issue #10)

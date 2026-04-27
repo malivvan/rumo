@@ -65,6 +65,10 @@ var (
 	// ErrDivisionByZero is returned when an integer division or modulo
 	// operation has a zero right-hand operand.
 	ErrDivisionByZero = errors.New("division by zero")
+
+	// ErrNotPermitted is returned when a script attempts an operation that has
+	// been denied by the VM's Permissions configuration.
+	ErrNotPermitted = errors.New("operation not permitted")
 )
 
 // ErrInvalidArgumentType represents an invalid argument value type error.

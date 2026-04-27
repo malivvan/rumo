@@ -115,6 +115,11 @@ func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, cfg *Confi
 	return v
 }
 
+// Permissions returns the permission set configured for this VM.
+func (v *VM) Permissions() Permissions {
+	return v.config.Permissions
+}
+
 // Run starts the execution.
 func (v *VM) Run() (err error) {
 	atomic.StoreInt64(&v.aborting, 0)

@@ -280,6 +280,130 @@ func TestScriptFileImportAllowsSymlinkWithinRoot(t *testing.T) {
 	}
 }
 
+// The std/os module exposes privileged host-process operations (process launch, os.exit,
+// environment mutation, working-directory change, file I/O) with no mechanism for
+// embedders to deny individual capabilities. A script that calls os.setenv will mutate
+// the host's environment, os.exec will spawn subprocesses, and os.exit will terminate
+// the host process — with no way to prevent any of this.
+//
+// The fix adds a vm.Permissions struct to vm.Config (and wires it through Script and
+// Program). Each Deny* field, when true, causes the corresponding os-module function
+// to return vm.ErrNotPermitted instead of executing the operation. The zero value of
+// Permissions (all fields false) preserves backward-compatible allow-all behaviour.
+
+// runOSPermTest is a helper that compiles and runs a one-line script that imports the
+// os module, applying the given permissions, and returns the execution error.
+func runOSPermTest(t *testing.T, src string, perm vm.Permissions) error {
+	t.Helper()
+	s := rumo.NewScript([]byte(src))
+	s.SetImports(rumo.GetModuleMap("os"))
+	s.SetPermissions(perm)
+	_, err := s.Run()
+	return err
+}
+
+// TestOSPermissionDenyEnvWrite verifies that os.setenv, os.unsetenv, and os.clearenv
+// return an error when DenyEnvWrite is set, and that the host environment is not mutated.
+func TestOSPermissionDenyEnvWrite(t *testing.T) {
+	const key = "RUMO_PERM_TEST_ENVWRITE"
+	os.Unsetenv(key)
+
+	err := runOSPermTest(t,
+		`os := import("os"); os.setenv("`+key+`", "mutated")`,
+		vm.Permissions{DenyEnvWrite: true},
+	)
+	if err == nil {
+		t.Fatal("expected error when DenyEnvWrite=true, got nil")
+	}
+	if got := os.Getenv(key); got != "" {
+		t.Errorf("env was mutated despite DenyEnvWrite: %s=%q", key, got)
+	}
+}
+
+// TestOSPermissionDenyExec verifies that os.exec returns an error when DenyExec is set.
+func TestOSPermissionDenyExec(t *testing.T) {
+	err := runOSPermTest(t,
+		`os := import("os"); cmd := os.exec("true"); cmd.run()`,
+		vm.Permissions{DenyExec: true},
+	)
+	if err == nil {
+		t.Fatal("expected error when DenyExec=true, got nil")
+	}
+}
+
+// TestOSPermissionDenyChdir verifies that os.chdir returns an error when DenyChdir is set.
+func TestOSPermissionDenyChdir(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	t.Cleanup(func() { os.Chdir(orig) }) // restore in case permission check is absent
+	err := runOSPermTest(t,
+		`os := import("os"); os.chdir("`+dir+`")`,
+		vm.Permissions{DenyChdir: true},
+	)
+	if err == nil {
+		t.Fatal("expected error when DenyChdir=true, got nil")
+	}
+}
+
+// TestOSPermissionDenyFileRead verifies that os.read_file returns an error when DenyFileRead is set.
+func TestOSPermissionDenyFileRead(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(f, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := runOSPermTest(t,
+		`os := import("os"); os.read_file("`+f+`")`,
+		vm.Permissions{DenyFileRead: true},
+	)
+	if err == nil {
+		t.Fatal("expected error when DenyFileRead=true, got nil")
+	}
+}
+
+// TestOSPermissionDenyFileWrite verifies that os.create returns an error when DenyFileWrite is set.
+func TestOSPermissionDenyFileWrite(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "out.txt")
+	err := runOSPermTest(t,
+		`os := import("os"); os.create("`+f+`")`,
+		vm.Permissions{DenyFileWrite: true},
+	)
+	if err == nil {
+		t.Fatal("expected error when DenyFileWrite=true, got nil")
+	}
+}
+
+// TestOSPermissionDefaultAllowsAll verifies that with default permissions (zero value)
+// the os module works normally — specifically that setenv, exec, and read_file succeed.
+func TestOSPermissionDefaultAllowsAll(t *testing.T) {
+	const key = "RUMO_PERM_TEST_DEFAULT"
+	os.Unsetenv(key)
+	t.Cleanup(func() { os.Unsetenv(key) })
+
+	if err := runOSPermTest(t,
+		`os := import("os"); os.setenv("`+key+`", "ok")`,
+		vm.Permissions{},
+	); err != nil {
+		t.Errorf("unexpected error with default permissions: %v", err)
+	}
+	if got := os.Getenv(key); got != "ok" {
+		t.Errorf("setenv did not take effect: %s=%q", key, got)
+	}
+}
+
+// TestOSPermissionDenyExit verifies that os.exit returns an error when DenyExit is set,
+// preventing the host process from being terminated by a script.
+func TestOSPermissionDenyExit(t *testing.T) {
+	err := runOSPermTest(t,
+		`os := import("os"); os.exit(0)`,
+		vm.Permissions{DenyExit: true},
+	)
+	if err == nil {
+		t.Fatal("expected error when DenyExit=true, got nil — host process would have been terminated")
+	}
+}
+
 // VM defaults Args to os.Args — leaks host binary arguments into sandboxed scripts.
 // When Program.SetArgs is not called, the script should see an empty argument list,
 // not the host process's os.Args. When SetArgs is called the script must see exactly
