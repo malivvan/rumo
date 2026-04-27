@@ -14,6 +14,50 @@ import (
 )
 
 // ----------------------------------------------------------------------------
+// Native allow-list
+// ----------------------------------------------------------------------------
+
+// nativeAllowMu guards nativeAllowPaths.
+var nativeAllowMu sync.RWMutex
+
+// nativeAllowPaths is the set of shared-library paths that the host
+// application has explicitly approved for dlopen.  When nil every path is
+// blocked (zero-trust default).
+var nativeAllowPaths map[string]struct{}
+
+// AllowNativePath registers path as a trusted native library path that
+// Native.Call is permitted to dlopen.  Call this during program initialisation,
+// before executing any scripts, for every shared library you intentionally
+// expose through the native FFI.
+//
+// An empty allow-list (the default) blocks all native loads.
+func AllowNativePath(path string) {
+	nativeAllowMu.Lock()
+	defer nativeAllowMu.Unlock()
+	if nativeAllowPaths == nil {
+		nativeAllowPaths = make(map[string]struct{})
+	}
+	nativeAllowPaths[path] = struct{}{}
+}
+
+// ClearNativeAllowList removes every entry from the allow-list.  It is
+// intended for use in tests to reset global state between test cases.
+func ClearNativeAllowList() {
+	nativeAllowMu.Lock()
+	defer nativeAllowMu.Unlock()
+	nativeAllowPaths = nil
+}
+
+// isNativePathAllowed reports whether path has been registered with
+// AllowNativePath.
+func isNativePathAllowed(path string) bool {
+	nativeAllowMu.RLock()
+	defer nativeAllowMu.RUnlock()
+	_, ok := nativeAllowPaths[path]
+	return ok
+}
+
+// ----------------------------------------------------------------------------
 // Native library type system
 // ----------------------------------------------------------------------------
 
@@ -248,6 +292,18 @@ func (o *Native) CanCall() bool { return true }
 func (o *Native) Call(_ context.Context, args ...Object) (Object, error) {
 	if len(args) != 0 {
 		return nil, fmt.Errorf("native loader takes no arguments")
+	}
+
+	// Enforce the embedder's allow-list before attempting any OS-level open.
+	// An empty allow-list (the default) blocks every path so that scripts
+	// cannot load arbitrary shared libraries without the host application
+	// explicitly opting in.
+	if !isNativePathAllowed(o.Path) {
+		return nil, fmt.Errorf(
+			"native: path %q is not in the allow-list; "+
+				"register it with vm.AllowNativePath before running scripts",
+			o.Path,
+		)
 	}
 
 	o.mu.Lock()

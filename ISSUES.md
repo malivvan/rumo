@@ -274,7 +274,7 @@ checked once per `OpBinaryOp`, not inside the formatter).
 - **Fix:** intercept width / precision specifiers and reject anything
   above a configurable bound.
 
-### 2.9 `std/text.repeat` & `re_replace` size checks are post-hoc &nbsp; **MED**
+### 2.9 `std/text.repeat` & `re_replace` size checks are post-hoc &nbsp; **MED** ✅
 
 `text.go:608` checks `len(s1)*i2 > MaxStringLen` *before* the call —
 good — but `i2` is taken from a script-supplied `int`. With
@@ -292,7 +292,7 @@ output, predictable on demand.
   `crypto/rand`. Mark every function with whether it is suitable for
   security use.
 
-### 2.11 `Native.Call` accepts arbitrary library paths from script &nbsp; **HIGH**
+### 2.11 `Native.Call` accepts arbitrary library paths from script &nbsp; **HIGH** ✅
 
 `vm/native.go:260` does `purego.Dlopen(o.Path, …)` where `o.Path`
 came directly from the source `native foo = "/some/path" { … }`. A

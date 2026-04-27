@@ -184,6 +184,10 @@ native bad = "x" {
 // TestNative_MissingLibrary verifies that loading fails gracefully at
 // runtime when the shared object cannot be located.
 func TestNative_MissingLibrary(t *testing.T) {
+	const missingPath = "/definitely/not/a/real/library.so"
+	vm.AllowNativePath(missingPath)
+	defer vm.ClearNativeAllowList()
+
 	src := `
 native bad = "/definitely/not/a/real/library.so" {
     something(int) int
@@ -232,6 +236,8 @@ int64_t rumo_sum_bytes(const unsigned char *buf, int64_t n) {
 
 func TestNative_EndToEnd(t *testing.T) {
 	libPath := buildTestNativeLib(t, testNativeCSource)
+	vm.AllowNativePath(libPath)
+	defer vm.ClearNativeAllowList()
 
 	src := fmt.Sprintf(`
 native lib = %q {
@@ -325,6 +331,8 @@ out = result
 // is expected surfaces as a runtime error rather than panicking.
 func TestNative_ArgTypeMismatch(t *testing.T) {
 	libPath := buildTestNativeLib(t, testNativeCSource)
+	vm.AllowNativePath(libPath)
+	defer vm.ClearNativeAllowList()
 
 	src := fmt.Sprintf(`
 native lib = %q {
@@ -346,6 +354,8 @@ out = lib.rumo_add("nope", 2)
 // block - it should still produce a usable (if trivially empty) map.
 func TestNative_NoFuncSpecs(t *testing.T) {
 	libPath := buildTestNativeLib(t, testNativeCSource)
+	vm.AllowNativePath(libPath)
+	defer vm.ClearNativeAllowList()
 
 	src := fmt.Sprintf(`
 native lib = %q { }
@@ -364,6 +374,52 @@ out = lib.__path__
 		t.Fatalf("want %s got %s", libPath, s.Value)
 	}
 }
+
+// TestNative_ArbitraryPathBlocked ensures that Native.Call refuses to open
+// any shared library whose path has not been pre-approved by the embedder via
+// vm.AllowNativePath.  Without this guard a script can load any .so/.dylib on
+// disk, hand its pointers to foreign functions, and achieve arbitrary memory
+// read/write or remote code execution.
+//
+// Before the fix Native.Call proceeds directly to purego.Dlopen; the error
+// below (if any) originates from the OS and does not mention "allow-list".
+// After the fix the allow-list check fires first and the error message
+// contains "allow-list".
+func TestNative_ArbitraryPathBlocked(t *testing.T) {
+	defer vm.ClearNativeAllowList()
+
+	loader := &vm.Native{Path: "/arbitrary/unregistered/path.so"}
+	_, err := loader.Call(context.Background())
+	if err == nil {
+		t.Fatal("expected error for path not in native allow-list, got nil")
+	}
+	if !strings.Contains(err.Error(), "allow-list") {
+		t.Fatalf("expected allow-list rejection; got: %v", err)
+	}
+}
+
+// TestNative_RegisteredPathAllowed is the positive-case regression: a path
+// that has been registered with vm.AllowNativePath must be permitted to reach
+// dlopen (which then fails because the file does not exist on disk — not
+// because of the allow-list).
+func TestNative_RegisteredPathAllowed(t *testing.T) {
+	const regPath = "/registered/but/absent.so"
+	vm.AllowNativePath(regPath)
+	defer vm.ClearNativeAllowList()
+
+	loader := &vm.Native{Path: regPath}
+	_, err := loader.Call(context.Background())
+	if err == nil {
+		t.Fatal("expected dlopen to fail for absent library")
+	}
+	if strings.Contains(err.Error(), "allow-list") {
+		t.Fatalf("registered path must not be blocked by allow-list; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to open") {
+		t.Fatalf("expected 'failed to open' from dlopen; got: %v", err)
+	}
+}
+
 
 // TestNative_CompilerErrorTypes ensures `void` is rejected as a parameter.
 func TestNative_VoidParam(t *testing.T) {
