@@ -1,218 +1,79 @@
-// rumo.js — page-side wrapper around the SharedWorker that hosts the rumo
-// runtime. It mirrors the github.com/malivvan/rumo Go package surface as a
-// Promise-based JavaScript API. All work is dispatched to the SharedWorker
-// over its MessagePort; multiple page contexts (tabs, iframes) connect to the
-// same worker and therefore share the in-memory filesystem and runtime
-// registries.
+// rumo.js — page-side wrapper. Each top-level VM runs in its own dedicated
+// SharedWorker (named "rumo-vm-<id>") so that every active rumo VM appears
+// as a separate worker in DevTools and as a distinct row in the live monitor.
+// A separate "rumo-coordinator" SharedWorker holds the in-memory filesystem,
+// the routine registry, and the lifecycle bus — making them shared across
+// every page tab connected to the same origin.
+//
+// Architecture
+//
+//   page.js
+//     │
+//     ├──► rumo-coordinator   (1 SharedWorker, owns FS + monitor registry)
+//     │
+//     ├──► rumo-vm-A          (1 SharedWorker per VM run; streams output)
+//     ├──► rumo-vm-B
+//     └──► rumo-vm-C
+//
+// Lifecycle for every VM created via rumo.run / runCompiled / spawn:
+//   1. ask coordinator for a fresh routine id (`routine.register`)
+//   2. fetch the FS snapshot (`fs.snapshot`)
+//   3. create `new SharedWorker(workerURL, "rumo-vm-<id>")`
+//   4. forward output chunks to onOutput AND to the coordinator
+//      (`routine.update`) so monitor byte counts stay live
+//   5. on done → `routine.done` → coordinator promotes the row to the
+//      "done"/"error" state so it's visible to every other tab too
 
 (function (root) {
     "use strict";
 
-    function Rumo(workerURL) {
-        const worker = new SharedWorker(workerURL || "./worker.js", { name: "rumo" });
-        this._worker = worker;
-        this._port = worker.port;
+    const COORD_NAME = "rumo-coordinator";
 
-        this._nextId = 1;
-        this._pending = new Map();   // id -> {resolve, reject}
-        this._streams = new Map();   // streamId -> onChunk
-        this._routines = new Map();  // routineId -> {onChunk, donePending: Promise}
-        this._monitorSubs = [];      // user-provided lifecycle callbacks
-        this._monitorActive = false; // remote subscription requested
-
-        this._readyResolve = null;
-        this.ready = new Promise((resolve) => { this._readyResolve = resolve; });
-
-        this._port.onmessage = (e) => this._onMessage(e.data);
-        this._port.onmessageerror = (e) => console.error("rumo: messageerror", e);
-        this._port.start();
-    }
-
-    Rumo.prototype._onMessage = function (msg) {
-        if (!msg) return;
-        if (msg.type === "ready") {
-            if (this._readyResolve) {
-                this._readyResolve(msg);
-                this._readyResolve = null;
-            }
-            return;
+    // -----------------------------------------------------------------------
+    // PortClient — request/response over a SharedWorker MessagePort
+    // -----------------------------------------------------------------------
+    class PortClient {
+        constructor(port) {
+            this.port = port;
+            this._next = 1;
+            this._pending = new Map();
+            this._listeners = [];
+            this._readyResolve = null;
+            this.ready = new Promise((res) => { this._readyResolve = res; });
+            port.onmessage = (e) => this._dispatch(e.data);
+            port.onmessageerror = (e) => console.error("rumo: messageerror", e);
+            port.start();
         }
-        if (msg.type === "output") {
-            if (msg.streamId !== undefined) {
-                const cb = this._streams.get(msg.streamId);
-                if (cb) cb(msg.chunk);
+        _dispatch(msg) {
+            if (!msg) return;
+            if (msg.type === "ready") {
+                if (this._readyResolve) { this._readyResolve(msg); this._readyResolve = null; }
                 return;
             }
-            if (msg.routineId !== undefined) {
-                const r = this._routines.get(msg.routineId);
-                if (r && r.onChunk) r.onChunk(msg.chunk);
+            if (msg.id !== undefined && this._pending.has(msg.id)) {
+                const p = this._pending.get(msg.id);
+                this._pending.delete(msg.id);
+                if (msg.error !== undefined && msg.error !== null) {
+                    p.reject(new Error(msg.error));
+                } else {
+                    p.resolve(msg.result);
+                }
                 return;
             }
-            return;
+            for (const l of this._listeners) l(msg);
         }
-        if (msg.type === "done") {
-            const r = this._routines.get(msg.routineId);
-            if (r && r._resolveDone) {
-                r._resolveDone({ error: msg.error || null });
-            }
-            return;
+        listen(fn) { this._listeners.push(fn); return () => {
+            const i = this._listeners.indexOf(fn);
+            if (i !== -1) this._listeners.splice(i, 1);
+        }; }
+        call(op, payload) {
+            return new Promise((resolve, reject) => {
+                const id = this._next++;
+                this._pending.set(id, { resolve, reject });
+                this.port.postMessage(Object.assign({ id, op }, payload || {}));
+            });
         }
-        if (msg.type === "routine:spawned" || msg.type === "routine:done") {
-            for (const cb of this._monitorSubs) {
-                try { cb(msg); } catch (err) { console.error("rumo: monitor cb threw", err); }
-            }
-            return;
-        }
-        if (msg.id !== undefined) {
-            const p = this._pending.get(msg.id);
-            if (!p) return;
-            this._pending.delete(msg.id);
-            if (msg.error !== undefined && msg.error !== null) {
-                p.reject(new Error(msg.error));
-            } else {
-                p.resolve(msg.result);
-            }
-        }
-    };
-
-    Rumo.prototype._call = function (op, payload) {
-        return new Promise((resolve, reject) => {
-            const id = this._nextId++;
-            this._pending.set(id, { resolve, reject });
-            const msg = Object.assign({ id, op }, payload || {});
-            this._port.postMessage(msg);
-        });
-    };
-
-    Rumo.prototype.version = function () { return this._call("version"); };
-    Rumo.prototype.commit = function () { return this._call("commit"); };
-    Rumo.prototype.modules = function () { return this._call("modules"); };
-    Rumo.prototype.exports = function () { return this._call("exports"); };
-
-    Rumo.prototype.compile = function (source, path) {
-        return this._call("compile", { source: encode(source), path: path || "" });
-    };
-
-    Rumo.prototype.run = function (source, opts) {
-        opts = opts || {};
-        const streamId = opts.onOutput ? this._nextId++ : undefined;
-        if (streamId !== undefined) this._streams.set(streamId, opts.onOutput);
-        const payload = {
-            source: encode(source),
-            path: opts.path || "",
-            args: opts.args || [],
-            stdin: opts.stdin || "",
-            streamId,
-        };
-        const promise = this._call("run", payload);
-        if (streamId !== undefined) {
-            promise.finally(() => this._streams.delete(streamId));
-        }
-        return promise;
-    };
-
-    Rumo.prototype.runCompiled = function (bytes, opts) {
-        opts = opts || {};
-        const streamId = opts.onOutput ? this._nextId++ : undefined;
-        if (streamId !== undefined) this._streams.set(streamId, opts.onOutput);
-        const payload = {
-            bytecode: bytes,
-            args: opts.args || [],
-            stdin: opts.stdin || "",
-            streamId,
-        };
-        const promise = this._call("runCompiled", payload);
-        if (streamId !== undefined) {
-            promise.finally(() => this._streams.delete(streamId));
-        }
-        return promise;
-    };
-
-    Rumo.prototype.spawn = async function (source, opts) {
-        opts = opts || {};
-        const id = await this._call("spawn", {
-            source: encode(source),
-            path: opts.path || "",
-            args: opts.args || [],
-            stdin: opts.stdin || "",
-        });
-        const self = this;
-        const entry = { onChunk: opts.onOutput || null };
-        let resolveDone;
-        entry.donePromise = new Promise((res) => { resolveDone = res; });
-        entry._resolveDone = resolveDone;
-        self._routines.set(id, entry);
-
-        return {
-            id,
-            cancel: () => self._call("routine.cancel", { routineId: id }),
-            wait: (seconds) => self._call("routine.wait", {
-                routineId: id,
-                seconds: typeof seconds === "number" ? seconds : -1,
-            }),
-            result: () => self._call("routine.result", { routineId: id }),
-            write: (data) => self._call("routine.write", { routineId: id, chunk: encode(data) }),
-            close: () => {
-                self._routines.delete(id);
-                return self._call("routine.close", { routineId: id });
-            },
-            done: entry.donePromise,
-            onOutput: (cb) => { entry.onChunk = cb; },
-        };
-    };
-
-    Rumo.prototype.routines = function () { return this._call("routines.list"); };
-    Rumo.prototype.pruneRoutines = function () { return this._call("routines.prune"); };
-
-    /**
-     * Subscribe to routine lifecycle events. The callback fires for every
-     * spawned and finished routine (run, runCompiled, spawn) hosted by the
-     * SharedWorker — across all page tabs that share it.
-     * @param {(ev: {type: string, routine: object}) => void} cb
-     * @returns {() => void} unsubscribe handle
-     */
-    Rumo.prototype.subscribe = function (cb) {
-        this._monitorSubs.push(cb);
-        if (!this._monitorActive) {
-            this._monitorActive = true;
-            this._call("monitor.subscribe").catch(() => { this._monitorActive = false; });
-        }
-        return () => {
-            const idx = this._monitorSubs.indexOf(cb);
-            if (idx !== -1) this._monitorSubs.splice(idx, 1);
-        };
-    };
-
-    /**
-     * Convenience helper: poll rumo.routines() at a fixed interval and invoke
-     * `render` with the latest snapshot. Returns a stop function.
-     * @param {(list: object[]) => void} render
-     * @param {number} [intervalMs=500]
-     */
-    Rumo.prototype.monitor = function (render, intervalMs) {
-        const period = typeof intervalMs === "number" ? intervalMs : 500;
-        let stopped = false;
-        const tick = async () => {
-            if (stopped) return;
-            try { render(await this.routines()); } catch (err) { /* swallow */ }
-            if (!stopped) setTimeout(tick, period);
-        };
-        tick();
-        return () => { stopped = true; };
-    };
-
-    Rumo.prototype.fs = {
-        // bound when constructed below
-    };
-
-    function bindFS(rumo) {
-        return {
-            put: (path, content) => rumo._call("fs.put", { path, content: encode(content) }),
-            get: (path) => rumo._call("fs.get", { path }),
-            list: () => rumo._call("fs.list"),
-            delete: (path) => rumo._call("fs.delete", { path }),
-            clear: () => rumo._call("fs.clear"),
-        };
+        post(msg) { this.port.postMessage(msg); }
     }
 
     function encode(v) {
@@ -223,14 +84,184 @@
         throw new TypeError("rumo: expected string, Uint8Array, or ArrayBuffer");
     }
 
-    /**
-     * Create a new client connected to the rumo SharedWorker.
-     * @param {string} [workerURL="./worker.js"] URL of the SharedWorker bootstrap.
-     * @returns {Promise<Rumo>} resolves once the runtime has reported `ready`.
-     */
+    // -----------------------------------------------------------------------
+    // Rumo client
+    // -----------------------------------------------------------------------
+    class Rumo {
+        constructor(workerURL) {
+            this._workerURL = workerURL || "./worker.js";
+            const coord = new SharedWorker(this._workerURL, COORD_NAME);
+            this._coordSW = coord;
+            this._coord = new PortClient(coord.port);
+            this.ready = this._coord.ready;
+
+            this._monitorSubs = [];
+            this._coord.listen((msg) => {
+                if (msg.type === "routine:spawned" || msg.type === "routine:done") {
+                    for (const cb of this._monitorSubs) {
+                        try { cb(msg); } catch (err) { console.error(err); }
+                    }
+                }
+            });
+        }
+
+        // ── meta ────────────────────────────────────────────────────────────
+        version() { return this._coord.call("version"); }
+        commit()  { return this._coord.call("commit"); }
+        modules() { return this._coord.call("modules"); }
+        exports() { return this._coord.call("exports"); }
+
+        compile(source, path) {
+            return this._coord.call("compile", { source: encode(source), path: path || "" });
+        }
+
+        // ── per-VM execution (each in its own SharedWorker) ────────────────
+        async _runInWorker(kind, body, opts) {
+            opts = opts || {};
+            // 1) register routine in coordinator (assigns id)
+            const workerName = "rumo-vm-" + Math.random().toString(36).slice(2, 10);
+            const routineId = await this._coord.call("routine.register", {
+                kind,
+                name: opts.path || opts.name || (kind + ".rumo"),
+                workerName,
+            });
+            // 2) snapshot shared FS so the per-VM worker can resolve imports
+            const fsSnap = await this._coord.call("fs.snapshot");
+            // 3) spin up the dedicated VM SharedWorker
+            const sw = new SharedWorker(this._workerURL, workerName);
+            const vm = new PortClient(sw.port);
+            try {
+                await vm.ready;
+            } catch (err) {
+                await this._coord.call("routine.done", {
+                    routineId, error: "vm-host failed to start: " + err.message,
+                });
+                throw err;
+            }
+
+            // forward output chunks to onOutput and to coordinator (byte counter)
+            let bytes = 0;
+            const removeListener = vm.listen((msg) => {
+                if (msg.type === "output") {
+                    bytes += (msg.bytes !== undefined ? msg.bytes : 0);
+                    if (opts.onOutput) {
+                        try { opts.onOutput(msg.chunk); } catch (e) { console.error(e); }
+                    }
+                    // best-effort byte-count update; intentionally not awaited
+                    this._coord.call("routine.update", { routineId, bytes }).catch(() => {});
+                }
+            });
+
+            const op = body.bytecode ? "runVMCompiled" : "runVM";
+            const payload = Object.assign({}, body, {
+                args: opts.args || [],
+                stdin: opts.stdin || "",
+                fs: fsSnap,
+                path: opts.path || "",
+            });
+
+            const handle = {
+                id: routineId,
+                workerName,
+                _vm: vm,
+                _sw: sw,
+                _bytes: () => bytes,
+            };
+
+            const donePromise = vm.call(op, payload).then((result) => {
+                removeListener();
+                this._coord.call("routine.done", {
+                    routineId,
+                    error: result.error,
+                }).catch(() => {});
+                // close port so the SharedWorker terminates if no one else is connected
+                try { sw.port.close(); } catch (_) {}
+                return result;
+            }).catch(async (err) => {
+                removeListener();
+                await this._coord.call("routine.done", { routineId, error: err.message });
+                try { sw.port.close(); } catch (_) {}
+                throw err;
+            });
+
+            handle.done = donePromise;
+            handle.cancel = () => { try { vm.post({ op: "cancel" }); } catch (_) {} };
+            return handle;
+        }
+
+        async run(source, opts) {
+            const handle = await this._runInWorker("run", { source: encode(source) }, opts);
+            return handle.done;
+        }
+
+        async runCompiled(bytes, opts) {
+            const handle = await this._runInWorker("runCompiled", { bytecode: bytes }, opts);
+            return handle.done;
+        }
+
+        async spawn(source, opts) {
+            const h = await this._runInWorker("spawn", { source: encode(source) }, opts);
+            return {
+                id: h.id,
+                workerName: h.workerName,
+                cancel: () => h.cancel(),
+                done: h.done,
+                result: () => h.done,
+                wait: (seconds) => Promise.race([
+                    h.done.then(() => true),
+                    new Promise((r) => setTimeout(() => r(false),
+                        (seconds == null || seconds < 0) ? 365*24*3600*1000 : seconds*1000)),
+                ]),
+                bytes: () => h._bytes(),
+                onOutput: (cb) => { /* callback set via spawn opts.onOutput */
+                    console.warn("rumo: pass onOutput in spawn(opts), not after");
+                    if (typeof cb === "function") opts.onOutput = cb;
+                },
+            };
+        }
+
+        // ── monitor / registry (coordinator-backed, shared across tabs) ────
+        routines()      { return this._coord.call("routines.list"); }
+        pruneRoutines() { return this._coord.call("routines.prune"); }
+        subscribe(cb) {
+            this._monitorSubs.push(cb);
+            // ask coordinator to push lifecycle messages on this port
+            if (!this._monitorActive) {
+                this._monitorActive = true;
+                this._coord.call("monitor.subscribe").catch(() => { this._monitorActive = false; });
+            }
+            return () => {
+                const i = this._monitorSubs.indexOf(cb);
+                if (i !== -1) this._monitorSubs.splice(i, 1);
+            };
+        }
+        monitor(render, intervalMs) {
+            const period = typeof intervalMs === "number" ? intervalMs : 500;
+            let stopped = false;
+            const tick = async () => {
+                if (stopped) return;
+                try { render(await this.routines()); } catch (_) {}
+                if (!stopped) setTimeout(tick, period);
+            };
+            tick();
+            return () => { stopped = true; };
+        }
+
+        // ── shared filesystem ──────────────────────────────────────────────
+        get fs() {
+            const c = this._coord;
+            return {
+                put:    (path, content) => c.call("fs.put", { path, content: encode(content) }),
+                get:    (path)          => c.call("fs.get", { path }),
+                list:   ()              => c.call("fs.list"),
+                delete: (path)          => c.call("fs.delete", { path }),
+                clear:  ()              => c.call("fs.clear"),
+            };
+        }
+    }
+
     async function connect(workerURL) {
         const r = new Rumo(workerURL);
-        r.fs = bindFS(r);
         await r.ready;
         return r;
     }

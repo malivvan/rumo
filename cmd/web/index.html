@@ -115,12 +115,12 @@
     <table class="routines">
         <thead>
             <tr>
-                <th>id</th><th>kind</th><th>name</th><th>state</th>
+                <th>id</th><th>kind</th><th>name</th><th>worker</th><th>state</th>
                 <th>age</th><th>bytes</th><th>error</th>
             </tr>
         </thead>
         <tbody id="routinesBody">
-            <tr class="empty"><td colspan="7" class="empty">(none)</td></tr>
+            <tr class="empty"><td colspan="8" class="empty">(none)</td></tr>
         </tbody>
     </table>
 
@@ -304,15 +304,17 @@ fmt.println("done.")
             const body = $("routinesBody");
             $("routinesCount").textContent = list.length ? `(${list.length})` : "";
             if (!list.length) {
-                body.innerHTML = '<tr class="empty"><td colspan="7" class="empty">(none)</td></tr>';
+                body.innerHTML = '<tr class="empty"><td colspan="8" class="empty">(none)</td></tr>';
                 return;
             }
             body.innerHTML = list.map(r => {
                 const dur = r.endedAtMs ? r.durationMs + "ms" : fmtAge(r.durationMs);
+                const worker = r.workerName ? escapeHTML(r.workerName) : "<span class=\"small\">—</span>";
                 return `<tr class="r-${r.state}">
                     <td>${r.id}</td>
                     <td>${escapeHTML(r.kind)}</td>
                     <td>${escapeHTML(r.name)}</td>
+                    <td class="small">${worker}</td>
                     <td>${r.state}</td>
                     <td>${dur}</td>
                     <td>${fmtBytes(r.bytesOut)}</td>

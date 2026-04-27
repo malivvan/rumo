@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall/js"
@@ -148,13 +149,14 @@ type routine struct {
 	err    error
 
 	// monitoring fields exposed via rumo.routines()
-	name      string
-	kind      string // "run" | "spawn" | "runCompiled"
-	startedAt time.Time
-	endedAt   atomic.Int64 // unix nano; 0 while running
-	bytesOut  atomic.Int64
-	state     atomic.Int32 // routineRunning / routineDone / routineError / routineCancel
-	errStr    atomic.Pointer[string]
+	name       string
+	kind       string // "run" | "spawn" | "runCompiled" | "remote"
+	workerName string // SharedWorker name when the VM runs in a dedicated worker
+	startedAt  time.Time
+	endedAt    atomic.Int64 // unix nano; 0 while running
+	bytesOut   atomic.Int64
+	state      atomic.Int32 // routineRunning / routineDone / routineError / routineCancel
+	errStr     atomic.Pointer[string]
 }
 
 // Write makes the routine an io.Writer for VM stdout.
@@ -217,6 +219,7 @@ func (r *routine) snapshot(now time.Time) js.Value {
 	obj.Set("id", r.id)
 	obj.Set("name", r.name)
 	obj.Set("kind", r.kind)
+	obj.Set("workerName", r.workerName)
 	obj.Set("state", r.stateString())
 	obj.Set("bytesOut", r.bytesOut.Load())
 	obj.Set("startedAtMs", r.startedAt.UnixMilli())
@@ -941,6 +944,155 @@ func inSharedWorker() bool {
 	return name.String() == "SharedWorkerGlobalScope"
 }
 
+// workerSelfName returns the SharedWorker name (`self.name`) the current
+// instance was created with, or "" if not running in a SharedWorker.
+func workerSelfName() string {
+	self := js.Global()
+	if !inSharedWorker() {
+		return ""
+	}
+	if n := self.Get("name"); n.Type() == js.TypeString {
+		return n.String()
+	}
+	return ""
+}
+
+// installVMHostBridge wires onconnect for a per-VM SharedWorker. Each such
+// worker hosts exactly one VM. The orchestrating page sends one `runVM` (or
+// `runCompiled`) message and listens for output/done events.
+//
+// Messages from page → vm-host:
+//   { id, op:"runVM",          source, args, stdin, fs }
+//   { id, op:"runVMCompiled",  bytecode, args, stdin }
+//   { id, op:"cancel" }
+//
+// Messages from vm-host → page:
+//   { type:"output", chunk }
+//   { type:"done",   error|null, output }
+func installVMHostBridge() {
+	if !inSharedWorker() {
+		return
+	}
+	self := js.Global()
+	self.Set("onconnect", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) == 0 {
+			return nil
+		}
+		ports := args[0].Get("ports")
+		if ports.IsUndefined() || ports.Length() == 0 {
+			return nil
+		}
+		port := ports.Index(0)
+
+		// State for this single VM run.
+		var (
+			running atomic.Bool
+			cancel  context.CancelFunc
+			cancelM sync.Mutex
+		)
+
+		port.Set("onmessage", js.FuncOf(func(_ js.Value, ma []js.Value) any {
+			if len(ma) == 0 {
+				return nil
+			}
+			data := ma[0].Get("data")
+			op := data.Get("op")
+			if op.Type() != js.TypeString {
+				return nil
+			}
+			switch op.String() {
+			case "runVM", "runVMCompiled":
+				if !running.CompareAndSwap(false, true) {
+					portError(port, data.Get("id"), "vm-host: already running")
+					return nil
+				}
+				go runOneVM(port, data, op.String() == "runVMCompiled", &cancel, &cancelM)
+			case "cancel":
+				cancelM.Lock()
+				if cancel != nil {
+					cancel()
+				}
+				cancelM.Unlock()
+			}
+			return nil
+		}))
+		port.Call("start")
+
+		// announce ready so the page resolves its connection promise
+		hello := jsObject.New()
+		hello.Set("type", "ready")
+		hello.Set("role", "vm-host")
+		hello.Set("workerName", workerSelfName())
+		hello.Set("version", rumo.Version())
+		port.Call("postMessage", hello)
+		return nil
+	}))
+}
+
+// runOneVM executes a single VM in the per-VM SharedWorker. Output is streamed
+// back as `{type:"output",chunk}` messages; the final `{type:"done"}` message
+// includes the buffered output and error string (or null).
+func runOneVM(port js.Value, data js.Value, compiled bool, cancelOut *context.CancelFunc, cancelMu *sync.Mutex) {
+	id := data.Get("id")
+
+	// stage shared-FS contents (sent by the page) into the local sharedFS so
+	// the compiler can resolve imports.
+	if fs := data.Get("fs"); !fs.IsUndefined() && !fs.IsNull() {
+		keys := js.Global().Get("Object").Call("keys", fs)
+		for i := 0; i < keys.Length(); i++ {
+			path := keys.Index(i).String()
+			b := toBytes(fs.Get(path))
+			sharedFS.put(path, b)
+		}
+	}
+
+	scriptArgs := jsValueStringArray(data.Get("args"))
+	stdinStr := ""
+	if v := data.Get("stdin"); v.Type() == js.TypeString {
+		stdinStr = v.String()
+	}
+	path := ""
+	if v := data.Get("path"); v.Type() == js.TypeString {
+		path = v.String()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancelMu.Lock()
+	*cancelOut = cancel
+	cancelMu.Unlock()
+
+	var buf bytes.Buffer
+	streamW := &vmHostStream{port: port}
+	w := io.MultiWriter(&buf, streamW)
+	var r io.Reader
+	if stdinStr != "" {
+		r = bytes.NewReader([]byte(stdinStr))
+	}
+
+	var err error
+	if compiled {
+		err = runCompiled(ctx, toBytes(data.Get("bytecode")), scriptArgs, r, w)
+	} else {
+		err = runSource(ctx, toBytes(data.Get("source")), path, scriptArgs, r, w)
+	}
+
+	result := jsObject.New()
+	result.Set("output", buf.String())
+	result.Set("bytes", buf.Len())
+	if err != nil {
+		result.Set("error", err.Error())
+	} else {
+		result.Set("error", js.Null())
+	}
+	// Match the standard {id, result|error} envelope used by PortClient on
+	// the page side. We always resolve (never reject) and surface the script
+	// error inside the result object so streaming output is preserved.
+	msg := jsObject.New()
+	msg.Set("id", id)
+	msg.Set("result", result)
+	port.Call("postMessage", msg)
+}
+
 // installSharedWorkerBridge registers `onconnect` so each connecting page tab
 // can drive the runtime through a MessagePort. Messages have the shape
 //
@@ -1129,9 +1281,77 @@ func handlePortMessage(port js.Value, data js.Value) {
 	case "fs.clear":
 		sharedFS.clear()
 		portReply(port, id, true)
+	case "fs.snapshot":
+		// Returns a JS object {path: Uint8Array} of every file in the shared FS.
+		// Used by the page to bundle the FS into a per-VM SharedWorker before
+		// dispatching a runVM call.
+		obj := jsObject.New()
+		for _, name := range sharedFS.list() {
+			if d, ok := sharedFS.get(name); ok {
+				obj.Set(name, bytesToJS(d))
+			}
+		}
+		portReply(port, id, obj)
+	case "routine.register":
+		// Register a remote routine (one running in a different SharedWorker)
+		// in the monitor. The page reports per-VM lifecycle; the coordinator
+		// just tracks it.
+		rt := registerRemoteRoutine(data)
+		portReply(port, id, rt.id)
+	case "routine.update":
+		rid := int64(data.Get("routineId").Int())
+		rt := routines.get(rid)
+		if rt == nil {
+			portError(port, id, "unknown routine")
+			return
+		}
+		if b := data.Get("bytes"); b.Type() == js.TypeNumber {
+			rt.bytesOut.Store(int64(b.Int()))
+		}
+		portReply(port, id, true)
+	case "routine.done":
+		rid := int64(data.Get("routineId").Int())
+		rt := routines.get(rid)
+		if rt == nil {
+			portError(port, id, "unknown routine")
+			return
+		}
+		errStr := ""
+		if e := data.Get("error"); e.Type() == js.TypeString {
+			errStr = e.String()
+		}
+		var err error
+		if errStr != "" {
+			err = fmt.Errorf("%s", errStr)
+		}
+		rt.finish(err)
+		go func() {
+			time.Sleep(2 * time.Second)
+			routines.del(rt.id)
+		}()
+		portReply(port, id, true)
 	default:
 		portError(port, id, fmt.Sprintf("unknown op: %s", op.String()))
 	}
+}
+
+// registerRemoteRoutine creates a routine entry whose execution lives in a
+// different SharedWorker. The coordinator only tracks state changes that the
+// orchestrating page reports via routine.update / routine.done messages.
+func registerRemoteRoutine(data js.Value) *routine {
+	kind := "remote"
+	if v := data.Get("kind"); v.Type() == js.TypeString {
+		kind = v.String()
+	}
+	name := ""
+	if v := data.Get("name"); v.Type() == js.TypeString {
+		name = v.String()
+	}
+	rt := newRoutine(kind, name)
+	if v := data.Get("workerName"); v.Type() == js.TypeString {
+		rt.workerName = v.String()
+	}
+	return rt
 }
 
 func portRun(port js.Value, id js.Value, data js.Value, compiled bool) {
@@ -1243,6 +1463,21 @@ func (p *portStream) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// vmHostStream is the streaming writer used by per-VM SharedWorkers. Unlike
+// portStream it doesn't need a streamId since the page uses a fresh worker
+// per VM and treats every output message on that port as belonging to it.
+type vmHostStream struct{ port js.Value }
+
+func (v *vmHostStream) Write(b []byte) (int, error) {
+	msg := jsObject.New()
+	msg.Set("type", "output")
+	msg.Set("chunk", string(b))
+	msg.Set("bytes", len(b))
+	defer func() { _ = recover() }()
+	v.port.Call("postMessage", msg)
+	return len(b), nil
+}
+
 func jsValueStringArray(v js.Value) []string {
 	if !v.InstanceOf(jsArray) {
 		return nil
@@ -1259,13 +1494,27 @@ func jsValueStringArray(v js.Value) []string {
 // main
 // ---------------------------------------------------------------------------
 
+// main dispatches one of three roles based on the SharedWorker name:
+//
+//   - "rumo-vm-*"          → vm-host (runs exactly one VM and streams it)
+//   - "rumo-coordinator"   → coordinator (FS, monitor, registry only)
+//   - <anything else>      → standalone (legacy all-in-one for tests / direct
+//                            page loads with no SharedWorker)
+//
+// Each `rumo.run` / `rumo.runCompiled` / `rumo.spawn` call from the page
+// creates its own dedicated `rumo-vm-<id>` SharedWorker and reports lifecycle
+// to the coordinator's monitor — so every running VM appears as a distinct
+// worker in the browser's DevTools and as a row in the live monitor table.
 func main() {
-	// Always install the API on the current global so that the binary works
-	// in main thread, dedicated worker, or shared worker contexts.
-	installAPI(js.Global())
-	// In a SharedWorker we additionally bridge connecting MessagePorts.
-	installSharedWorkerBridge()
-
+	name := workerSelfName()
+	switch {
+	case strings.HasPrefix(name, "rumo-vm-"):
+		installVMHostBridge()
+	default:
+		// coordinator (named "rumo-coordinator") OR standalone
+		installAPI(js.Global())
+		installSharedWorkerBridge()
+	}
 	// Keep the runtime alive — without this the Go program would exit and
 	// every registered js.Func would become invalid.
 	select {}
