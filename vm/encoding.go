@@ -184,9 +184,20 @@ func SizeOfObject(o Object) int {
 	case _time:
 		return codec.SizeByte() + codec.SizeInt64()
 	case _array:
-		return codec.SizeByte() + codec.SizeSlice(o.(*Array).Value, SizeOfObject)
+		arr := o.(*Array)
+		arr.mu.RLock()
+		snap := append([]Object(nil), arr.Value...)
+		arr.mu.RUnlock()
+		return codec.SizeByte() + codec.SizeSlice(snap, SizeOfObject)
 	case _map:
-		return codec.SizeByte() + codec.SizeMap(o.(*Map).Value, codec.SizeString, SizeOfObject)
+		m := o.(*Map)
+		m.mu.RLock()
+		snapM := make(map[string]Object, len(m.Value))
+		for k, v := range m.Value {
+			snapM[k] = v
+		}
+		m.mu.RUnlock()
+		return codec.SizeByte() + codec.SizeMap(snapM, codec.SizeString, SizeOfObject)
 	case _immutableArray:
 		return codec.SizeByte() + codec.SizeSlice(o.(*ImmutableArray).Value, SizeOfObject)
 	case _immutableMap:
@@ -276,11 +287,22 @@ func MarshalObject(n int, b []byte, o Object) int {
 		n = codec.MarshalByte(n, b, _time)
 		n = codec.MarshalInt64(n, b, o.(*Time).Value.UnixNano())
 	case _array:
+		arr := o.(*Array)
+		arr.mu.RLock()
+		snap := append([]Object(nil), arr.Value...)
+		arr.mu.RUnlock()
 		n = codec.MarshalByte(n, b, _array)
-		n = codec.MarshalSlice(n, b, o.(*Array).Value, MarshalObject)
+		n = codec.MarshalSlice(n, b, snap, MarshalObject)
 	case _map:
+		m := o.(*Map)
+		m.mu.RLock()
+		snapM := make(map[string]Object, len(m.Value))
+		for k, v := range m.Value {
+			snapM[k] = v
+		}
+		m.mu.RUnlock()
 		n = codec.MarshalByte(n, b, _map)
-		n = codec.MarshalMap(n, b, o.(*Map).Value, codec.MarshalString, MarshalObject)
+		n = codec.MarshalMap(n, b, snapM, codec.MarshalString, MarshalObject)
 	case _immutableArray:
 		n = codec.MarshalByte(n, b, _immutableArray)
 		n = codec.MarshalSlice(n, b, o.(*ImmutableArray).Value, MarshalObject)

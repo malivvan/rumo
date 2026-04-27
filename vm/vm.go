@@ -43,7 +43,8 @@ type vmChildCtl struct {
 	sync.WaitGroup
 	sync.Mutex
 	vmMap     map[*VM]struct{}
-	cancelFns []context.CancelFunc // cancel functions for non-compiled children (Issue #8)
+	nextToken uint64
+	cancelFns map[uint64]context.CancelFunc // token-keyed so delChild can remove entries
 	errors    []error
 }
 
@@ -100,7 +101,7 @@ func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, cfg *Confi
 		framesIndex: 1,
 		ip:          -1,
 		maxAllocs:   cfg.MaxAllocs,
-		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{})},
+		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{}), cancelFns: make(map[uint64]context.CancelFunc)},
 		config:      cfg,
 		In:          os.Stdin,
 		Out:         os.Stdout,
@@ -166,7 +167,7 @@ func (v *VM) ShallowClone() *VM {
 		framesIndex: 1,
 		ip:          -1,
 		maxAllocs:   v.maxAllocs,
-		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{})},
+		childCtl:    vmChildCtl{vmMap: make(map[*VM]struct{}), cancelFns: make(map[uint64]context.CancelFunc)},
 		config:      v.config,
 		In:          v.In,
 		Out:         v.Out,
@@ -282,43 +283,48 @@ func (v *VM) Abort() {
 	for cvm := range v.childCtl.vmMap {
 		cvm.Abort()
 	}
-	// Cancel non-compiled children that are tracked by cancel function
-	// but not present in vmMap. (Issue #8)
+	// Cancel non-compiled children tracked by token. (Issue #8)
 	for _, cancel := range v.childCtl.cancelFns {
 		cancel()
 	}
 	v.childCtl.Unlock()
 }
 
-func (v *VM) addChild(cvm *VM, cancelFns ...context.CancelFunc) error {
+// addChild registers a child VM and/or a context cancel function with the
+// parent. The returned token (> 0) identifies the cancel entry; pass it to
+// delChild so the entry can be removed. A token of 0 means no cancel function
+// was registered (cancelFn was nil).
+func (v *VM) addChild(cvm *VM, cancelFn context.CancelFunc) (uint64, error) {
 	v.childCtl.Lock()
 	defer v.childCtl.Unlock()
 	if atomic.LoadInt64(&v.aborting) != 0 {
-		return ErrVMAborted
+		return 0, ErrVMAborted
 	}
 	v.childCtl.Add(1)
 	if cvm != nil {
 		v.childCtl.vmMap[cvm] = struct{}{}
 	}
-	for _, cancel := range cancelFns {
-		if cancel != nil {
-			v.childCtl.cancelFns = append(v.childCtl.cancelFns, cancel)
-		}
+	var tok uint64
+	if cancelFn != nil {
+		v.childCtl.nextToken++ // start at 1; 0 means "no token"
+		tok = v.childCtl.nextToken
+		v.childCtl.cancelFns[tok] = cancelFn
 	}
-	return nil
+	return tok, nil
 }
 
-func (v *VM) delChild(cvm *VM, cancelFns ...context.CancelFunc) {
+// delChild de-registers a child and immediately calls and removes the cancel
+// function identified by cancelToken (if non-zero). The map stays bounded:
+// entries are deleted rather than left as dead references.
+func (v *VM) delChild(cvm *VM, cancelToken uint64) {
 	v.childCtl.Lock()
 	if cvm != nil {
 		delete(v.childCtl.vmMap, cvm)
 	}
-	// Call cancel functions to release context resources immediately.
-	// They remain in the cancelFns slice but are idempotent — Abort()
-	// calling them again is harmless. (Issue #8)
-	for _, cancel := range cancelFns {
-		if cancel != nil {
-			cancel()
+	if cancelToken != 0 {
+		if fn, ok := v.childCtl.cancelFns[cancelToken]; ok {
+			fn()
+			delete(v.childCtl.cancelFns, cancelToken)
 		}
 	}
 	v.childCtl.Unlock()

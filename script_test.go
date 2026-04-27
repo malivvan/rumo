@@ -929,3 +929,37 @@ func TestEqualsLocksBothPrograms(t *testing.T) {
 	})
 }
 
+// ── 3.6 Program.Marshal reads bytecode under RLock but Bytecode is mutable ──
+//
+// Program.Marshal() holds p.lock.RLock() while reading p.bytecode.Constants
+// and p.bytecode.MainFunction.Instructions. Program.Bytecode() returns a live
+// *vm.Bytecode pointer (also under RLock). External code that receives this
+// pointer can call RemoveDuplicates() — which mutates Constants and
+// Instructions — concurrently with Marshal(), causing a data race. The fix adds
+// a sync.RWMutex to Bytecode: RemoveDuplicates() acquires the write lock and
+// Bytecode.Marshal() acquires the read lock, preventing concurrent
+// read/write access.
+
+func TestBytecodeRemoveDuplicatesMarshalRace(t *testing.T) {
+	s := rumo.NewScript([]byte(`x := 1 + 2`))
+	p, err := s.Compile()
+	require.NoError(t, err)
+
+	bc := p.Bytecode()
+
+	const N = 30
+	var wg sync.WaitGroup
+	wg.Add(N * 2)
+	for i := 0; i < N; i++ {
+		go func() {
+			defer wg.Done()
+			p.Marshal() //nolint:errcheck
+		}()
+		go func() {
+			defer wg.Done()
+			bc.RemoveDuplicates()
+		}()
+	}
+	wg.Wait()
+}
+

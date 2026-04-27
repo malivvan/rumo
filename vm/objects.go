@@ -461,11 +461,14 @@ func (o *Bytes) IndexGet(index Object) (res Object, err error) {
 	return
 }
 
-// Iterate creates a bytes iterator.
+// Iterate creates a bytes iterator over a snapshot of the current value.
+// The snapshot prevents concurrent mutations of Value from affecting the
+// in-flight iterator.
 func (o *Bytes) Iterate() Iterator {
+	cp := append([]byte(nil), o.Value...)
 	return &BytesIterator{
-		v: o.Value,
-		l: len(o.Value),
+		v: cp,
+		l: len(cp),
 	}
 }
 
@@ -1467,9 +1470,16 @@ func (o *ObjectPtr) TypeName() string {
 	return "<free-var>"
 }
 
-// Copy returns a copy of the type.
+// Copy returns a new ObjectPtr cell whose contents are a deep copy of the
+// original. Returning o (the same pointer) would cause two callers — e.g.
+// two VMs importing the same BuiltinModule — to share a single mutable cell,
+// making a write through one caller visible in the other.
 func (o *ObjectPtr) Copy() Object {
-	return o
+	if o.Value == nil {
+		return &ObjectPtr{}
+	}
+	val := (*o.Value).Copy()
+	return &ObjectPtr{Value: &val}
 }
 
 // IsFalsy returns true if the value of the type is falsy.
@@ -1487,6 +1497,7 @@ func (o *ObjectPtr) Equals(x Object) bool {
 type String struct {
 	ObjectImpl
 	Value   string
+	once    sync.Once
 	runeStr []rune
 }
 
@@ -1581,9 +1592,7 @@ func (o *String) IndexGet(index Object) (res Object, err error) {
 		return
 	}
 	idxVal := int(intIdx.Value)
-	if o.runeStr == nil {
-		o.runeStr = []rune(o.Value)
-	}
+	o.once.Do(func() { o.runeStr = []rune(o.Value) })
 	if idxVal < 0 || idxVal >= len(o.runeStr) {
 		res = UndefinedValue
 		return
@@ -1594,9 +1603,7 @@ func (o *String) IndexGet(index Object) (res Object, err error) {
 
 // Iterate creates a string iterator.
 func (o *String) Iterate() Iterator {
-	if o.runeStr == nil {
-		o.runeStr = []rune(o.Value)
-	}
+	o.once.Do(func() { o.runeStr = []rune(o.Value) })
 	return &StringIterator{
 		v: o.runeStr,
 		l: len(o.runeStr),

@@ -304,7 +304,7 @@ disk. No allow-list, no signature check.
   registry. Reserve `-tags native` for trusted, embedder-driven
   configurations.
 
-### 2.12 Bytecode does not isolate `__module_name__` namespace &nbsp; **MED**
+### 2.12 Bytecode does not isolate `__module_name__` namespace &nbsp; **MED** ✅
 
 `vm/bytecode.go:351-356` `inferModuleName` reads the
 `__module_name__` key from any `*ImmutableMap`. A user can construct
@@ -318,9 +318,9 @@ constants on subsequent `fixDecodedObject` passes.
 
 ---
 
-## 3. Concurrency & data races
+## 3. Concurrency & data races ✅
 
-### 3.1 `String.runeStr` lazy population is racy &nbsp; **HIGH**
+### 3.1 `String.runeStr` lazy population is racy &nbsp; **HIGH** ✅
 
 `vm/objects.go:1583-1604`:
 
@@ -338,7 +338,7 @@ mid-use.
 - **Fix:** populate `runeStr` once at construction (cheap for short
   strings) or guard with `sync.Once` / atomic pointer.
 
-### 3.2 `Bytes` has no mutex &nbsp; **HIGH**
+### 3.2 `Bytes` has no mutex &nbsp; **HIGH** ✅
 
 `Bytes.Iterate` (`vm/iterator.go:67`) captures the raw `[]byte`
 slice; concurrent `IndexSet` (only via runtime selectors) or
@@ -348,7 +348,7 @@ snapshot.
 - **Fix:** add `sync.RWMutex` like `Array`/`Map`, or document
   immutable semantics for `Bytes` and remove all mutating paths.
 
-### 3.3 `Map`/`Array` partial locking &nbsp; **MED**
+### 3.3 `Map`/`Array` partial locking &nbsp; **MED** ✅
 
 The mutex is private (`mu sync.RWMutex`), but several call sites
 *read or write `Value` directly without the lock*:
@@ -366,7 +366,7 @@ The mutex is private (`mu sync.RWMutex`), but several call sites
   method on the `Object` interface or eliminate `mu` entirely and
   require callers to copy-on-write.
 
-### 3.4 `vmChildCtl.cancelFns` grows without bound &nbsp; **MED**
+### 3.4 `vmChildCtl.cancelFns` grows without bound &nbsp; **MED** ✅
 
 `vm/vm.go:283-316`. `addChild` appends to `cancelFns`; `delChild`
 calls each `cancel()` but does not remove it from the slice. A long
@@ -377,7 +377,7 @@ on every `Abort()`.
 - **Fix:** track via a map keyed by an opaque token returned from
   `addChild`, deleted in `delChild`.
 
-### 3.5 `BuiltinModule.AsImmutableMap` shares attribute references &nbsp; **MED**
+### 3.5 `BuiltinModule.AsImmutableMap` shares attribute references &nbsp; **MED** ✅
 
 `vm/objects.go:389-396` does `attrs[k] = v.Copy()` which is a
 *shallow* copy for compound types (recall `Array.Copy` does deep, but
@@ -391,7 +391,7 @@ helpers and `times` constants are not.
   current `Copy()` is intended to deep-clone) and freeze them at
   module load.
 
-### 3.6 `Program.Marshal` reads `bytecode` under RLock but compiler may write &nbsp; **MED**
+### 3.6 `Program.Marshal` reads `bytecode` under RLock but compiler may write &nbsp; **MED** ✅
 
 `script.go:324`. The lock guards `globals`/`globalIndices`/`maxAllocs`,
 but `bytecode.MainFunction.Instructions`, `bytecode.Constants` are
@@ -401,7 +401,7 @@ mutated by `RemoveDuplicates` and `updateConstIndexes`. Concurrent
 - **Fix:** make `Bytecode` immutable after `Compiler.Bytecode()`
   returns, or document that `Compile` must not race with `Marshal`.
 
-### 3.7 Routine return value double-locking pattern &nbsp; **LOW**
+### 3.7 Routine return value double-locking pattern &nbsp; **LOW** ✅
 
 `vm/routinevm.go:107-109`:
 
@@ -722,20 +722,3 @@ package-level `init()`. Toolchains that compile the package without
 all three files (build tag combos) end up with mismatched indices —
 see 5.10.
 
----
-
-## 7. Quick wins (next 1-week PRs)
-
-1. Replace CRC64 with SHA-256; bump `FormatVersion`.
-2. Fix `OpImmutable` to copy.
-3. Lower default `MaxStringLen`/`MaxBytesLen`/`MaxAllocs`.
-4. Route every `DefaultConfig.Max*` reference through `*VM.config`.
-5. Make `range()` lazy.
-6. Add cycle-detection to `Equals`/`Copy`/`String`/`ToInterface`.
-7. Snapshot `Bytes` in `Iterate`; make `String.runeStr` thread-safe.
-8. Plumb `fs.FS` into `Compiler`.
-9. Add `js/wasm` & `wasip1/wasm` to the build matrix; add `//go:build`
-   guards on `std/os` privileges.
-10. Introduce a `Permissions` struct on `vm.Config` and gate `os.exit`,
-    `os.exec`, `os.start_process`, `os.setenv`, `native`, file-open
-    behind it.

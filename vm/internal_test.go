@@ -51,13 +51,14 @@ func TestAbortDoesNotCancelNonCompiledRoutine(t *testing.T) {
 
 	// Register the non-compiled child with the parent, passing the
 	// routine's cancel function so Abort() can explicitly cancel it.
-	if err := v.addChild(nil, routineCancel); err != nil {
+	tok, err := v.addChild(nil, routineCancel)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	go func() {
 		defer func() {
-			v.delChild(nil, routineCancel)
+			v.delChild(nil, tok)
 			close(routineDone)
 		}()
 		<-routineCtx.Done()
@@ -94,17 +95,18 @@ func TestAbortCancelsMultipleNonCompiledRoutines(t *testing.T) {
 	for i := 0; i < numRoutines; i++ {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancels[i] = cancel
-		if err := v.addChild(nil, cancel); err != nil {
+		tok, err := v.addChild(nil, cancel)
+		if err != nil {
 			t.Fatal(err)
 		}
-		go func(c context.Context, cancelFn context.CancelFunc) {
+		go func(c context.Context, tok uint64) {
 			defer func() {
-				v.delChild(nil, cancelFn)
+				v.delChild(nil, tok)
 				routineDone <- struct{}{}
 			}()
 			<-c.Done()
 			atomic.AddInt64(&cancelledCount, 1)
-		}(ctx, cancel)
+		}(ctx, tok)
 	}
 	defer func() {
 		for _, c := range cancels {
@@ -139,12 +141,13 @@ func TestDelChildCleansUpCancelFn(t *testing.T) {
 
 	_, routineCancel := context.WithCancel(context.Background())
 
-	if err := v.addChild(nil, routineCancel); err != nil {
+	tok, err := v.addChild(nil, routineCancel)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	// delChild should call routineCancel for prompt cleanup.
-	v.delChild(nil, routineCancel)
+	v.delChild(nil, tok)
 
 	// Abort after delChild must not panic even though routineCancel was
 	// already called — cancel functions are idempotent.
@@ -158,7 +161,7 @@ func TestMixedCompiledAndNonCompiledAbort(t *testing.T) {
 
 	// Simulate a compiled child by creating a real child VM.
 	child := makeTestVM()
-	if err := parent.addChild(child); err != nil {
+	if _, err := parent.addChild(child, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -166,7 +169,8 @@ func TestMixedCompiledAndNonCompiledAbort(t *testing.T) {
 	routineCtx, routineCancel := context.WithCancel(context.Background())
 	defer routineCancel()
 
-	if err := parent.addChild(nil, routineCancel); err != nil {
+	rtok, err := parent.addChild(nil, routineCancel)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -197,8 +201,8 @@ func TestMixedCompiledAndNonCompiledAbort(t *testing.T) {
 	}
 
 	// Cleanup
-	parent.delChild(child)
-	parent.delChild(nil, routineCancel)
+	parent.delChild(child, 0)
+	parent.delChild(nil, rtok)
 }
 
 // TestAddChildAfterAbortReturnsError verifies that addChild with a
@@ -210,7 +214,7 @@ func TestAddChildAfterAbortReturnsError(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := v.addChild(nil, cancel)
+	_, err := v.addChild(nil, cancel)
 	if err != ErrVMAborted {
 		t.Fatalf("Issue #8: expected ErrVMAborted after Abort(), got %v", err)
 	}
@@ -254,7 +258,7 @@ func TestAbortConcurrentTOCTOU(t *testing.T) {
 	}
 
 	v := makeTestVM()
-	if err := v.addChild(nil, cancelFn); err != nil {
+	if _, err := v.addChild(nil, cancelFn); err != nil {
 		t.Fatal(err)
 	}
 
@@ -301,7 +305,7 @@ func TestAbortIdempotentSingleCaller(t *testing.T) {
 	}
 
 	v := makeTestVM()
-	if err := v.addChild(nil, cancelFn); err != nil {
+	if _, err := v.addChild(nil, cancelFn); err != nil {
 		t.Fatal(err)
 	}
 
@@ -327,7 +331,7 @@ func TestAbortConcurrentManyGoroutines(t *testing.T) {
 		}
 
 		v := makeTestVM()
-		if err := v.addChild(nil, cancelFn); err != nil {
+		if _, err := v.addChild(nil, cancelFn); err != nil {
 			t.Fatal(err)
 		}
 
@@ -358,7 +362,7 @@ func TestAbortChildAbortedExactlyOnce(t *testing.T) {
 	parent := makeTestVM()
 	child := makeTestVM()
 
-	if err := parent.addChild(child); err != nil {
+	if _, err := parent.addChild(child, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -379,7 +383,7 @@ func TestAbortChildAbortedExactlyOnce(t *testing.T) {
 	wg.Wait()
 
 	// cleanup child from parent's WaitGroup so makeTestVM can be GC'd
-	parent.delChild(child)
+	parent.delChild(child, 0)
 
 	// The parent flag should be exactly 1.
 	if got := atomic.LoadInt64(&parent.aborting); got != 1 {

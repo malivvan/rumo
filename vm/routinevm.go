@@ -21,9 +21,9 @@ type ret struct {
 
 type routineVM struct {
 	mu       sync.Mutex
-	*VM                        // if not nil, run CompiledFunction in VM
+	*VM                         // if not nil, run CompiledFunction in VM
 	cancelFn context.CancelFunc // cancel for non-compiled callables
-	ret                        // return value
+	retPtr   atomic.Pointer[ret] // written once before doneChan is closed
 	doneChan chan struct{}
 	done     int64
 }
@@ -81,7 +81,8 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		callCtx, gvm.cancelFn = context.WithCancel(ctx)
 	}
 
-	if err := vm.addChild(gvm.VM, gvm.cancelFn); err != nil {
+	cancelTok, err := vm.addChild(gvm.VM, gvm.cancelFn)
+	if err != nil {
 		return nil, err
 	}
 	go func() {
@@ -98,12 +99,13 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 			if err != nil {
 				vm.addError(err)
 			}
-			gvm.mu.Lock()
-			gvm.ret = ret{val, err}
-			gvm.mu.Unlock()
+			// Store ret atomically before closing doneChan so that any
+			// goroutine unblocked by the close sees a fully-written ret
+			// without needing an additional mutex acquisition.
+			gvm.retPtr.Store(&ret{val, err})
 			atomic.StoreInt64(&gvm.done, 1)
 			close(gvm.doneChan)
-			vm.delChild(gvm.VM, gvm.cancelFn)
+			vm.delChild(gvm.VM, cancelTok)
 			gvm.mu.Lock()
 			gvm.VM = nil
 			gvm.mu.Unlock()
@@ -204,14 +206,16 @@ func (gvm *routineVM) getRet(ctx context.Context, args ...Object) (Object, error
 	}
 
 	gvm.wait(-1)
-	gvm.mu.Lock()
-	r := gvm.ret
-	gvm.mu.Unlock()
-	if r.err != nil {
+	// retPtr is stored atomically before doneChan is closed; wait() guarantees
+	// the store is visible here without an additional mutex acquisition.
+	r := gvm.retPtr.Load()
+	if r != nil && r.err != nil {
 		return &Error{Value: &String{Value: r.err.Error()}}, nil
 	}
-
-	return r.val, nil
+	if r != nil {
+		return r.val, nil
+	}
+	return nil, nil
 }
 
 // isolateClosureFree returns a copy of fn whose Free *ObjectPtr cells have

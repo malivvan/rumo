@@ -2,13 +2,18 @@ package vm
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/malivvan/rumo/vm/codec"
 	"github.com/malivvan/rumo/vm/parser"
 )
 
 // Bytecode is a compiled instructions and constants.
+// mu protects concurrent access to MainFunction.Instructions and Constants:
+// RemoveDuplicates holds the write lock; Marshal and any read-only inspection
+// hold the read lock.
 type Bytecode struct {
+	mu           sync.RWMutex
 	FileSet      *parser.SourceFileSet
 	MainFunction *CompiledFunction
 	Constants    []Object
@@ -45,6 +50,8 @@ func (b *Bytecode) Equals(other *Bytecode) bool {
 
 // Marshal writes Bytecode data to the writer.
 func (b *Bytecode) Marshal() ([]byte, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
 	n := 0
 	c := make([]byte, parser.SizeFileSet(b.FileSet)+SizeOfObject(b.MainFunction)+codec.SizeSlice[Object](b.Constants, SizeOfObject))
 	n = parser.MarshalFileSet(n, c, b.FileSet)
@@ -136,6 +143,8 @@ func (b *Bytecode) Unmarshal(data []byte, modules *ModuleMap) (err error) {
 // RemoveDuplicates finds and remove the duplicate values in Constants.
 // Note this function mutates Bytecode.
 func (b *Bytecode) RemoveDuplicates() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	var deduped []Object
 
 	indexMap := make(map[int]int) // mapping from old constant index to new index
