@@ -120,6 +120,14 @@ var sharedFS = newFSStore()
 // the existing routinevm implementation. At the JS level, `rumo.spawn(src)`
 // creates an independent VM run and tracks it here so the page can `cancel`,
 // `wait`, `write` to its stdin, and stream its stdout.
+// routine state codes used in the live monitor.
+const (
+	routineRunning = int32(0)
+	routineDone    = int32(1)
+	routineError   = int32(2)
+	routineCancel  = int32(3)
+)
+
 type routine struct {
 	id     int64
 	ctx    context.Context
@@ -138,10 +146,20 @@ type routine struct {
 	doneCh chan struct{}
 	doneI  atomic.Int32
 	err    error
+
+	// monitoring fields exposed via rumo.routines()
+	name      string
+	kind      string // "run" | "spawn" | "runCompiled"
+	startedAt time.Time
+	endedAt   atomic.Int64 // unix nano; 0 while running
+	bytesOut  atomic.Int64
+	state     atomic.Int32 // routineRunning / routineDone / routineError / routineCancel
+	errStr    atomic.Pointer[string]
 }
 
 // Write makes the routine an io.Writer for VM stdout.
 func (r *routine) Write(p []byte) (int, error) {
+	r.bytesOut.Add(int64(len(p)))
 	r.outMu.Lock()
 	r.outBuf.Write(p)
 	cb := r.onChunk
@@ -158,12 +176,64 @@ func (r *routine) Write(p []byte) (int, error) {
 
 func (r *routine) finish(err error) {
 	r.err = err
+	if err != nil {
+		s := err.Error()
+		r.errStr.Store(&s)
+		if r.ctx.Err() != nil {
+			r.state.Store(routineCancel)
+		} else {
+			r.state.Store(routineError)
+		}
+	} else {
+		r.state.Store(routineDone)
+	}
+	r.endedAt.Store(time.Now().UnixNano())
 	if r.stdinW != nil {
 		_ = r.stdinW.Close()
 	}
 	if r.doneI.CompareAndSwap(0, 1) {
 		close(r.doneCh)
 	}
+	monitor.emitDone(r)
+}
+
+// stateString returns a stable human label for the JS monitor table.
+func (r *routine) stateString() string {
+	switch r.state.Load() {
+	case routineDone:
+		return "done"
+	case routineError:
+		return "error"
+	case routineCancel:
+		return "canceled"
+	default:
+		return "running"
+	}
+}
+
+// snapshot returns a JS-friendly map of the routine's current state.
+func (r *routine) snapshot(now time.Time) js.Value {
+	obj := jsObject.New()
+	obj.Set("id", r.id)
+	obj.Set("name", r.name)
+	obj.Set("kind", r.kind)
+	obj.Set("state", r.stateString())
+	obj.Set("bytesOut", r.bytesOut.Load())
+	obj.Set("startedAtMs", r.startedAt.UnixMilli())
+	if e := r.endedAt.Load(); e != 0 {
+		ended := time.Unix(0, e)
+		obj.Set("endedAtMs", ended.UnixMilli())
+		obj.Set("durationMs", ended.Sub(r.startedAt).Milliseconds())
+	} else {
+		obj.Set("endedAtMs", js.Null())
+		obj.Set("durationMs", now.Sub(r.startedAt).Milliseconds())
+	}
+	if e := r.errStr.Load(); e != nil {
+		obj.Set("error", *e)
+	} else {
+		obj.Set("error", js.Null())
+	}
+	return obj
 }
 
 func (r *routine) waitDone(timeout time.Duration) bool {
@@ -209,7 +279,96 @@ func (r *routineRegistry) del(id int64) {
 	delete(r.items, id)
 }
 
+func (r *routineRegistry) snapshot() js.Value {
+	r.mu.Lock()
+	all := make([]*routine, 0, len(r.items))
+	for _, rt := range r.items {
+		all = append(all, rt)
+	}
+	r.mu.Unlock()
+	sort.Slice(all, func(i, j int) bool { return all[i].id < all[j].id })
+	now := time.Now()
+	arr := jsArray.New()
+	for i, rt := range all {
+		arr.SetIndex(i, rt.snapshot(now))
+	}
+	return arr
+}
+
+func (r *routineRegistry) prune() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for id, rt := range r.items {
+		if rt.state.Load() != routineRunning {
+			delete(r.items, id)
+			n++
+		}
+	}
+	return n
+}
+
 var routines = &routineRegistry{}
+
+// ---------------------------------------------------------------------------
+// monitor bus — pushes lifecycle events to subscribed JS callbacks and ports
+// ---------------------------------------------------------------------------
+
+// monitorBus delivers `routine:spawned` / `routine:done` lifecycle messages
+// to subscribers so that page UIs can react instantly without polling.
+// Polling via rumo.routines() still works for byte/age stats.
+type monitorBus struct {
+	mu    sync.Mutex
+	ports []js.Value
+	cbs   []js.Value
+}
+
+func (b *monitorBus) addPort(p js.Value) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ports = append(b.ports, p)
+}
+
+func (b *monitorBus) addCB(cb js.Value) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cbs = append(b.cbs, cb)
+}
+
+func (b *monitorBus) emit(msg js.Value) {
+	b.mu.Lock()
+	ports := append([]js.Value{}, b.ports...)
+	cbs := append([]js.Value{}, b.cbs...)
+	b.mu.Unlock()
+	for _, p := range ports {
+		func() {
+			defer func() { _ = recover() }()
+			p.Call("postMessage", msg)
+		}()
+	}
+	for _, cb := range cbs {
+		func() {
+			defer func() { _ = recover() }()
+			cb.Invoke(msg)
+		}()
+	}
+}
+
+func (b *monitorBus) emitSpawned(rt *routine) {
+	msg := jsObject.New()
+	msg.Set("type", "routine:spawned")
+	msg.Set("routine", rt.snapshot(time.Now()))
+	b.emit(msg)
+}
+
+func (b *monitorBus) emitDone(rt *routine) {
+	msg := jsObject.New()
+	msg.Set("type", "routine:done")
+	msg.Set("routine", rt.snapshot(time.Now()))
+	b.emit(msg)
+}
+
+var monitor = &monitorBus{}
 
 // ---------------------------------------------------------------------------
 // js helpers
@@ -383,35 +542,51 @@ func compileSource(source []byte, path string) ([]byte, error) {
 
 // newRoutine allocates a routine, assigns an ID, and registers it. It does
 // NOT start the script; callers set rt.onChunk first and then call launch.
-func newRoutine() *routine {
+// `kind` is one of "run", "runCompiled", or "spawn"; `name` is the script
+// path or label shown in the monitor.
+func newRoutine(kind, name string) *routine {
 	ctx, cancel := context.WithCancel(context.Background())
 	pr, pw := io.Pipe()
 	rt := &routine{
-		ctx:    ctx,
-		cancel: cancel,
-		stdinR: pr,
-		stdinW: pw,
-		doneCh: make(chan struct{}),
+		ctx:       ctx,
+		cancel:    cancel,
+		stdinR:    pr,
+		stdinW:    pw,
+		doneCh:    make(chan struct{}),
+		kind:      kind,
+		startedAt: time.Now(),
 	}
+	rt.state.Store(routineRunning)
 	rt.id = routines.next.Add(1)
+	if name == "" {
+		name = fmt.Sprintf("%s_%d.rumo", kind, rt.id)
+	}
+	rt.name = name
 	routines.add(rt)
+	monitor.emitSpawned(rt)
 	return rt
 }
 
-// launch spawns the goroutine that runs the script. Callers must set
-// rt.onChunk before calling this — otherwise the first chunk(s) of output
-// can race against the assignment.
-func (rt *routine) launch(source []byte, opts js.Value) {
-	args := optStringArray(opts, "args")
-	path := optString(opts, "path")
-	if path == "" {
-		path = fmt.Sprintf("routine_%d.rumo", rt.id)
-	}
-	if s := optString(opts, "stdin"); s != "" {
-		go func() { _, _ = io.Copy(rt.stdinW, bytes.NewReader([]byte(s))) }()
+// launchSource spawns the goroutine that compiles and runs `source`. Callers
+// must set rt.onChunk before calling this so the first chunk doesn't race
+// against the assignment.
+func (rt *routine) launchSource(source []byte, args []string, stdinPreload string) {
+	if stdinPreload != "" {
+		go func() { _, _ = io.Copy(rt.stdinW, bytes.NewReader([]byte(stdinPreload))) }()
 	}
 	go func() {
-		err := runSource(rt.ctx, source, path, args, rt.stdinR, rt)
+		err := runSource(rt.ctx, source, rt.name, args, rt.stdinR, rt)
+		rt.finish(err)
+	}()
+}
+
+// launchCompiled is the precompiled-bytecode variant of launchSource.
+func (rt *routine) launchCompiled(data []byte, args []string, stdinPreload string) {
+	if stdinPreload != "" {
+		go func() { _, _ = io.Copy(rt.stdinW, bytes.NewReader([]byte(stdinPreload))) }()
+	}
+	go func() {
+		err := runCompiled(rt.ctx, data, args, rt.stdinR, rt)
 		rt.finish(err)
 	}()
 }
@@ -473,6 +648,39 @@ func jsCompile(this js.Value, args []js.Value) any {
 	})
 }
 
+// runViaRoutine creates and launches a routine for `rumo.run` /
+// `rumo.runCompiled`, returning a Promise that resolves with the
+// {output, error} envelope when the routine finishes. The routine is visible
+// in the monitor for its lifetime and pruned by the caller via `rumo.routines.prune()`
+// or removed automatically once it completes.
+func runViaRoutine(rt *routine, source []byte, compiled []byte, scriptArgs []string, stdinPreload string) js.Value {
+	return newPromise(func(resolve, reject func(any)) {
+		if compiled != nil {
+			rt.launchCompiled(compiled, scriptArgs, stdinPreload)
+		} else {
+			rt.launchSource(source, scriptArgs, stdinPreload)
+		}
+		rt.waitDone(-1)
+		rt.outMu.Lock()
+		out := rt.outBuf.String()
+		rt.outMu.Unlock()
+		res := jsObject.New()
+		res.Set("output", out)
+		if rt.err != nil {
+			res.Set("error", rt.err.Error())
+		} else {
+			res.Set("error", js.Null())
+		}
+		// short-lived runs disappear from the monitor automatically; spawn
+		// keeps the entry until the page calls .close().
+		go func() {
+			time.Sleep(2 * time.Second)
+			routines.del(rt.id)
+		}()
+		resolve(res)
+	})
+}
+
 func jsRun(this js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return jsRejected(newError("rumo.run: missing source argument"))
@@ -487,23 +695,12 @@ func jsRun(this js.Value, args []js.Value) any {
 	stdinStr := optString(opts, "stdin")
 	onOutput := optFunc(opts, "onOutput")
 
-	return newPromise(func(resolve, reject func(any)) {
-		var buf bytes.Buffer
-		w := io.MultiWriter(&buf, &cbWriter{cb: onOutput})
-		var r io.Reader
-		if stdinStr != "" {
-			r = bytes.NewReader([]byte(stdinStr))
-		}
-		err := runSource(context.Background(), src, path, scriptArgs, r, w)
-		out := jsObject.New()
-		out.Set("output", buf.String())
-		if err != nil {
-			out.Set("error", err.Error())
-		} else {
-			out.Set("error", js.Null())
-		}
-		resolve(out)
-	})
+	rt := newRoutine("run", path)
+	if onOutput.Type() == js.TypeFunction {
+		f := onOutput
+		rt.onChunk = func(s string) { f.Invoke(s) }
+	}
+	return runViaRoutine(rt, src, nil, scriptArgs, stdinStr)
 }
 
 func jsRunCompiled(this js.Value, args []js.Value) any {
@@ -518,24 +715,17 @@ func jsRunCompiled(this js.Value, args []js.Value) any {
 	scriptArgs := optStringArray(opts, "args")
 	stdinStr := optString(opts, "stdin")
 	onOutput := optFunc(opts, "onOutput")
+	name := optString(opts, "name")
+	if name == "" {
+		name = "compiled.bin"
+	}
 
-	return newPromise(func(resolve, reject func(any)) {
-		var buf bytes.Buffer
-		w := io.MultiWriter(&buf, &cbWriter{cb: onOutput})
-		var r io.Reader
-		if stdinStr != "" {
-			r = bytes.NewReader([]byte(stdinStr))
-		}
-		err := runCompiled(context.Background(), data, scriptArgs, r, w)
-		out := jsObject.New()
-		out.Set("output", buf.String())
-		if err != nil {
-			out.Set("error", err.Error())
-		} else {
-			out.Set("error", js.Null())
-		}
-		resolve(out)
-	})
+	rt := newRoutine("runCompiled", name)
+	if onOutput.Type() == js.TypeFunction {
+		f := onOutput
+		rt.onChunk = func(s string) { f.Invoke(s) }
+	}
+	return runViaRoutine(rt, nil, data, scriptArgs, stdinStr)
 }
 
 // jsSpawn: rumo.spawn(source, opts?) -> handle object
@@ -556,16 +746,18 @@ func jsSpawn(this js.Value, args []js.Value) any {
 		opts = args[1]
 	}
 	onOutput := optFunc(opts, "onOutput")
+	path := optString(opts, "path")
 
-	rt := newRoutine()
+	rt := newRoutine("spawn", path)
 	if onOutput.Type() == js.TypeFunction {
 		f := onOutput
 		rt.onChunk = func(s string) { f.Invoke(s) }
 	}
-	rt.launch(src, opts)
+	rt.launchSource(src, optStringArray(opts, "args"), optString(opts, "stdin"))
 
 	handle := jsObject.New()
 	handle.Set("id", rt.id)
+	handle.Set("name", rt.name)
 
 	handle.Set("cancel", js.FuncOf(func(this js.Value, _ []js.Value) any {
 		rt.cancel()
@@ -629,18 +821,26 @@ func jsSpawn(this js.Value, args []js.Value) any {
 	return handle
 }
 
-// cbWriter forwards writes to a JS function (used as a streaming hook).
-type cbWriter struct {
-	cb js.Value
+// jsRoutines returns the current snapshot of all known routines as an
+// array suitable for rendering in a live monitor.
+func jsRoutines(this js.Value, args []js.Value) any {
+	return routines.snapshot()
 }
 
-func (c *cbWriter) Write(p []byte) (int, error) {
-	if !c.cb.Truthy() {
-		return len(p), nil
+// jsRoutinesPrune drops every non-running routine from the registry and
+// returns the count removed.
+func jsRoutinesPrune(this js.Value, args []js.Value) any {
+	return routines.prune()
+}
+
+// jsMonitorSubscribe registers a JS callback to receive
+// {type:"routine:spawned"|"routine:done"} events on the calling page.
+func jsMonitorSubscribe(this js.Value, args []js.Value) any {
+	if len(args) < 1 || args[0].Type() != js.TypeFunction {
+		return newError("rumo.subscribe: callback function required")
 	}
-	defer func() { _ = recover() }()
-	c.cb.Invoke(string(p))
-	return len(p), nil
+	monitor.addCB(args[0])
+	return js.Undefined()
 }
 
 func jsRejected(err js.Value) js.Value {
@@ -708,6 +908,9 @@ func installAPI(target js.Value) {
 	api.Set("run", js.FuncOf(jsRun))
 	api.Set("runCompiled", js.FuncOf(jsRunCompiled))
 	api.Set("spawn", js.FuncOf(jsSpawn))
+	api.Set("routines", js.FuncOf(jsRoutines))
+	api.Set("pruneRoutines", js.FuncOf(jsRoutinesPrune))
+	api.Set("subscribe", js.FuncOf(jsMonitorSubscribe))
 
 	fs := jsObject.New()
 	fs.Set("put", js.FuncOf(jsFsPut))
@@ -896,6 +1099,13 @@ func handlePortMessage(port js.Value, data js.Value) {
 			routines.del(rid)
 		}
 		portReply(port, id, true)
+	case "routines.list":
+		portReply(port, id, routines.snapshot())
+	case "routines.prune":
+		portReply(port, id, routines.prune())
+	case "monitor.subscribe":
+		monitor.addPort(port)
+		portReply(port, id, true)
 	case "fs.put":
 		path := data.Get("path").String()
 		sharedFS.put(path, toBytes(data.Get("content")))
@@ -932,47 +1142,74 @@ func portRun(port js.Value, id js.Value, data js.Value, compiled bool) {
 	}
 	streamID := data.Get("streamId")
 	stream := streamID.Truthy()
+	path := ""
+	if p := data.Get("path"); p.Type() == js.TypeString {
+		path = p.String()
+	}
 
-	var buf bytes.Buffer
-	w := io.Writer(&buf)
-	if stream {
-		w = io.MultiWriter(&buf, &portStream{port: port, streamID: streamID})
-	}
-	var r io.Reader
-	if stdinStr != "" {
-		r = bytes.NewReader([]byte(stdinStr))
-	}
-	var err error
+	kind := "run"
 	if compiled {
-		err = runCompiled(context.Background(), toBytes(data.Get("bytecode")), scriptArgs, r, w)
-	} else {
-		path := ""
-		if p := data.Get("path"); p.Type() == js.TypeString {
-			path = p.String()
+		kind = "runCompiled"
+		if path == "" {
+			path = "compiled.bin"
 		}
-		err = runSource(context.Background(), toBytes(data.Get("source")), path, scriptArgs, r, w)
 	}
+	rt := newRoutine(kind, path)
+	if stream {
+		sid := streamID
+		rt.onChunk = func(s string) {
+			msg := jsObject.New()
+			msg.Set("type", "output")
+			msg.Set("streamId", sid)
+			msg.Set("chunk", s)
+			defer func() { _ = recover() }()
+			port.Call("postMessage", msg)
+		}
+	}
+
+	if compiled {
+		rt.launchCompiled(toBytes(data.Get("bytecode")), scriptArgs, stdinStr)
+	} else {
+		rt.launchSource(toBytes(data.Get("source")), scriptArgs, stdinStr)
+	}
+	rt.waitDone(-1)
+	rt.outMu.Lock()
 	out := jsObject.New()
-	out.Set("output", buf.String())
-	if err != nil {
-		out.Set("error", err.Error())
+	out.Set("output", rt.outBuf.String())
+	rt.outMu.Unlock()
+	if rt.err != nil {
+		out.Set("error", rt.err.Error())
 	} else {
 		out.Set("error", js.Null())
 	}
 	portReply(port, id, out)
+	go func() {
+		time.Sleep(2 * time.Second)
+		routines.del(rt.id)
+	}()
 }
 
 func portSpawn(port js.Value, id js.Value, data js.Value) {
 	src := toBytes(data.Get("source"))
-	rt := newRoutine()
+	path := ""
+	if p := data.Get("path"); p.Type() == js.TypeString {
+		path = p.String()
+	}
+	rt := newRoutine("spawn", path)
 	rt.onChunk = func(s string) {
 		msg := jsObject.New()
 		msg.Set("type", "output")
 		msg.Set("routineId", rt.id)
 		msg.Set("chunk", s)
+		defer func() { _ = recover() }()
 		port.Call("postMessage", msg)
 	}
-	rt.launch(src, data)
+	rt.launchSource(src, jsValueStringArray(data.Get("args")), func() string {
+		if v := data.Get("stdin"); v.Type() == js.TypeString {
+			return v.String()
+		}
+		return ""
+	}())
 	portReply(port, id, rt.id)
 
 	// also notify completion so the page can resolve a wait/result without

@@ -17,6 +17,8 @@
         this._pending = new Map();   // id -> {resolve, reject}
         this._streams = new Map();   // streamId -> onChunk
         this._routines = new Map();  // routineId -> {onChunk, donePending: Promise}
+        this._monitorSubs = [];      // user-provided lifecycle callbacks
+        this._monitorActive = false; // remote subscription requested
 
         this._readyResolve = null;
         this.ready = new Promise((resolve) => { this._readyResolve = resolve; });
@@ -52,6 +54,12 @@
             const r = this._routines.get(msg.routineId);
             if (r && r._resolveDone) {
                 r._resolveDone({ error: msg.error || null });
+            }
+            return;
+        }
+        if (msg.type === "routine:spawned" || msg.type === "routine:done") {
+            for (const cb of this._monitorSubs) {
+                try { cb(msg); } catch (err) { console.error("rumo: monitor cb threw", err); }
             }
             return;
         }
@@ -151,6 +159,46 @@
             done: entry.donePromise,
             onOutput: (cb) => { entry.onChunk = cb; },
         };
+    };
+
+    Rumo.prototype.routines = function () { return this._call("routines.list"); };
+    Rumo.prototype.pruneRoutines = function () { return this._call("routines.prune"); };
+
+    /**
+     * Subscribe to routine lifecycle events. The callback fires for every
+     * spawned and finished routine (run, runCompiled, spawn) hosted by the
+     * SharedWorker — across all page tabs that share it.
+     * @param {(ev: {type: string, routine: object}) => void} cb
+     * @returns {() => void} unsubscribe handle
+     */
+    Rumo.prototype.subscribe = function (cb) {
+        this._monitorSubs.push(cb);
+        if (!this._monitorActive) {
+            this._monitorActive = true;
+            this._call("monitor.subscribe").catch(() => { this._monitorActive = false; });
+        }
+        return () => {
+            const idx = this._monitorSubs.indexOf(cb);
+            if (idx !== -1) this._monitorSubs.splice(idx, 1);
+        };
+    };
+
+    /**
+     * Convenience helper: poll rumo.routines() at a fixed interval and invoke
+     * `render` with the latest snapshot. Returns a stop function.
+     * @param {(list: object[]) => void} render
+     * @param {number} [intervalMs=500]
+     */
+    Rumo.prototype.monitor = function (render, intervalMs) {
+        const period = typeof intervalMs === "number" ? intervalMs : 500;
+        let stopped = false;
+        const tick = async () => {
+            if (stopped) return;
+            try { render(await this.routines()); } catch (err) { /* swallow */ }
+            if (!stopped) setTimeout(tick, period);
+        };
+        tick();
+        return () => { stopped = true; };
     };
 
     Rumo.prototype.fs = {

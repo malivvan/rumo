@@ -171,10 +171,14 @@ func (s *Script) SetMaxStringLen(n int) {
 func (s *Script) resolveImportPaths() (importBase, importDir string, err error) {
 	base := s.root
 	if base == "" {
-		// Custom FS or nil FS with relative path: mount the FS at CWD.
-		base, err = os.Getwd()
-		if err != nil {
-			return "", "", fmt.Errorf("getting working directory: %w", err)
+		// Custom FS or nil FS with relative path: mount the FS at CWD when one
+		// is available. On platforms without an OS-level working directory
+		// (js/wasm, sandboxes), fall back to a synthetic absolute root so
+		// imports remain resolvable against the script's fs.FS.
+		if wd, werr := os.Getwd(); werr == nil {
+			base = wd
+		} else {
+			base = "/"
 		}
 	}
 	dir := filepath.Join(base, filepath.Dir(filepath.FromSlash(s.path)))
