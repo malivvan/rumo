@@ -605,7 +605,13 @@ func textRepeat(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 		}
 	}
 
-	if len(s1)*i2 > vm.DefaultConfig.MaxStringLen {
+	// Use overflow-safe unsigned arithmetic: signed multiplication of
+	// len(s1)*i2 can wrap to a negative number when i2 is very large or
+	// negative, producing a result that incorrectly passes the "> MaxStringLen"
+	// check and then causes strings.Repeat to panic.  Casting both operands to
+	// uint makes negative i2 values become huge positives that always exceed
+	// the limit, and eliminates signed overflow entirely.
+	if len(s1) > 0 && uint(i2) > uint(vm.DefaultConfig.MaxStringLen)/uint(len(s1)) {
 		return nil, vm.ErrStringLimit
 	}
 

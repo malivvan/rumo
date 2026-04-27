@@ -282,7 +282,7 @@ good — but `i2` is taken from a script-supplied `int`. With
 complement and might *pass* the check. Use unsigned multiplication
 with overflow detection.
 
-### 2.10 `std/rand` is `math/rand`, not crypto-safe &nbsp; **MED**
+### 2.10 `std/rand` is `math/rand`, not crypto-safe &nbsp; **MED** 👩
 
 `std/rand/rand.go` exports `rand.int`, `rand.read`, etc. Most users
 will reach for `rand.read(bytes)` to make a token; that's a non-CSPRNG

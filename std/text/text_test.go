@@ -1,6 +1,7 @@
 package text_test
 
 import (
+	"math"
 	"regexp"
 	"testing"
 
@@ -202,6 +203,42 @@ func TestTextRepeat(t *testing.T) {
 	require.Module(t, "text").Call("repeat", "1234", "4").ExpectError()
 	require.Module(t, "text").Call("repeat", "1", "12").Expect("111111111111")
 	require.Module(t, "text").Call("repeat", "1", "13").ExpectError()
+}
+
+// TestRepeatMultiplicationOverflow confirms that text.repeat rejects repeat
+// counts that would overflow signed integer multiplication and bypass the
+// MaxStringLen guard.
+//
+// The pre-condition check used to be:
+//
+//	if len(s1)*i2 > vm.DefaultConfig.MaxStringLen { return error }
+//
+// Because both operands are signed ints, passing i2 = math.MinInt64 makes the
+// product wrap to a large negative number, which is never > MaxStringLen.
+// The check therefore silently passed and strings.Repeat then panicked with
+// "strings: negative Repeat count".  A two-element string with a count that
+// flips the sign bit (math.MaxInt64/2+1) has the same effect.
+//
+// The fix replaces the check with unsigned arithmetic so that negative and
+// overflow-inducing counts are correctly rejected without any multiplication
+// that could wrap.
+func TestRepeatMultiplicationOverflow(t *testing.T) {
+	// math.MinInt64 as the count wraps len("x")*i2 to a large negative
+	// number, bypassing the > MaxStringLen check, then panics strings.Repeat.
+	require.Module(t, "text").Call("repeat", "x", int64(math.MinInt64)).ExpectError()
+
+	// A count of -1 should also be rejected (negative repeat is meaningless).
+	require.Module(t, "text").Call("repeat", "x", int64(-1)).ExpectError()
+
+	// Multi-byte string: len("xy")==2, count = math.MaxInt64/2+1.
+	// In signed arithmetic: 2 * (math.MaxInt64/2+1) overflows to a negative
+	// number and the guard is bypassed; strings.Repeat would then try to
+	// allocate ~8 EiB.
+	require.Module(t, "text").Call("repeat", "xy", int64(math.MaxInt64/2+1)).ExpectError()
+
+	// Sanity-check: repeat with count 0 and count 1 must still work.
+	require.Module(t, "text").Call("repeat", "x", int64(0)).Expect("")
+	require.Module(t, "text").Call("repeat", "x", int64(1)).Expect("x")
 }
 
 func TestSubstr(t *testing.T) {
