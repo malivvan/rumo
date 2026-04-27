@@ -2111,6 +2111,45 @@ func TestImmutable(t *testing.T) {
 		nil, 10)
 }
 
+// TestPtr verifies the security contract for the ptr() builtin and the Ptr
+// type.
+//
+// The ptr() builtin previously allowed any integer value to be cast directly
+// to an unsafe.Pointer via ToPtr(*Int / *Uint / *Uint64). This meant that
+// a script could write `ptr(0xdeadbeef)` to fabricate an arbitrary memory
+// address and hand it to a native FFI function, yielding arbitrary memory
+// read/write or RCE with -tags native. Additionally, Ptr values were
+// serialised as plain uint64 addresses into bytecode files, so a crafted
+// .rumo bytecode blob could inject attacker-controlled pointer constants
+// that dereference into any address at load time.
+//
+// Fix: remove the *Int / *Uint / *Uint64 → unsafe.Pointer coercions from
+// ToPtr so that Ptr values can only be obtained from other Ptr values (FFI
+// return values) or from nil/undefined. Also refuse to marshal/unmarshal Ptr
+// values since a pointer address is inherently process-local and meaningless
+// (or dangerous) if persisted.
+func TestPtr(t *testing.T) {
+	// ptr(int) must NOT produce a valid Ptr – it must return undefined.
+	expectRun(t, `out = ptr(1234)`, nil, vm.UndefinedValue)
+	expectRun(t, `out = ptr(0)`, nil, vm.UndefinedValue)
+
+	// ptr(uint64) must NOT produce a valid Ptr either.
+	expectRun(t, `out = ptr(uint64(0xdeadbeef))`, nil, vm.UndefinedValue)
+
+	// ptr(uint) must NOT produce a valid Ptr.
+	expectRun(t, `out = ptr(uint(42))`, nil, vm.UndefinedValue)
+
+	// is_ptr must return false when the coercion is refused.
+	expectRun(t, `out = is_ptr(ptr(1234))`, nil, false)
+
+	// ptr(undefined) produces a nil Ptr (safe – no arbitrary address).
+	// is_ptr should return true for it since it is a legitimate Ptr(nil).
+	expectRun(t, `out = is_ptr(ptr(undefined))`, nil, true)
+
+	// ptr() with a fallback default when coercion is not possible.
+	expectRun(t, `out = ptr(1234, undefined)`, nil, vm.UndefinedValue)
+}
+
 func TestIncDec(t *testing.T) {
 	expectRun(t, `out = 0; out++`, nil, 1)
 	expectRun(t, `out = 0; out--`, nil, -1)

@@ -174,7 +174,7 @@ assumption they cannot be tampered with.
 - **Fix:** clone the slice / map in `OpImmutable`; deep-clone if
   nested mutable containers can leak.
 
-### 2.2 `Ptr` is constructible from any integer &nbsp; **CRIT (with native)**
+### 2.2 `Ptr` is constructible from any integer &nbsp; **CRIT (with native)** ✅
 
 - `vm/vvm.go:282-313` `ToPtr(*Int) → unsafe.Pointer(uintptr(o.Value))`.
 - `vm/builtins_new.go` `builtinPtr` accepts an `Int`.

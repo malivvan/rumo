@@ -276,9 +276,10 @@ func ToFloat64(o Object) (v float64, ok bool) {
 	return
 }
 
-// ToPtr tries to convert object o to an unsafe.Pointer value. Integer-like
-// types are treated as addresses; Bytes and String surface the backing data
-// pointer.
+// ToPtr tries to convert object o to an unsafe.Pointer value. Only an
+// existing Ptr or Undefined (nil) are accepted; integer-to-pointer coercion
+// is intentionally rejected to prevent scripts from fabricating arbitrary
+// memory addresses.
 func ToPtr(o Object) (v unsafe.Pointer, ok bool) {
 	switch o := o.(type) {
 	case *Ptr:
@@ -286,27 +287,6 @@ func ToPtr(o Object) (v unsafe.Pointer, ok bool) {
 		ok = true
 	case *Undefined:
 		v = nil
-		ok = true
-	case *Int:
-		v = unsafe.Pointer(uintptr(o.Value))
-		ok = true
-	case *Uint64:
-		v = unsafe.Pointer(uintptr(o.Value))
-		ok = true
-	case *Uint:
-		v = unsafe.Pointer(uintptr(o.Value))
-		ok = true
-	case *Bytes:
-		if len(o.Value) == 0 {
-			return nil, true
-		}
-		v = unsafe.Pointer(&o.Value[0])
-		ok = true
-	case *String:
-		if o.Value == "" {
-			return nil, true
-		}
-		v = unsafe.Pointer(unsafe.StringData(o.Value))
 		ok = true
 	}
 	return

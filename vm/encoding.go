@@ -3,7 +3,6 @@ package vm
 import (
 	"errors"
 	"time"
-	"unsafe"
 
 	"github.com/malivvan/rumo/vm/codec"
 	"github.com/malivvan/rumo/vm/parser"
@@ -171,7 +170,8 @@ func SizeOfObject(o Object) int {
 	case _uint64:
 		return codec.SizeByte() + codec.SizeUint64()
 	case _ptr:
-		return codec.SizeByte() + codec.SizeUint64()
+		// Ptr values must never be serialised; refuse at size-computation time.
+		panic("sizeof: Ptr cannot be serialised into bytecode")
 	case _float64:
 		return codec.SizeByte() + codec.SizeFloat64()
 	case _float32:
@@ -254,8 +254,11 @@ func MarshalObject(n int, b []byte, o Object) int {
 		n = codec.MarshalByte(n, b, _uint64)
 		n = codec.MarshalUint64(n, b, o.(*Uint64).Value)
 	case _ptr:
-		n = codec.MarshalByte(n, b, _ptr)
-		n = codec.MarshalUint64(n, b, uint64(uintptr(o.(*Ptr).Value)))
+		// Ptr values are process-local and must never be serialised into
+		// bytecode; doing so would let a crafted bytecode file inject
+		// arbitrary pointer constants (see security issue: Ptr constructible
+		// from integer).
+		panic("marshal: Ptr cannot be serialised into bytecode")
 	case _float64:
 		n = codec.MarshalByte(n, b, _float64)
 		n = codec.MarshalFloat64(n, b, o.(*Float64).Value)
@@ -391,13 +394,10 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		}
 		return n, o, nil
 	case _ptr:
-		var u uint64
-		n, u, err = codec.UnmarshalUint64(n, b)
-		if err != nil {
-			return nn, nil, err
-		}
-		o.(*Ptr).Value = unsafe.Pointer(uintptr(u))
-		return n, o, nil
+		// Ptr values are process-local and must never be deserialised from
+		// bytecode; a crafted bytecode file could otherwise inject arbitrary
+		// pointer constants.
+		return nn, nil, errors.New("unmarshal: Ptr cannot be deserialised from bytecode")
 	case _float64:
 		n, o.(*Float64).Value, err = codec.UnmarshalFloat64(n, b)
 		if err != nil {
