@@ -86,6 +86,21 @@ js: ## Build the js/wasm runtime + web bundle into build/web/
 	@install -m 0644 vm/testdata/routine/fmt_with_routine.rumo build/web/demos/fmt_with_routine.rumo
 	@echo "build/web/ ready ($$(du -h build/web/rumo.wasm | cut -f1) wasm) — run 'make serve/js' to launch a local server"
 
+.PHONY: js-tinygo
+js-tinygo: ## Build the js/wasm runtime via TinyGo (smaller wasm) into build/web/
+	@command -v tinygo >/dev/null 2>&1 || { echo "tinygo not found — install from https://tinygo.org/getting-started/install/"; exit 1; }
+	@mkdir -p build/web
+	@tinygo build -target=wasm -opt=z -no-debug \
+		-ldflags="-X github.com/malivvan/rumo.commit=$(COMMIT) -X github.com/malivvan/rumo.version=xxx" \
+		-o build/web/rumo.wasm ./cmd
+	@install -m 0644 "$(shell tinygo env TINYGOROOT)/targets/wasm_exec.js" build/web/wasm_exec.js
+	@install -m 0644 cmd/web/index.html build/web/index.html
+	@install -m 0644 cmd/web/rumo.js build/web/rumo.js
+	@install -m 0644 cmd/web/worker.js build/web/worker.js
+	@mkdir -p build/web/demos
+	@install -m 0644 vm/testdata/routine/fmt_with_routine.rumo build/web/demos/fmt_with_routine.rumo
+	@echo "build/web/ ready ($$(du -h build/web/rumo.wasm | cut -f1) wasm, tinygo) — run 'make serve/js' to launch a local server"
+
 JS_SERVE_PORT ?= 8080
 
 .PHONY: serve/js
