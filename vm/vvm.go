@@ -69,8 +69,10 @@ type Config struct {
 	Permissions Permissions
 }
 
-// DefaultConfig is the Config used when nil is passed to NewVM.
-var DefaultConfig = &Config{
+// defaultCfg holds the canonical default limits as a value type.
+// DefaultConfig points at it for backward compatibility; prefer using
+// ConfigFromContext inside builtin functions to honour per-VM overrides.
+var defaultCfg = Config{
 	GlobalsSize:    1024,
 	StackSize:      2048,
 	MaxFrames:      1024,
@@ -78,6 +80,22 @@ var DefaultConfig = &Config{
 	MaxStringLen:   2147483647,
 	MaxBytesLen:    2147483647,
 	MaxFormatWidth: 1000,
+}
+
+// DefaultConfig is the Config used when nil is passed to NewVM.
+// Treat it as read-only. Use ConfigFromContext(ctx) inside builtin
+// functions to respect the running VM's per-instance configuration.
+var DefaultConfig = &defaultCfg
+
+// ConfigFromContext returns the configuration of the VM stored in ctx.
+// If ctx does not contain a running VM (e.g. in tests that call builtin
+// functions directly with context.Background()), DefaultConfig is returned
+// as a fallback so existing behaviour is preserved.
+func ConfigFromContext(ctx context.Context) *Config {
+	if v, _ := ctx.Value(ContextKey("vm")).(*VM); v != nil {
+		return v.config
+	}
+	return DefaultConfig
 }
 
 // eval replaces every zero-valued field with the corresponding value from

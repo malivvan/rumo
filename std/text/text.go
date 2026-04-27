@@ -243,7 +243,7 @@ func textREReplace(ctx context.Context, args ...vm.Object) (ret vm.Object, err e
 	if err != nil {
 		ret = module.WrapError(err)
 	} else {
-		s, ok := doTextRegexpReplace(re, s2, s3)
+		s, ok := doTextRegexpReplace(ctx, re, s2, s3)
 		if !ok {
 			return nil, vm.ErrStringLimit
 		}
@@ -382,7 +382,7 @@ func textReplace(ctx context.Context, args ...vm.Object) (ret vm.Object, err err
 		return
 	}
 
-	s, ok := doTextReplace(s1, s2, s3, i4)
+	s, ok := doTextReplace(ctx, s1, s2, s3, i4)
 	if !ok {
 		err = vm.ErrStringLimit
 		return
@@ -483,7 +483,7 @@ func textPadLeft(ctx context.Context, args ...vm.Object) (ret vm.Object, err err
 		return
 	}
 
-	if i2 > vm.DefaultConfig.MaxStringLen {
+	if i2 > vm.ConfigFromContext(ctx).MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -546,7 +546,7 @@ func textPadRight(ctx context.Context, args ...vm.Object) (ret vm.Object, err er
 		return
 	}
 
-	if i2 > vm.DefaultConfig.MaxStringLen {
+	if i2 > vm.ConfigFromContext(ctx).MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -611,7 +611,7 @@ func textRepeat(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 	// check and then causes strings.Repeat to panic.  Casting both operands to
 	// uint makes negative i2 values become huge positives that always exceed
 	// the limit, and eliminates signed overflow entirely.
-	if len(s1) > 0 && uint(i2) > uint(vm.DefaultConfig.MaxStringLen)/uint(len(s1)) {
+	if len(s1) > 0 && uint(i2) > uint(vm.ConfigFromContext(ctx).MaxStringLen)/uint(len(s1)) {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -670,7 +670,7 @@ func textJoin(ctx context.Context, args ...vm.Object) (ret vm.Object, err error)
 	}
 
 	// make sure output length does not exceed the limit
-	if slen+len(s2)*(len(ss1)-1) > vm.DefaultConfig.MaxStringLen {
+	if slen+len(s2)*(len(ss1)-1) > vm.ConfigFromContext(ctx).MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 
@@ -906,7 +906,7 @@ func textParseInt(ctx context.Context, args ...vm.Object) (ret vm.Object, err er
 
 // Modified implementation of strings.Replace
 // to limit the maximum length of output string.
-func doTextReplace(s, old, new string, n int) (string, bool) {
+func doTextReplace(ctx context.Context, s, old, new string, n int) (string, bool) {
 	if old == new || n == 0 {
 		return s, true // avoid allocation
 	}
@@ -934,7 +934,7 @@ func doTextReplace(s, old, new string, n int) (string, bool) {
 		}
 
 		ssj := s[start:j]
-		if w+len(ssj)+len(new) > vm.DefaultConfig.MaxStringLen {
+		if w+len(ssj)+len(new) > vm.ConfigFromContext(ctx).MaxStringLen {
 			return "", false
 		}
 
@@ -944,7 +944,7 @@ func doTextReplace(s, old, new string, n int) (string, bool) {
 	}
 
 	ss := s[start:]
-	if w+len(ss) > vm.DefaultConfig.MaxStringLen {
+	if w+len(ss) > vm.ConfigFromContext(ctx).MaxStringLen {
 		return "", false
 	}
 
@@ -1106,7 +1106,7 @@ func makeTextRegexp(re *regexp.Regexp) *vm.ImmutableMap {
 						return
 					}
 
-					s, ok := doTextRegexpReplace(re, s1, s2)
+					s, ok := doTextRegexpReplace(ctx, re, s1, s2)
 					if !ok {
 						return nil, vm.ErrStringLimit
 					}
@@ -1166,20 +1166,20 @@ func makeTextRegexp(re *regexp.Regexp) *vm.ImmutableMap {
 }
 
 // Size-limit checking implementation of regexp.ReplaceAllString.
-func doTextRegexpReplace(re *regexp.Regexp, src, repl string) (string, bool) {
+func doTextRegexpReplace(ctx context.Context, re *regexp.Regexp, src, repl string) (string, bool) {
 	idx := 0
 	out := ""
 	for _, m := range re.FindAllStringSubmatchIndex(src, -1) {
 		var exp []byte
 		exp = re.ExpandString(exp, repl, src, m)
-		if len(out)+m[0]-idx+len(exp) > vm.DefaultConfig.MaxStringLen {
+		if len(out)+m[0]-idx+len(exp) > vm.ConfigFromContext(ctx).MaxStringLen {
 			return "", false
 		}
 		out += src[idx:m[0]] + string(exp)
 		idx = m[1]
 	}
 	if idx < len(src) {
-		if len(out)+len(src)-idx > vm.DefaultConfig.MaxStringLen {
+		if len(out)+len(src)-idx > vm.ConfigFromContext(ctx).MaxStringLen {
 			return "", false
 		}
 		out += src[idx:]

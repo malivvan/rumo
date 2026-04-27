@@ -81,18 +81,19 @@ func (f *formatter) writePadding(n int) {
 	if n <= 0 { // No padding bytes needed.
 		return
 	}
-	buf := *f.buf
-	oldLen := len(buf)
+	data := f.buf.data
+	oldLen := len(data)
 	newLen := oldLen + n
 
-	if newLen > DefaultConfig.MaxStringLen {
+	if newLen > f.buf.limit() {
 		panic(ErrStringLimit)
 	}
 
 	// Make enough room for padding.
-	if newLen > cap(buf) {
-		buf = make(fmtbuf, cap(buf)*2+n)
-		copy(buf, *f.buf)
+	if newLen > cap(data) {
+		newData := make([]byte, cap(data)*2+n)
+		copy(newData, data)
+		data = newData
 	}
 	// Decide which byte the padding should be filled with.
 	padByte := byte(' ')
@@ -100,11 +101,11 @@ func (f *formatter) writePadding(n int) {
 		padByte = byte('0')
 	}
 	// Fill padding with padByte.
-	padding := buf[oldLen:newLen]
+	padding := data[oldLen:newLen]
 	for i := range padding {
 		padding[i] = padByte
 	}
-	*f.buf = buf[:newLen]
+	f.buf.data = data[:newLen]
 }
 
 // pad appends b to f.buf, padded on left (!f.minus) or right (f.minus).
@@ -428,7 +429,7 @@ func (f *formatter) fmtSbx(s string, b []byte, digits string) {
 		f.writePadding(f.wid - width)
 	}
 	// Write the encoding directly into the output fmtbuf.
-	buf := *f.buf
+	buf := f.buf.data
 	if f.sharp {
 		// Add leading 0x or 0X.
 		buf = append(buf, '0', digits[16])
@@ -451,7 +452,7 @@ func (f *formatter) fmtSbx(s string, b []byte, digits string) {
 		// Encode each byte as two hexadecimal digits.
 		buf = append(buf, digits[c>>4], digits[c&0xF])
 	}
-	*f.buf = buf
+	f.buf.data = buf
 	// Handle padding to the right.
 	if f.widPresent && f.wid > width && f.minus {
 		f.writePadding(f.wid - width)
@@ -610,50 +611,56 @@ func (f *formatter) fmtFloat(v float64, size int, verb rune, prec int) {
 	f.pad(num[1:])
 }
 
-// Use simple []byte instead of bytes.Buffer to avoid large dependency.
-type fmtbuf []byte
+// fmtbuf is the output buffer for the formatter.  It carries a per-instance
+// MaxStringLen limit (set by newPrinterWithConfig) so that the running VM's
+// per-VM config is honoured instead of the global DefaultConfig.
+type fmtbuf struct {
+	data   []byte
+	maxLen int // 0 → fall back to DefaultConfig.MaxStringLen
+}
+
+func (b *fmtbuf) limit() int {
+	if b.maxLen > 0 {
+		return b.maxLen
+	}
+	return DefaultConfig.MaxStringLen
+}
 
 func (b *fmtbuf) Write(p []byte) {
-	if len(*b)+len(p) > DefaultConfig.MaxStringLen {
+	if len(b.data)+len(p) > b.limit() {
 		panic(ErrStringLimit)
 	}
-
-	*b = append(*b, p...)
+	b.data = append(b.data, p...)
 }
 
 func (b *fmtbuf) WriteString(s string) {
-	if len(*b)+len(s) > DefaultConfig.MaxStringLen {
+	if len(b.data)+len(s) > b.limit() {
 		panic(ErrStringLimit)
 	}
-
-	*b = append(*b, s...)
+	b.data = append(b.data, s...)
 }
 
 func (b *fmtbuf) WriteSingleByte(c byte) {
-	if len(*b) >= DefaultConfig.MaxStringLen {
+	if len(b.data) >= b.limit() {
 		panic(ErrStringLimit)
 	}
-
-	*b = append(*b, c)
+	b.data = append(b.data, c)
 }
 
 func (b *fmtbuf) WriteRune(r rune) {
-	if len(*b)+utf8.RuneLen(r) > DefaultConfig.MaxStringLen {
+	if len(b.data)+utf8.RuneLen(r) > b.limit() {
 		panic(ErrStringLimit)
 	}
-
 	if r < utf8.RuneSelf {
-		*b = append(*b, byte(r))
+		b.data = append(b.data, byte(r))
 		return
 	}
-
-	b2 := *b
-	n := len(b2)
-	for n+utf8.UTFMax > cap(b2) {
-		b2 = append(b2, 0)
+	n := len(b.data)
+	for n+utf8.UTFMax > cap(b.data) {
+		b.data = append(b.data, 0)
 	}
-	w := utf8.EncodeRune(b2[n:n+utf8.UTFMax], r)
-	*b = b2[:n+w]
+	w := utf8.EncodeRune(b.data[n:n+utf8.UTFMax], r)
+	b.data = b.data[:n+w]
 }
 
 // pp is used to store a printer's state and is reused with sync.Pool to avoid
@@ -704,6 +711,7 @@ func newPrinterWithConfig(cfg *Config) *pp {
 	if cfg.MaxFormatWidth > 0 {
 		p.maxWidth = cfg.MaxFormatWidth
 	}
+	p.buf.maxLen = cfg.MaxStringLen
 	p.fmt.init(&p.buf)
 	return p
 }
@@ -716,11 +724,12 @@ func (p *pp) free() {
 	// fmtbuf to place back in the pool.
 	//
 	// See https://golang.org/issue/23199
-	if cap(p.buf) > 64<<10 {
+	if cap(p.buf.data) > 64<<10 {
 		return
 	}
 
-	p.buf = p.buf[:0]
+	p.buf.data = p.buf.data[:0]
+	p.buf.maxLen = 0
 	p.arg = nil
 	ppFree.Put(p)
 }
@@ -1281,7 +1290,7 @@ func Format(format string, a ...Object) (string, error) {
 func FormatWithConfig(format string, cfg *Config, a ...Object) (string, error) {
 	p := newPrinterWithConfig(cfg)
 	err := p.doFormat(format, a)
-	s := string(p.buf)
+	s := string(p.buf.data)
 	p.free()
 
 	return s, err

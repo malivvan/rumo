@@ -30,6 +30,7 @@ type testopts struct {
 	symbols     map[string]vm.Object
 	maxAllocs   int64
 	skip2ndPass bool
+	cfg         *vm.Config // per-VM config override (nil = use DefaultConfig)
 }
 
 func Opts() *testopts {
@@ -47,6 +48,7 @@ func (o *testopts) copy() *testopts {
 		symbols:     make(map[string]vm.Object),
 		maxAllocs:   o.maxAllocs,
 		skip2ndPass: o.skip2ndPass,
+		cfg:         o.cfg,
 	}
 	for k, v := range o.symbols {
 		c.symbols[k] = v
@@ -89,6 +91,14 @@ func (o *testopts) MaxAllocs(limit int64) *testopts {
 func (o *testopts) Skip2ndPass() *testopts {
 	c := o.copy()
 	c.skip2ndPass = true
+	return c
+}
+
+// WithConfig sets per-VM limits for scripts run by expectRun/expectError.
+// Use this instead of mutating vm.DefaultConfig in tests.
+func (o *testopts) WithConfig(cfg *vm.Config) *testopts {
+	c := o.copy()
+	c.cfg = cfg
 	return c
 }
 
@@ -723,10 +733,9 @@ func TestBuiltinFunction(t *testing.T) {
 	expectRun(t, `out = format("%v", [1, [2, [3, 4]]])`,
 		nil, `[1, [2, [3, 4]]]`)
 
-	vm.DefaultConfig.MaxStringLen = 9
 	expectError(t, `format("%s", "1234567890")`,
-		nil, "exceeding string size limit")
-	vm.DefaultConfig.MaxStringLen = 2147483647
+		Opts().WithConfig(&vm.Config{MaxStringLen: 9}),
+		"exceeding string size limit")
 
 	// delete
 	expectError(t, `delete()`, nil, vm.ErrWrongNumArguments.Error())
@@ -897,17 +906,12 @@ func TestBuiltinFunction(t *testing.T) {
 }
 
 func TestBytesN(t *testing.T) {
-	curMaxBytesLen := vm.DefaultConfig.MaxBytesLen
-	defer func() { vm.DefaultConfig.MaxBytesLen = curMaxBytesLen }()
-	vm.DefaultConfig.MaxBytesLen = 10
-
 	expectRun(t, `out = bytes(0)`, nil, make([]byte, 0))
-	expectRun(t, `out = bytes(10)`, nil, make([]byte, 10))
-	expectError(t, `bytes(11)`, nil, "bytes size limit")
+	expectRun(t, `out = bytes(10)`, Opts().WithConfig(&vm.Config{MaxBytesLen: 10}), make([]byte, 10))
+	expectError(t, `bytes(11)`, Opts().WithConfig(&vm.Config{MaxBytesLen: 10}), "bytes size limit")
 
-	vm.DefaultConfig.MaxBytesLen = 1000
-	expectRun(t, `out = bytes(1000)`, nil, make([]byte, 1000))
-	expectError(t, `bytes(1001)`, nil, "bytes size limit")
+	expectRun(t, `out = bytes(1000)`, Opts().WithConfig(&vm.Config{MaxBytesLen: 1000}), make([]byte, 1000))
+	expectError(t, `bytes(1001)`, Opts().WithConfig(&vm.Config{MaxBytesLen: 1000}), "bytes size limit")
 }
 
 func TestBytes(t *testing.T) {
@@ -3709,7 +3713,7 @@ func expectRun(
 
 	symbols := opts.symbols
 	modules := opts.modules
-	maxAllocs := opts.maxAllocs
+	cfg := optsEffectiveCfg(opts)
 
 	expectedObj := toObject(expected)
 
@@ -3727,7 +3731,7 @@ func expectRun(
 		}
 
 		// compiler/VM
-		res, trace, err := traceCompileRun(file, symbols, modules, maxAllocs)
+		res, trace, err := traceCompileRun(file, symbols, modules, cfg)
 		require.NoError(t, err, "\n"+strings.Join(trace, "\n"))
 		require.Equal(t, expectedObj, res[testOut],
 			"\n"+strings.Join(trace, "\n"))
@@ -3751,7 +3755,7 @@ func expectRun(
 		modules.AddSourceModule("__code__",
 			[]byte(fmt.Sprintf("out := undefined; %s; export out", input)))
 
-		res, trace, err := traceCompileRun(file, symbols, modules, maxAllocs)
+		res, trace, err := traceCompileRun(file, symbols, modules, cfg)
 		require.NoError(t, err, "\n"+strings.Join(trace, "\n"))
 		require.Equal(t, expectedObj, res[testOut],
 			"\n"+strings.Join(trace, "\n"))
@@ -3770,7 +3774,7 @@ func expectError(
 
 	symbols := opts.symbols
 	modules := opts.modules
-	maxAllocs := opts.maxAllocs
+	cfg := optsEffectiveCfg(opts)
 
 	expected = strings.TrimSpace(expected)
 	if expected == "" {
@@ -3784,7 +3788,7 @@ func expectError(
 	}
 
 	// compiler/VM
-	_, trace, err := traceCompileRun(program, symbols, modules, maxAllocs)
+	_, trace, err := traceCompileRun(program, symbols, modules, cfg)
 	require.Error(t, err, "\n"+strings.Join(trace, "\n"))
 	require.True(t, strings.Contains(err.Error(), expected),
 		"expected error string: %s, got: %s\n%s",
@@ -3802,7 +3806,7 @@ func expectErrorIs(
 	}
 	symbols := opts.symbols
 	modules := opts.modules
-	maxAllocs := opts.maxAllocs
+	cfg := optsEffectiveCfg(opts)
 
 	// parse
 	program := parse(t, input)
@@ -3811,7 +3815,7 @@ func expectErrorIs(
 	}
 
 	// compiler/VM
-	_, trace, err := traceCompileRun(program, symbols, modules, maxAllocs)
+	_, trace, err := traceCompileRun(program, symbols, modules, cfg)
 	require.Error(t, err, "\n"+strings.Join(trace, "\n"))
 	require.True(t, errors.Is(err, expected),
 		"expected error is: %s, got: %s\n%s",
@@ -3829,7 +3833,7 @@ func expectErrorAs(
 	}
 	symbols := opts.symbols
 	modules := opts.modules
-	maxAllocs := opts.maxAllocs
+	cfg := optsEffectiveCfg(opts)
 
 	// parse
 	program := parse(t, input)
@@ -3838,7 +3842,7 @@ func expectErrorAs(
 	}
 
 	// compiler/VM
-	_, trace, err := traceCompileRun(program, symbols, modules, maxAllocs)
+	_, trace, err := traceCompileRun(program, symbols, modules, cfg)
 	require.Error(t, err, "\n"+strings.Join(trace, "\n"))
 	require.True(t, errors.As(err, expected),
 		"expected error as: %v, got: %v\n%s",
@@ -3854,7 +3858,22 @@ func (o *vmTracer) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func traceCompileRun(file *parser.File, symbols map[string]vm.Object, modules *vm.ModuleMap, maxAllocs int64) (res map[string]vm.Object, trace []string, err error) {
+// optsEffectiveCfg derives the *vm.Config to pass to traceCompileRun / NewVM
+// from a testopts.  Priority:
+//  1. opts.cfg if set (WithConfig was used)
+//  2. opts.maxAllocs if not the default (-1) → wraps in a Config
+//  3. nil → NewVM will use DefaultConfig
+func optsEffectiveCfg(opts *testopts) *vm.Config {
+	if opts.cfg != nil {
+		return opts.cfg
+	}
+	if opts.maxAllocs != -1 {
+		return &vm.Config{MaxAllocs: opts.maxAllocs}
+	}
+	return nil
+}
+
+func traceCompileRun(file *parser.File, symbols map[string]vm.Object, modules *vm.ModuleMap, cfg *vm.Config) (res map[string]vm.Object, trace []string, err error) {
 	var v *vm.VM
 
 	defer func() {
@@ -3878,7 +3897,12 @@ func traceCompileRun(file *parser.File, symbols map[string]vm.Object, modules *v
 		}
 	}()
 
-	globals := make([]vm.Object, vm.DefaultConfig.GlobalsSize)
+	// Determine the GlobalsSize to use for the globals slice.
+	globalsSize := vm.DefaultConfig.GlobalsSize
+	if cfg != nil && cfg.GlobalsSize > 0 {
+		globalsSize = cfg.GlobalsSize
+	}
+	globals := make([]vm.Object, globalsSize)
 
 	symTable := vm.NewSymbolTable()
 	for name, value := range symbols {
@@ -3910,7 +3934,7 @@ func traceCompileRun(file *parser.File, symbols map[string]vm.Object, modules *v
 	trace = append(trace, fmt.Sprintf("\n[Compiled Instructions]\n\n%s\n",
 		strings.Join(bytecode.FormatInstructions(), "\n")))
 
-	v = vm.NewVM(context.Background(), bytecode, globals, &vm.Config{MaxAllocs: maxAllocs})
+	v = vm.NewVM(context.Background(), bytecode, globals, cfg)
 
 	err = v.Run()
 	{

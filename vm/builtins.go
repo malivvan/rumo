@@ -387,13 +387,13 @@ func builtinFormat(ctx context.Context, args ...Object) (Object, error) {
 	// Use the running VM's config so that per-VM limits (MaxFormatWidth,
 	// MaxStringLen) are respected; fall back to DefaultConfig when called
 	// outside a VM context (e.g. tests).
-	cfg := DefaultConfig
-	if v, _ := ctx.Value(ContextKey("vm")).(*VM); v != nil {
-		cfg = v.config
-	}
+	cfg := ConfigFromContext(ctx)
 	s, err := FormatWithConfig(format.Value, cfg, args[1:]...)
 	if err != nil {
 		return nil, err
+	}
+	if len(s) > cfg.MaxStringLen {
+		return nil, ErrStringLimit
 	}
 	return &String{Value: s}, nil
 }
@@ -415,7 +415,7 @@ func builtinString(ctx context.Context, args ...Object) (Object, error) {
 	}
 	v, ok := ToString(args[0])
 	if ok {
-		if len(v) > DefaultConfig.MaxStringLen {
+		if len(v) > ConfigFromContext(ctx).MaxStringLen {
 			return nil, ErrStringLimit
 		}
 		return &String{Value: v}, nil
@@ -539,16 +539,17 @@ func builtinBytes(ctx context.Context, args ...Object) (Object, error) {
 		return nil, ErrWrongNumArguments
 	}
 
+	cfg := ConfigFromContext(ctx)
 	// bytes(N) => create a new bytes with given size N
 	if n, ok := args[0].(*Int); ok {
-		if n.Value > int64(DefaultConfig.MaxBytesLen) {
+		if n.Value > int64(cfg.MaxBytesLen) {
 			return nil, ErrBytesLimit
 		}
 		return &Bytes{Value: make([]byte, int(n.Value))}, nil
 	}
 	v, ok := ToByteSlice(args[0])
 	if ok {
-		if len(v) > DefaultConfig.MaxBytesLen {
+		if len(v) > cfg.MaxBytesLen {
 			return nil, ErrBytesLimit
 		}
 		return &Bytes{Value: v}, nil

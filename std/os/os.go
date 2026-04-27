@@ -181,7 +181,7 @@ func osReadFile(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 	if err != nil {
 		return module.WrapError(err), nil
 	}
-	if len(bytes) > vm.DefaultConfig.MaxBytesLen {
+	if len(bytes) > vm.ConfigFromContext(ctx).MaxBytesLen {
 		return nil, vm.ErrBytesLimit
 	}
 	return &vm.Bytes{Value: bytes}, nil
@@ -285,7 +285,7 @@ func osArgs(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	}
 	arr := &vm.Array{}
 	for _, osArg := range v.Args {
-		if len(osArg) > vm.DefaultConfig.MaxStringLen {
+		if len(osArg) > vm.ConfigFromContext(ctx).MaxStringLen {
 			return nil, vm.ErrStringLimit
 		}
 		arr.Value = append(arr.Value, &vm.String{Value: osArg})
@@ -309,7 +309,7 @@ func osLookupEnv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	if !ok {
 		return vm.FalseValue, nil
 	}
-	if len(res) > vm.DefaultConfig.MaxStringLen {
+	if len(res) > vm.ConfigFromContext(ctx).MaxStringLen {
 		return nil, vm.ErrStringLimit
 	}
 	return &vm.String{Value: res}, nil
@@ -329,7 +329,7 @@ func osExpandEnv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	}
 	// Use the per-VM MaxStringLen. permsFromCtx already reaches into the VM;
 	// we do the same for Config to avoid reading DefaultConfig directly.
-	maxLen := vm.DefaultConfig.MaxStringLen
+	maxLen := vm.ConfigFromContext(ctx).MaxStringLen
 	if v, ok2 := ctx.Value(vm.ContextKey("vm")).(*vm.VM); ok2 && v != nil {
 		if cfg := v.Config(); cfg.MaxStringLen > 0 {
 			maxLen = cfg.MaxStringLen
