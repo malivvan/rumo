@@ -202,6 +202,84 @@ func TestScriptFileImportRejectsEscapingImportRoot(t *testing.T) {
 	}
 }
 
+// A symlink inside the import root that resolves to a target outside the root must be
+// rejected. The lexical filepath.Rel check passes because the symlink path itself lies
+// within the sandbox directory tree, but the real file it points to is outside that tree.
+// The fix evaluates symlinks on both the import base and the resolved module path before
+// performing the containment check, so the real target location is compared, not the
+// symlink path.
+func TestScriptFileImportRejectsSymlinkEscapingImportRoot(t *testing.T) {
+	tempDir := t.TempDir()
+	root := filepath.Join(tempDir, "sandbox")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir sandbox: %v", err)
+	}
+
+	// Write a sensitive file outside the sandbox.
+	sensitiveFile := filepath.Join(tempDir, "secret.rumo")
+	if err := os.WriteFile(sensitiveFile, []byte(`export "secret content"`), 0o644); err != nil {
+		t.Fatalf("write secret file: %v", err)
+	}
+
+	// Create a symlink inside the sandbox pointing at the file outside.
+	symlinkPath := filepath.Join(root, "escape.rumo")
+	if err := os.Symlink(sensitiveFile, symlinkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	s := rumo.NewScript([]byte(`out := import("escape")`))
+	s.SetName(filepath.Join(root, "main.rumo"))
+	s.EnableFileImport(true)
+	if err := s.SetImportDir(root); err != nil {
+		t.Fatalf("set import dir: %v", err)
+	}
+
+	_, err := s.Compile()
+	if err == nil {
+		t.Fatal("expected symlink-based import escape to be rejected, but compile succeeded")
+	}
+	if !strings.Contains(err.Error(), "escapes import root") {
+		t.Fatalf("expected 'escapes import root' error, got: %v", err)
+	}
+}
+
+// TestScriptFileImportAllowsSymlinkWithinRoot verifies that a symlink whose real target
+// also lies within the import root is accepted.
+func TestScriptFileImportAllowsSymlinkWithinRoot(t *testing.T) {
+	tempDir := t.TempDir()
+	root := filepath.Join(tempDir, "sandbox")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir sandbox: %v", err)
+	}
+
+	// Write a real module inside the sandbox.
+	realModule := filepath.Join(root, "real.rumo")
+	if err := os.WriteFile(realModule, []byte(`export 42`), 0o644); err != nil {
+		t.Fatalf("write real module: %v", err)
+	}
+
+	// Create a symlink inside the sandbox pointing to the real module (also inside).
+	symlinkPath := filepath.Join(root, "alias.rumo")
+	if err := os.Symlink(realModule, symlinkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	s := rumo.NewScript([]byte(`out := import("alias")`))
+	s.SetName(filepath.Join(root, "main.rumo"))
+	s.EnableFileImport(true)
+	if err := s.SetImportDir(root); err != nil {
+		t.Fatalf("set import dir: %v", err)
+	}
+
+	p, err := s.Run()
+	if err != nil {
+		t.Fatalf("expected symlink within root to be allowed, got: %v", err)
+	}
+	if got := p.Get("out").Int(); got != 42 {
+		t.Fatalf("unexpected result: %d", got)
+	}
+}
+
 // VM defaults Args to os.Args — leaks host binary arguments into sandboxed scripts.
 // When Program.SetArgs is not called, the script should see an empty argument list,
 // not the host process's os.Args. When SetArgs is called the script must see exactly

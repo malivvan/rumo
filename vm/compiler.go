@@ -1290,7 +1290,17 @@ func (c *Compiler) fork(file *parser.SourceFile, modulePath string, symbolTable 
 }
 
 func isPathWithinBase(base, target string) (bool, error) {
-	rel, err := filepath.Rel(base, target)
+	// Resolve symlinks on both paths so that a symlink inside the base that
+	// points outside it is correctly detected as an escape.
+	realBase, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return false, err
+	}
+	realTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return false, err
+	}
+	rel, err := filepath.Rel(realBase, realTarget)
 	if err != nil {
 		return false, err
 	}
