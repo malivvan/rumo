@@ -83,7 +83,7 @@ js: ## Build the js/wasm runtime + web bundle into build/web/
 	@install -m 0644 cmd/web/rumo.js build/web/rumo.js
 	@install -m 0644 cmd/web/worker.js build/web/worker.js
 	@mkdir -p build/web/demos
-	@install -m 0644 vm/testdata/routine/fmt_with_routine.rumo build/web/demos/fmt_with_routine.rumo
+	@install -m 0644 vm/testdata/routine/main.rumo build/web/demos/fmt_with_routine.rumo
 	@echo "build/web/ ready ($$(du -h build/web/rumo.wasm | cut -f1) wasm) — run 'make serve/js' to launch a local server"
 
 JS_SERVE_PORT ?= 8080

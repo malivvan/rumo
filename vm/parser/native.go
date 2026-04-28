@@ -9,16 +9,85 @@ import (
 	"github.com/malivvan/rumo/vm/token"
 )
 
+// NativeTypeRef references a native type in a function signature or struct
+// field. Pointer is true when the source spelling was `*Name` (only meaningful
+// for struct names, since scalar pointers use the `ptr` keyword).
+type NativeTypeRef struct {
+	StarPos Pos // position of leading '*' or NoPos
+	Pointer bool
+	Name    *Ident
+}
+
+// Pos returns the position of first character belonging to the node.
+func (r *NativeTypeRef) Pos() Pos {
+	if r.Pointer {
+		return r.StarPos
+	}
+	return r.Name.Pos()
+}
+
+// End returns the position of first character immediately after the node.
+func (r *NativeTypeRef) End() Pos { return r.Name.End() }
+
+// String renders the type reference back to source form.
+func (r *NativeTypeRef) String() string {
+	if r.Pointer {
+		return "*" + r.Name.Name
+	}
+	return r.Name.Name
+}
+
+// NativeFieldDecl is a single field declaration inside a NativeStructDecl.
+type NativeFieldDecl struct {
+	Name *Ident
+	Type *NativeTypeRef
+}
+
+// Pos returns the position of first character belonging to the node.
+func (f *NativeFieldDecl) Pos() Pos { return f.Name.Pos() }
+
+// End returns the position of first character immediately after the node.
+func (f *NativeFieldDecl) End() Pos { return f.Type.End() }
+
+// String returns the field declaration as source.
+func (f *NativeFieldDecl) String() string {
+	return f.Name.Name + " " + f.Type.String()
+}
+
+// NativeStructDecl declares a C-compatible struct layout that may be
+// referenced as a parameter or return type by sibling NativeFuncDecls.
+type NativeStructDecl struct {
+	StructPos Pos
+	Name      *Ident
+	LBrace    Pos
+	Fields    []*NativeFieldDecl
+	RBrace    Pos
+}
+
+// Pos returns the position of first character belonging to the node.
+func (d *NativeStructDecl) Pos() Pos { return d.StructPos }
+
+// End returns the position of first character immediately after the node.
+func (d *NativeStructDecl) End() Pos { return d.RBrace + 1 }
+
+// String returns the struct declaration as source.
+func (d *NativeStructDecl) String() string {
+	var fields []string
+	for _, f := range d.Fields {
+		fields = append(fields, f.String())
+	}
+	return "struct " + d.Name.Name + " { " + strings.Join(fields, "; ") + " }"
+}
+
 // NativeFuncDecl represents a single native function declaration inside a
 // NativeStmt body.  It captures the binding name, the list of parameter
-// types (as identifiers, e.g. "int", "float") and the return type (or nil
-// for void).
+// types and the return type (or nil for void).
 type NativeFuncDecl struct {
 	Name       *Ident
 	LParen     Pos
-	ParamTypes []*Ident
+	ParamTypes []*NativeTypeRef
 	RParen     Pos
-	ReturnType *Ident // may be nil (void / no return)
+	ReturnType *NativeTypeRef // may be nil (void / no return)
 }
 
 // Pos returns the position of first character belonging to the node.
@@ -35,11 +104,11 @@ func (d *NativeFuncDecl) End() Pos {
 func (d *NativeFuncDecl) String() string {
 	var params []string
 	for _, p := range d.ParamTypes {
-		params = append(params, p.Name)
+		params = append(params, p.String())
 	}
 	ret := ""
 	if d.ReturnType != nil {
-		ret = " " + d.ReturnType.Name
+		ret = " " + d.ReturnType.String()
 	}
 	return d.Name.Name + ": func(" + strings.Join(params, ", ") + ")" + ret
 }
@@ -60,6 +129,7 @@ type NativeStmt struct {
 	Path      string
 	PathLit   *StringLit
 	LBrace    Pos
+	Structs   []*NativeStructDecl
 	Funcs     []*NativeFuncDecl
 	RBrace    Pos
 }
@@ -74,6 +144,9 @@ func (s *NativeStmt) End() Pos { return s.RBrace + 1 }
 
 func (s *NativeStmt) String() string {
 	var parts []string
+	for _, sd := range s.Structs {
+		parts = append(parts, sd.String())
+	}
 	for _, f := range s.Funcs {
 		parts = append(parts, f.String())
 	}
@@ -127,11 +200,30 @@ func (p *Parser) parseNativeStmt() Stmt {
 	}
 	lbrace := p.expect(token.LBrace)
 
+	var structs []*NativeStructDecl
 	var funcs []*NativeFuncDecl
 	for p.token != token.RBrace && p.token != token.EOF {
 		// allow blank lines / explicit semicolons between decls
 		if p.token == token.Semicolon {
 			p.next()
+			continue
+		}
+
+		if p.token == token.Struct {
+			sd := p.parseNativeStructDecl()
+			if sd == nil {
+				for p.token != token.Semicolon && p.token != token.RBrace && p.token != token.EOF {
+					p.next()
+				}
+				continue
+			}
+			structs = append(structs, sd)
+			if p.token == token.Semicolon {
+				p.next()
+			} else if p.token != token.RBrace {
+				p.errorExpected(p.pos, "';' or newline")
+				break
+			}
 			continue
 		}
 
@@ -163,7 +255,72 @@ func (p *Parser) parseNativeStmt() Stmt {
 		Path:      pathVal,
 		PathLit:   pathLit,
 		LBrace:    lbrace,
+		Structs:   structs,
 		Funcs:     funcs,
+		RBrace:    rbrace,
+	}
+}
+
+// parseNativeTypeRef parses an optional `*` followed by an identifier.
+func (p *Parser) parseNativeTypeRef() *NativeTypeRef {
+	ref := &NativeTypeRef{}
+	if p.token == token.Mul {
+		ref.StarPos = p.pos
+		ref.Pointer = true
+		p.next()
+	}
+	if p.token != token.Ident {
+		p.errorExpected(p.pos, "native type name")
+		return nil
+	}
+	ref.Name = p.parseIdent()
+	return ref
+}
+
+// parseNativeStructDecl parses `struct Name { field type; ... }`.
+func (p *Parser) parseNativeStructDecl() *NativeStructDecl {
+	structPos := p.expect(token.Struct)
+	if p.token != token.Ident {
+		p.errorExpected(p.pos, "struct name")
+		return nil
+	}
+	name := p.parseIdent()
+	if p.token != token.LBrace {
+		p.errorExpected(p.pos, "'{'")
+		return nil
+	}
+	lbrace := p.expect(token.LBrace)
+
+	var fields []*NativeFieldDecl
+	for p.token != token.RBrace && p.token != token.EOF {
+		if p.token == token.Semicolon {
+			p.next()
+			continue
+		}
+		if p.token != token.Ident {
+			p.errorExpected(p.pos, "field name")
+			return nil
+		}
+		fname := p.parseIdent()
+		typ := p.parseNativeTypeRef()
+		if typ == nil {
+			return nil
+		}
+		fields = append(fields, &NativeFieldDecl{Name: fname, Type: typ})
+		if p.token == token.Semicolon {
+			p.next()
+		} else if p.token != token.RBrace {
+			p.errorExpected(p.pos, "';' or newline")
+			return nil
+		}
+	}
+	rbrace := p.expect(token.RBrace)
+
+	return &NativeStructDecl{
+		StructPos: structPos,
+		Name:      name,
+		LBrace:    lbrace,
+		Fields:    fields,
 		RBrace:    rbrace,
 	}
 }
@@ -198,14 +355,14 @@ func (p *Parser) parseNativeFuncDecl() *NativeFuncDecl {
 	}
 	lparen := p.expect(token.LParen)
 
-	var params []*Ident
+	var params []*NativeTypeRef
 	if p.token != token.RParen {
 		for {
-			if p.token != token.Ident {
-				p.errorExpected(p.pos, "native type name")
+			ref := p.parseNativeTypeRef()
+			if ref == nil {
 				return nil
 			}
-			params = append(params, p.parseIdent())
+			params = append(params, ref)
 			if p.token != token.Comma {
 				break
 			}
@@ -215,9 +372,9 @@ func (p *Parser) parseNativeFuncDecl() *NativeFuncDecl {
 	rparen := p.expect(token.RParen)
 
 	// optional return type
-	var ret *Ident
-	if p.token == token.Ident {
-		ret = p.parseIdent()
+	var ret *NativeTypeRef
+	if p.token == token.Ident || p.token == token.Mul {
+		ret = p.parseNativeTypeRef()
 	}
 
 	return &NativeFuncDecl{

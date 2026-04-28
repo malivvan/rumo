@@ -292,30 +292,11 @@ func isShipFriendly(o vm.Object) bool {
 		// nameless builtins are runtime-bound closures; not portable.
 		return v.Name != ""
 	case *vm.Map:
-		// Read without locking — the map's mu is unexported. The
-		// snapshot we'd be racing against is the parent VM's; for
-		// shipping-decisions on globals (which are seldom mutated
-		// post-init by the VM after spawn-time) a best-effort scan is
-		// acceptable.
-		for _, e := range v.Value {
-			if !isShipFriendly(e) {
-				return false
-			}
-		}
-		return true
-	case *vm.Map:
 		// Modules are already keyed by moduleName so FixDecodedObject
 		// rebinds them wholesale — no need to inspect children.
 		if v.ModuleName() != "" {
 			return true
 		}
-		for _, e := range v.Value {
-			if !isShipFriendly(e) {
-				return false
-			}
-		}
-		return true
-	case *vm.Array:
 		for _, e := range v.Value {
 			if !isShipFriendly(e) {
 				return false

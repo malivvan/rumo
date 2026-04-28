@@ -256,12 +256,31 @@ func SizeOfObject(o Object) int {
 	case _nativeLoader:
 		nl := o.(*Native)
 		s := codec.SizeString(nl.Path)
+		s += codec.SizeInt(len(nl.Structs))
+		for _, st := range nl.Structs {
+			s += codec.SizeString(st.Name)
+			s += codec.SizeInt(len(st.Fields))
+			for _, f := range st.Fields {
+				s += codec.SizeString(f.Name)
+				s += codec.SizeByte()             // Kind
+				s += codec.SizeInt(f.StructIdx)   // StructIdx
+				s += codec.SizeBool()             // Pointer
+			}
+		}
 		s += codec.SizeInt(len(nl.Funcs))
 		for _, f := range nl.Funcs {
 			s += codec.SizeString(f.Name)
 			s += codec.SizeByte() // Return kind
+			s += codec.SizeInt(f.ReturnStructIdx)
+			s += codec.SizeBool()
 			s += codec.SizeInt(len(f.Params))
 			s += len(f.Params) * codec.SizeByte()
+			s += codec.SizeInt(len(f.ParamStructIdx))
+			for _, idx := range f.ParamStructIdx {
+				s += codec.SizeInt(idx)
+			}
+			s += codec.SizeInt(len(f.ParamPointer))
+			s += len(f.ParamPointer) * codec.SizeBool()
 		}
 		return codec.SizeByte() + s
 	case _chan:
@@ -400,13 +419,34 @@ func MarshalObject(n int, b []byte, o Object) int {
 		nl := o.(*Native)
 		n = codec.MarshalByte(n, b, _nativeLoader)
 		n = codec.MarshalString(n, b, nl.Path)
+		n = codec.MarshalInt(n, b, len(nl.Structs))
+		for _, st := range nl.Structs {
+			n = codec.MarshalString(n, b, st.Name)
+			n = codec.MarshalInt(n, b, len(st.Fields))
+			for _, f := range st.Fields {
+				n = codec.MarshalString(n, b, f.Name)
+				n = codec.MarshalByte(n, b, byte(f.Kind))
+				n = codec.MarshalInt(n, b, f.StructIdx)
+				n = codec.MarshalBool(n, b, f.Pointer)
+			}
+		}
 		n = codec.MarshalInt(n, b, len(nl.Funcs))
 		for _, f := range nl.Funcs {
 			n = codec.MarshalString(n, b, f.Name)
 			n = codec.MarshalByte(n, b, byte(f.Return))
+			n = codec.MarshalInt(n, b, f.ReturnStructIdx)
+			n = codec.MarshalBool(n, b, f.ReturnPointer)
 			n = codec.MarshalInt(n, b, len(f.Params))
 			for _, p := range f.Params {
 				n = codec.MarshalByte(n, b, byte(p))
+			}
+			n = codec.MarshalInt(n, b, len(f.ParamStructIdx))
+			for _, idx := range f.ParamStructIdx {
+				n = codec.MarshalInt(n, b, idx)
+			}
+			n = codec.MarshalInt(n, b, len(f.ParamPointer))
+			for _, p := range f.ParamPointer {
+				n = codec.MarshalBool(n, b, p)
 			}
 		}
 	case _chan:
@@ -689,6 +729,44 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		if err != nil {
 			return nn, nil, err
 		}
+		var numStructs int
+		n, numStructs, err = codec.UnmarshalInt(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		nl.Structs = make([]NativeStructSpec, numStructs)
+		for i := range nl.Structs {
+			n, nl.Structs[i].Name, err = codec.UnmarshalString(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			var numFields int
+			n, numFields, err = codec.UnmarshalInt(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			nl.Structs[i].Fields = make([]NativeStructFieldSpec, numFields)
+			for j := range nl.Structs[i].Fields {
+				n, nl.Structs[i].Fields[j].Name, err = codec.UnmarshalString(n, b)
+				if err != nil {
+					return nn, nil, err
+				}
+				var kb byte
+				n, kb, err = codec.UnmarshalByte(n, b)
+				if err != nil {
+					return nn, nil, err
+				}
+				nl.Structs[i].Fields[j].Kind = NativeKind(kb)
+				n, nl.Structs[i].Fields[j].StructIdx, err = codec.UnmarshalInt(n, b)
+				if err != nil {
+					return nn, nil, err
+				}
+				n, nl.Structs[i].Fields[j].Pointer, err = codec.UnmarshalBool(n, b)
+				if err != nil {
+					return nn, nil, err
+				}
+			}
+		}
 		var numFuncs int
 		n, numFuncs, err = codec.UnmarshalInt(n, b)
 		if err != nil {
@@ -706,6 +784,14 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 				return nn, nil, err
 			}
 			nl.Funcs[i].Return = NativeKind(retByte)
+			n, nl.Funcs[i].ReturnStructIdx, err = codec.UnmarshalInt(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			n, nl.Funcs[i].ReturnPointer, err = codec.UnmarshalBool(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
 			var numParams int
 			n, numParams, err = codec.UnmarshalInt(n, b)
 			if err != nil {
@@ -719,6 +805,30 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 					return nn, nil, err
 				}
 				nl.Funcs[i].Params[j] = NativeKind(pb)
+			}
+			var numIdx int
+			n, numIdx, err = codec.UnmarshalInt(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			nl.Funcs[i].ParamStructIdx = make([]int, numIdx)
+			for j := range nl.Funcs[i].ParamStructIdx {
+				n, nl.Funcs[i].ParamStructIdx[j], err = codec.UnmarshalInt(n, b)
+				if err != nil {
+					return nn, nil, err
+				}
+			}
+			var numPtr int
+			n, numPtr, err = codec.UnmarshalInt(n, b)
+			if err != nil {
+				return nn, nil, err
+			}
+			nl.Funcs[i].ParamPointer = make([]bool, numPtr)
+			for j := range nl.Funcs[i].ParamPointer {
+				n, nl.Funcs[i].ParamPointer[j], err = codec.UnmarshalBool(n, b)
+				if err != nil {
+					return nn, nil, err
+				}
 			}
 		}
 		return n, nl, nil

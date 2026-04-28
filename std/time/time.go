@@ -133,6 +133,14 @@ func isTimeShape(o vm.Object) bool {
 
 // Module is the registered "time" builtin module.
 var Module = module.NewBuiltin().
+	Const("second", int64(time.Second)).
+	Const("minute", int64(time.Minute)).
+	Const("hour", int64(time.Hour)).
+	Const("day", int64(24*time.Hour)).
+	Const("week", int64(7*24*time.Hour)).
+	Const("millisecond", int64(time.Millisecond)).
+	Const("microsecond", int64(time.Microsecond)).
+	Const("nanosecond", int64(time.Nanosecond)).
 	// --- Time type constructor (returns the canonical TimeObject shape) ---
 	Func("Time(x) (t time) constructs a time instance from x (time-compatible value)", timeCtorFn).
 	// --- predicates ---

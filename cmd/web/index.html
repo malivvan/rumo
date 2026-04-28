@@ -149,7 +149,7 @@ time := import("time")
 ping := chan(4)
 pong := chan(4)
 
-go func() {
+start func() {
     for i := 0; i < 5; i++ {
         msg := ping.recv()
         fmt.println("worker got:", msg)

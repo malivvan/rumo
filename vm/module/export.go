@@ -51,6 +51,8 @@ func ParseExport(s string) *Export {
 		default:
 			panic(fmt.Errorf("unexpected type: %s", matches[2]))
 		}
+	} else if matches := bareNameRe.FindStringSubmatch(s); matches != nil && len(matches) > 0 {
+		return &Export{Name: matches[1], Comment: strings.TrimSpace(matches[2])}
 	}
 	panic(fmt.Errorf("unexpected export format: %s", s))
 }
@@ -116,6 +118,7 @@ func ParseExports(s string) (fns []*Export, err error) {
 
 var constInfoRe = regexp.MustCompile(`(?m)^\s*([[:word:]]+)\s*(int|float|string|bool|bytes|char|time)\s*([[:print:]]*?)\s*$`)
 var funcInfoRe = regexp.MustCompile(`(?m)^\s*([[:word:]]+)\s*\(([[:print:]]*?)\)\s*(\(([[:print:]]*?)\))?\s*([[:print:]]*?)\s*$`)
+var bareNameRe = regexp.MustCompile(`(?m)^\s*([[:word:]]+)\s*([[:print:]]*?)\s*$`)
 
 func parseTypes(s string) (types []string) {
 	for _, t := range strings.Split(s, "|") {

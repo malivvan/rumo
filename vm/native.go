@@ -222,6 +222,8 @@ func (k NativeKind) String() string {
 		return "ptr"
 	case NativeBytes:
 		return "bytes"
+	case NativeStruct:
+		return "struct"
 	}
 	return "invalid"
 }
@@ -272,12 +274,14 @@ func (k NativeKind) goType() reflect.Type {
 // functions keyed by their declared names.
 type Native struct {
 	ObjectImpl
-	Path  string
-	Funcs []NativeFuncSpec
+	Path    string
+	Funcs   []NativeFuncSpec
+	Structs []NativeStructSpec
 
-	mu     sync.Mutex
-	loaded *Map
-	handle uintptr
+	mu          sync.Mutex
+	loaded      *Map
+	handle      uintptr
+	structTypes []reflect.Type // lazily built reflect.Types per Structs entry
 }
 
 // TypeName returns the name of the type.
@@ -295,7 +299,9 @@ func (o *Native) NativePath() string { return o.Path }
 func (o *Native) Copy() Object {
 	funcs := make([]NativeFuncSpec, len(o.Funcs))
 	copy(funcs, o.Funcs)
-	return &Native{Path: o.Path, Funcs: funcs}
+	structs := make([]NativeStructSpec, len(o.Structs))
+	copy(structs, o.Structs)
+	return &Native{Path: o.Path, Funcs: funcs, Structs: structs}
 }
 
 // Equals returns true if another loader points at the same library and
@@ -362,7 +368,7 @@ func (o *Native) Call(_ context.Context, args ...Object) (Object, error) {
 	entries := make(map[string]Object, len(o.Funcs)+2)
 
 	for _, spec := range o.Funcs {
-		bound, bindErr := buildNativeBinding(handle, spec)
+		bound, bindErr := o.buildNativeBinding(handle, spec)
 		if bindErr != nil {
 			_ = purego.Dlclose(handle)
 			return nil, fmt.Errorf("native %s.%s: %w", o.Path, spec.Name, bindErr)
@@ -400,10 +406,171 @@ func (o *Native) Call(_ context.Context, args ...Object) (Object, error) {
 // Per-symbol binding
 // ----------------------------------------------------------------------------
 
+// nativeArgPin captures objects that must remain alive for the duration of a
+// native call as well as an optional post-call hook (used by struct-pointer
+// out-parameters to copy mutated fields back into the user-supplied Map).
+type nativeArgPin struct {
+	keepAlive any
+	postCall  func() error
+}
+
+// structReflectType returns the cached reflect.Type for the struct at idx,
+// building it on demand. Mutual cycles between struct types are not
+// supported; recursive references will return an error.
+func (o *Native) structReflectType(idx int) (reflect.Type, error) {
+	if idx < 0 || idx >= len(o.Structs) {
+		return nil, fmt.Errorf("invalid struct index %d", idx)
+	}
+	if o.structTypes == nil {
+		o.structTypes = make([]reflect.Type, len(o.Structs))
+	}
+	if t := o.structTypes[idx]; t != nil {
+		return t, nil
+	}
+	spec := o.Structs[idx]
+	fields := make([]reflect.StructField, 0, len(spec.Fields))
+	for _, f := range spec.Fields {
+		var ft reflect.Type
+		if f.Kind == NativeStruct {
+			if f.StructIdx == idx {
+				return nil, fmt.Errorf("struct %q references itself by value", spec.Name)
+			}
+			nt, err := o.structReflectType(f.StructIdx)
+			if err != nil {
+				return nil, err
+			}
+			ft = nt
+		} else {
+			ft = f.Kind.goType()
+			if ft == nil {
+				return nil, fmt.Errorf("struct %q field %q has invalid type", spec.Name, f.Name)
+			}
+		}
+		fields = append(fields, reflect.StructField{
+			Name: nativeFieldGoName(f.Name),
+			Type: ft,
+		})
+	}
+	t := reflect.StructOf(fields)
+	o.structTypes[idx] = t
+	return t, nil
+}
+
+// nativeFieldGoName converts a (possibly lowercase) rumo field name into a
+// valid exported Go identifier so reflect.StructOf will accept it. Names
+// already starting with an uppercase letter are returned unchanged; the rest
+// are prefixed with `F_` so collisions remain unlikely.
+func nativeFieldGoName(name string) string {
+	if name == "" {
+		return "F_"
+	}
+	r := name[0]
+	if r >= 'A' && r <= 'Z' {
+		return name
+	}
+	return "F_" + name
+}
+
+// mapToStruct populates a settable struct reflect.Value from a rumo Map,
+// converting each declared field via rumoToNativeArg (no pinning is needed
+// because struct fields are bare scalars copied into the struct memory).
+func (o *Native) mapToStruct(m *Map, structIdx int, dst reflect.Value) error {
+	spec := o.Structs[structIdx]
+	for i, f := range spec.Fields {
+		v, ok := m.Value[f.Name]
+		if !ok {
+			v = UndefinedValue
+		}
+		fv := dst.Field(i)
+		if f.Kind == NativeStruct {
+			child, ok := v.(*Map)
+			if !ok {
+				return fmt.Errorf("field %q: expected map for struct %q, got %s",
+					f.Name, o.Structs[f.StructIdx].Name, v.TypeName())
+			}
+			if err := o.mapToStruct(child, f.StructIdx, fv); err != nil {
+				return fmt.Errorf("field %q: %w", f.Name, err)
+			}
+			continue
+		}
+		rv, _, err := rumoToNativeArg(v, f.Kind)
+		if err != nil {
+			return fmt.Errorf("field %q: %w", f.Name, err)
+		}
+		fv.Set(rv.Convert(fv.Type()))
+	}
+	return nil
+}
+
+// structToMap converts a struct reflect.Value (or pointer to struct) into a
+// fresh rumo *Map.
+func (o *Native) structToMap(src reflect.Value, structIdx int) (*Map, error) {
+	if src.Kind() == reflect.Pointer {
+		if src.IsNil() {
+			return &Map{Value: map[string]Object{}}, nil
+		}
+		src = src.Elem()
+	}
+	spec := o.Structs[structIdx]
+	out := make(map[string]Object, len(spec.Fields))
+	for i, f := range spec.Fields {
+		fv := src.Field(i)
+		if f.Kind == NativeStruct {
+			nested, err := o.structToMap(fv, f.StructIdx)
+			if err != nil {
+				return nil, fmt.Errorf("field %q: %w", f.Name, err)
+			}
+			out[f.Name] = nested
+			continue
+		}
+		obj, err := nativeResultToRumo(fv, f.Kind)
+		if err != nil {
+			return nil, fmt.Errorf("field %q: %w", f.Name, err)
+		}
+		out[f.Name] = obj
+	}
+	return &Map{Value: out}, nil
+}
+
+// updateMapFromStruct mutates an existing *Map in place to mirror the field
+// values of a struct reflect.Value. Used by `*Struct` pointer parameters to
+// implement out-parameter semantics after the C call returns.
+func (o *Native) updateMapFromStruct(m *Map, src reflect.Value, structIdx int) error {
+	if src.Kind() == reflect.Pointer {
+		src = src.Elem()
+	}
+	spec := o.Structs[structIdx]
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.Value == nil {
+		m.Value = make(map[string]Object, len(spec.Fields))
+	}
+	for i, f := range spec.Fields {
+		fv := src.Field(i)
+		if f.Kind == NativeStruct {
+			child, _ := m.Value[f.Name].(*Map)
+			if child == nil {
+				child = &Map{Value: map[string]Object{}}
+				m.Value[f.Name] = child
+			}
+			if err := o.updateMapFromStruct(child, fv, f.StructIdx); err != nil {
+				return fmt.Errorf("field %q: %w", f.Name, err)
+			}
+			continue
+		}
+		obj, err := nativeResultToRumo(fv, f.Kind)
+		if err != nil {
+			return fmt.Errorf("field %q: %w", f.Name, err)
+		}
+		m.Value[f.Name] = obj
+	}
+	return nil
+}
+
 // buildNativeBinding resolves the symbol using dlsym and wraps it in a
 // *BuiltinFunction that converts rumo arguments <-> Go values, invokes the
 // purego-registered function and converts the result back.
-func buildNativeBinding(handle uintptr, spec NativeFuncSpec) (*BuiltinFunction, error) {
+func (o *Native) buildNativeBinding(handle uintptr, spec NativeFuncSpec) (*BuiltinFunction, error) {
 	// sanity check types
 	for i, p := range spec.Params {
 		if p == NativeVoid {
@@ -420,11 +587,39 @@ func buildNativeBinding(handle uintptr, spec NativeFuncSpec) (*BuiltinFunction, 
 	// build the dynamic Go function signature
 	in := make([]reflect.Type, len(spec.Params))
 	for i, p := range spec.Params {
+		if p == NativeStruct {
+			st, err := o.structReflectType(spec.ParamStructIdx[i])
+			if err != nil {
+				return nil, fmt.Errorf("parameter %d: %w", i, err)
+			}
+			if spec.ParamPointer[i] {
+				// purego treats *Struct as a uintptr at the ABI level, but
+				// registering the actual pointer type is more portable; we
+				// still hand it a uintptr converted from unsafe.Pointer.
+				in[i] = reflect.TypeOf(uintptr(0))
+			} else {
+				in[i] = st
+			}
+			continue
+		}
 		in[i] = p.goType()
 	}
 	var out []reflect.Type
 	if spec.Return != NativeVoid {
-		out = []reflect.Type{spec.Return.goType()}
+		switch spec.Return {
+		case NativeStruct:
+			st, err := o.structReflectType(spec.ReturnStructIdx)
+			if err != nil {
+				return nil, fmt.Errorf("return: %w", err)
+			}
+			if spec.ReturnPointer {
+				out = []reflect.Type{reflect.TypeOf(uintptr(0))}
+			} else {
+				out = []reflect.Type{st}
+			}
+		default:
+			out = []reflect.Type{spec.Return.goType()}
+		}
 	}
 	fnType := reflect.FuncOf(in, out, false)
 
@@ -434,7 +629,11 @@ func buildNativeBinding(handle uintptr, spec NativeFuncSpec) (*BuiltinFunction, 
 	fnValue := fnPtrValue.Elem()
 
 	params := append([]NativeKind(nil), spec.Params...)
+	paramStructIdx := append([]int(nil), spec.ParamStructIdx...)
+	paramPointer := append([]bool(nil), spec.ParamPointer...)
 	ret := spec.Return
+	retStructIdx := spec.ReturnStructIdx
+	retPointer := spec.ReturnPointer
 	name := spec.Name
 
 	return &BuiltinFunction{
@@ -445,15 +644,27 @@ func buildNativeBinding(handle uintptr, spec NativeFuncSpec) (*BuiltinFunction, 
 					name, len(params), len(args))
 			}
 
-			// Rumo values frequently outlive a single call.  Go values built
-			// out of them (e.g. CString backing memory) need to survive the
-			// C call itself; keepAlive captures those references.  purego
-			// also manages memory for arguments it converts, but we keep
-			// user-provided slices reachable for the duration of the call.
 			var keepAlive []any
+			var postCalls []func() error
 
 			callArgs := make([]reflect.Value, len(args))
 			for i, arg := range args {
+				if params[i] == NativeStruct {
+					rv, pin, err := o.rumoToNativeStructArg(arg, paramStructIdx[i], paramPointer[i])
+					if err != nil {
+						return nil, fmt.Errorf("native %s: argument %d: %w", name, i, err)
+					}
+					callArgs[i] = rv
+					if pin != nil {
+						if pin.keepAlive != nil {
+							keepAlive = append(keepAlive, pin.keepAlive)
+						}
+						if pin.postCall != nil {
+							postCalls = append(postCalls, pin.postCall)
+						}
+					}
+					continue
+				}
 				v, pin, err := rumoToNativeArg(arg, params[i])
 				if err != nil {
 					return nil, fmt.Errorf("native %s: argument %d: %w", name, i, err)
@@ -465,15 +676,89 @@ func buildNativeBinding(handle uintptr, spec NativeFuncSpec) (*BuiltinFunction, 
 			}
 
 			results := fnValue.Call(callArgs)
-			// keep arguments alive until after the call has returned
-			_ = keepAlive
+			runtime.KeepAlive(keepAlive)
+
+			// out-parameter copy-back for *Struct args
+			for _, fn := range postCalls {
+				if err := fn(); err != nil {
+					return nil, fmt.Errorf("native %s: %w", name, err)
+				}
+			}
 
 			if ret == NativeVoid {
 				return UndefinedValue, nil
 			}
+			if ret == NativeStruct {
+				return o.nativeStructResultToRumo(results[0], retStructIdx, retPointer)
+			}
 			return nativeResultToRumo(results[0], ret)
 		},
 	}, nil
+}
+
+// rumoToNativeStructArg converts a rumo Map into either a struct value or a
+// pointer-sized integer suitable for passing to a C function. When pointer is
+// true the returned pin's postCall hook is responsible for copying mutated
+// struct fields back into the original Map (out-parameter semantics).
+func (o *Native) rumoToNativeStructArg(arg Object, structIdx int, pointer bool) (reflect.Value, *nativeArgPin, error) {
+	st, err := o.structReflectType(structIdx)
+	if err != nil {
+		return reflect.Value{}, nil, err
+	}
+
+	if pointer {
+		if _, isUndef := arg.(*Undefined); isUndef {
+			return reflect.ValueOf(uintptr(0)), nil, nil
+		}
+		m, ok := arg.(*Map)
+		if !ok {
+			return reflect.Value{}, nil, fmt.Errorf(
+				"expected map for *%s, got %s", o.Structs[structIdx].Name, arg.TypeName())
+		}
+		ptr := reflect.New(st) // *T
+		if err := o.mapToStruct(m, structIdx, ptr.Elem()); err != nil {
+			return reflect.Value{}, nil, err
+		}
+		raw := ptr.Pointer() // returns uintptr; pin via keepAlive below
+		pin := &nativeArgPin{
+			keepAlive: ptr.Interface(),
+			postCall: func() error {
+				return o.updateMapFromStruct(m, ptr.Elem(), structIdx)
+			},
+		}
+		return reflect.ValueOf(raw), pin, nil
+	}
+
+	// by-value
+	m, ok := arg.(*Map)
+	if !ok {
+		return reflect.Value{}, nil, fmt.Errorf(
+			"expected map for struct %s, got %s", o.Structs[structIdx].Name, arg.TypeName())
+	}
+	dst := reflect.New(st).Elem()
+	if err := o.mapToStruct(m, structIdx, dst); err != nil {
+		return reflect.Value{}, nil, err
+	}
+	return dst, nil, nil
+}
+
+// nativeStructResultToRumo converts a struct return value into a rumo *Map.
+// For pointer returns the underlying memory is owned by the C side; rumo
+// dereferences it once into a fresh Map and never retains the pointer.
+func (o *Native) nativeStructResultToRumo(v reflect.Value, structIdx int, pointer bool) (Object, error) {
+	if pointer {
+		raw := uintptr(v.Uint())
+		if raw == 0 {
+			return UndefinedValue, nil
+		}
+		st, err := o.structReflectType(structIdx)
+		if err != nil {
+			return nil, err
+		}
+		ptr := reflect.NewAt(st, unsafe.Pointer(raw))
+		return o.structToMap(ptr.Elem(), structIdx)
+	}
+	return o.structToMap(v, structIdx)
 }
 
 // rumoToNativeArg converts a rumo Object to a reflect.Value typed exactly as

@@ -99,10 +99,50 @@ The following keywords map rumo values to C calling-convention slots:
 | `ptr`        | `int`, `bytes`, `string`, `undefined` | `void *`              | `undefined` → `NULL`; `bytes`/`string` pass a pointer to their backing data |
 | `bytes`      | `bytes`                           | `void *`                  | Passes a pointer to the first byte; C must learn length out-of-band |
 | `void`       | _(return only)_                   | — / `void`                | Disallowed as a parameter type |
+| `<Struct>`   | `map`                             | C struct (by value)       | Layout declared inline via `struct Name { ... }` |
+| `*<Struct>`  | `map`, `undefined`                | C struct pointer          | Out-parameter; mutated fields are copied back into the original map |
 
 Return types follow the inverse mapping. `bytes` and `ptr` returns are
 surfaced as raw integer pointers (`int` values), because purego has no way
-to know the length of the returned buffer.
+to know the length of the returned buffer. Struct returns (by value or via
+`*Struct`) are surfaced as a fresh `map`.
+
+### Structs
+
+A struct layout can be declared inside a `native` block using the `struct`
+keyword. The declared name then becomes a usable parameter / return type
+within the same block:
+
+```rumo
+native lib = "./libgeom.so" {
+    struct Point { x int; y int }
+    struct Rect  { min Point; max Point }
+
+    translate(Point, int, int) Point   // by-value in & out
+    grow(*Rect, int)                   // mutates the caller's map
+    centroid(*Rect) Point              // mixed: pointer in, struct return
+}
+
+p := lib.translate({x: 10, y: 20}, 5, -3)   // p == {x: 15, y: 17}
+r := {min: {x: 0, y: 0}, max: {x: 10, y: 10}}
+lib.grow(r, 2)                              // r is mutated in place
+c := lib.centroid({min: {x: 0, y: 0}, max: {x: 8, y: 6}})
+```
+
+Struct semantics:
+
+- Struct script values are ordinary `map` literals keyed by field name. Missing
+  keys default to the zero value of the corresponding field type; extra keys
+  are ignored.
+- `<Struct>` parameters are passed by value. The return value of a function
+  whose declared return type is `<Struct>` (no leading `*`) is a fresh map.
+- `*<Struct>` parameters are passed as a pointer; after the call returns,
+  rumo copies the (possibly mutated) struct back into the original map,
+  giving callers access to C "out parameter" mutations. Passing `undefined`
+  for a `*<Struct>` parameter is equivalent to passing `NULL`.
+- Field types may be any of the scalar keywords above, or another struct
+  declared in the same block (nested by value). Pointer-typed fields and
+  self-referential structs are not supported in v1.
 
 ---
 
@@ -272,15 +312,19 @@ Loading the library and calling into it can fail at runtime:
 (`faketime`) is also unsupported: on that target every `native` statement
 fails at runtime with a "Dlopen is not supported in the playground" error.
 
-Struct arguments and returns are **not currently exposed through the
-`native` DSL**, even on platforms where purego supports them.
+Struct arguments and returns are now exposed through the `native` DSL via
+inline `struct` declarations. By-value struct passing relies on the host
+platform's purego ABI support; if the target architecture does not support
+struct-by-value, use `*Struct` parameters instead.
 
 ---
 
 ## Limitations
 
-- No struct, array, or callback parameter types. Only the scalar types
-  listed in [Type System](#type-system) are supported.
+- Only the scalar types listed in [Type System](#type-system) plus
+  user-declared `struct` blocks are supported. Arrays, slices of structs,
+  and callbacks are not yet exposed.
+- Pointer-valued struct fields and self-referential structs are not supported.
 - `func`-valued parameters (C function pointers / callbacks) must currently
   be produced by other native calls and passed back as `ptr`; there is no
   way to hand a rumo closure to a C function directly.

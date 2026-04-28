@@ -24,8 +24,9 @@ func ResolveNativePath(_ string) string { return "" }
 // native libraries a bytecode file would require.
 type Native struct {
 	ObjectImpl
-	Path  string
-	Funcs []NativeFuncSpec
+	Path    string
+	Funcs   []NativeFuncSpec
+	Structs []NativeStructSpec
 }
 
 // TypeName returns the name of the type.

@@ -434,3 +434,216 @@ native bad = "x" {
 		t.Fatalf("expected void-not-allowed error, got: %v", err)
 	}
 }
+
+// -------------------------------------------------------------------------
+// Struct support
+// -------------------------------------------------------------------------
+
+const testNativeStructCSource = `
+#include <stdint.h>
+#include <stddef.h>
+
+typedef struct { int64_t x; int64_t y; } Point;
+typedef struct { Point min; Point max; } Rect;
+
+Point translate(Point p, int64_t dx, int64_t dy) {
+    Point r;
+    r.x = p.x + dx;
+    r.y = p.y + dy;
+    return r;
+}
+
+void grow(Rect *r, int64_t pad) {
+    if (r == NULL) return;
+    r->min.x -= pad; r->min.y -= pad;
+    r->max.x += pad; r->max.y += pad;
+}
+
+Point centroid(const Rect *r) {
+    Point p = {0, 0};
+    if (r == NULL) return p;
+    p.x = (r->min.x + r->max.x) / 2;
+    p.y = (r->min.y + r->max.y) / 2;
+    return p;
+}
+`
+
+// TestNative_StructByValue verifies struct parameters and returns by value.
+func TestNative_StructByValue(t *testing.T) {
+	libPath := buildTestNativeLib(t, testNativeStructCSource)
+	vm.AllowNativePath(libPath)
+	defer vm.ClearNativeAllowList()
+
+	src := fmt.Sprintf(`
+native lib = %q {
+    struct Point { x int; y int }
+    translate(Point, int, int) Point
+}
+out = lib.translate({x: 10, y: 20}, 5, -3)
+`, libPath)
+
+	got, err := compileAndRunNative(t, src)
+	if err != nil {
+		t.Fatalf("native program failed: %v", err)
+	}
+	m, ok := got.(*vm.Map)
+	if !ok {
+		t.Fatalf("expected *vm.Map, got %T: %s", got, got.String())
+	}
+	x, _ := m.Value["x"].(*vm.Int)
+	y, _ := m.Value["y"].(*vm.Int)
+	if x == nil || y == nil || x.Value != 15 || y.Value != 17 {
+		t.Fatalf("unexpected result map: %v", m.Value)
+	}
+}
+
+// TestNative_StructByPointer_OutParam verifies *Struct parameters perform
+// out-parameter copy-back into the original Map.
+func TestNative_StructByPointer_OutParam(t *testing.T) {
+	libPath := buildTestNativeLib(t, testNativeStructCSource)
+	vm.AllowNativePath(libPath)
+	defer vm.ClearNativeAllowList()
+
+	src := fmt.Sprintf(`
+native lib = %q {
+    struct Point { x int; y int }
+    struct Rect  { min Point; max Point }
+    grow(*Rect, int)
+}
+r := {min: {x: 0, y: 0}, max: {x: 10, y: 10}}
+lib.grow(r, 2)
+out = r
+`, libPath)
+
+	got, err := compileAndRunNative(t, src)
+	if err != nil {
+		t.Fatalf("native program failed: %v", err)
+	}
+	m, ok := got.(*vm.Map)
+	if !ok {
+		t.Fatalf("expected *vm.Map, got %T", got)
+	}
+	min, _ := m.Value["min"].(*vm.Map)
+	max, _ := m.Value["max"].(*vm.Map)
+	if min == nil || max == nil {
+		t.Fatalf("missing nested maps: %v", m.Value)
+	}
+	check := func(label string, m *vm.Map, wx, wy int64) {
+		t.Helper()
+		x, _ := m.Value["x"].(*vm.Int)
+		y, _ := m.Value["y"].(*vm.Int)
+		if x == nil || y == nil || x.Value != wx || y.Value != wy {
+			t.Fatalf("%s: want (%d,%d) got %v", label, wx, wy, m.Value)
+		}
+	}
+	check("min", min, -2, -2)
+	check("max", max, 12, 12)
+}
+
+// TestNative_NestedStruct exercises mixing pointer-to-nested-struct input
+// with by-value struct return.
+func TestNative_NestedStruct(t *testing.T) {
+	libPath := buildTestNativeLib(t, testNativeStructCSource)
+	vm.AllowNativePath(libPath)
+	defer vm.ClearNativeAllowList()
+
+	src := fmt.Sprintf(`
+native lib = %q {
+    struct Point { x int; y int }
+    struct Rect  { min Point; max Point }
+    centroid(*Rect) Point
+}
+out = lib.centroid({min: {x: 0, y: 0}, max: {x: 8, y: 6}})
+`, libPath)
+
+	got, err := compileAndRunNative(t, src)
+	if err != nil {
+		t.Fatalf("native program failed: %v", err)
+	}
+	m, ok := got.(*vm.Map)
+	if !ok {
+		t.Fatalf("expected *vm.Map, got %T: %s", got, got.String())
+	}
+	x, _ := m.Value["x"].(*vm.Int)
+	y, _ := m.Value["y"].(*vm.Int)
+	if x == nil || y == nil || x.Value != 4 || y.Value != 3 {
+		t.Fatalf("unexpected centroid: %v", m.Value)
+	}
+}
+
+// TestNative_StructDuplicate rejects two struct decls with the same name.
+func TestNative_StructDuplicate(t *testing.T) {
+	src := `
+native bad = "x" {
+    struct A { x int }
+    struct A { y int }
+}
+`
+	_, err := compileAndRunNative(t, src)
+	if err == nil || !strings.Contains(err.Error(), "duplicate struct") {
+		t.Fatalf("expected duplicate struct error, got: %v", err)
+	}
+}
+
+// TestNative_StructUnknownField rejects fields that reference unknown types.
+func TestNative_StructUnknownField(t *testing.T) {
+	src := `
+native bad = "x" {
+    struct A { x mystery }
+    f(A) int
+}
+`
+	_, err := compileAndRunNative(t, src)
+	if err == nil || !strings.Contains(err.Error(), "unknown field type") {
+		t.Fatalf("expected unknown field type error, got: %v", err)
+	}
+}
+
+// TestNative_ParseStructRoundTrip ensures the parser captures struct decls.
+func TestNative_ParseStructRoundTrip(t *testing.T) {
+	src := `
+native lib = "lib.so" {
+    struct Point { x int; y int }
+    struct Rect  { min Point; max Point }
+    centroid(*Rect) Point
+    translate(Point, int, int) Point
+}
+`
+	fileSet := parser.NewFileSet()
+	srcFile := fileSet.AddFile("structs", -1, len(src))
+	p := parser.NewParser(srcFile, []byte(src), nil)
+	file, err := p.ParseFile()
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var stmt *parser.NativeStmt
+	for _, s := range file.Stmts {
+		if ns, ok := s.(*parser.NativeStmt); ok {
+			stmt = ns
+			break
+		}
+	}
+	if stmt == nil {
+		t.Fatalf("no NativeStmt in parsed output")
+	}
+	if len(stmt.Structs) != 2 {
+		t.Fatalf("expected 2 struct decls, got %d", len(stmt.Structs))
+	}
+	if stmt.Structs[0].Name.Name != "Point" || stmt.Structs[1].Name.Name != "Rect" {
+		t.Fatalf("unexpected struct names: %s, %s",
+			stmt.Structs[0].Name.Name, stmt.Structs[1].Name.Name)
+	}
+	if len(stmt.Funcs) != 2 {
+		t.Fatalf("expected 2 funcs, got %d", len(stmt.Funcs))
+	}
+	if !stmt.Funcs[0].ParamTypes[0].Pointer {
+		t.Fatalf("expected centroid first param to be pointer")
+	}
+	if stmt.Funcs[0].ParamTypes[0].Name.Name != "Rect" {
+		t.Fatalf("expected centroid first param to be Rect")
+	}
+	if stmt.Funcs[1].ParamTypes[0].Pointer {
+		t.Fatalf("expected translate first param to be by value")
+	}
+}
+

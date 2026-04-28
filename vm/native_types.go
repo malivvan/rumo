@@ -26,6 +26,7 @@ const (
 	NativeString  // const char* (null-terminated)
 	NativePtr     // void*
 	NativeBytes   // void* (pointer to slice data) + length
+	NativeStruct  // user-declared struct (resolved via NativeFuncSpec.ParamStructIdx / ReturnStructIdx)
 
 	// NativeInt is the rumo "int" which is implementation-defined as 32- or
 	// 64-bit. We treat it as a C long (64-bit on modern targets) for ABI
@@ -42,9 +43,36 @@ const (
 
 // NativeFuncSpec is the compile-time description of a single native function
 // binding captured from a `native ... { ... }` statement.
+//
+// Scalar parameter / return types are encoded directly in the corresponding
+// NativeKind. For NativeStruct entries the parallel ParamStructIdx /
+// ReturnStructIdx slot points into Native.Structs, and the matching
+// ParamPointer / ReturnPointer flag distinguishes between by-value and by
+// pointer (`*Name`) passing semantics.
 type NativeFuncSpec struct {
+	Name           string
+	Params         []NativeKind
+	ParamStructIdx []int  // parallel to Params; -1 if not NativeStruct
+	ParamPointer   []bool // parallel to Params; true if declared as *Name
+	Return         NativeKind // NativeVoid = no return
+	ReturnStructIdx int       // -1 if Return is not NativeStruct
+	ReturnPointer   bool      // true if return declared as *Name
+}
+
+// NativeStructFieldSpec describes a single field of a NativeStructSpec.
+// A field may be a scalar (Kind != NativeStruct) or a nested struct
+// (Kind == NativeStruct, StructIdx >= 0). Pointer field types are not
+// supported in v1.
+type NativeStructFieldSpec struct {
+	Name      string
+	Kind      NativeKind
+	StructIdx int  // index into Native.Structs when Kind == NativeStruct, else -1
+	Pointer   bool // reserved for future use; always false in v1
+}
+
+// NativeStructSpec describes a struct declared inside a native block.
+type NativeStructSpec struct {
 	Name   string
-	Params []NativeKind
-	Return NativeKind // NativeVoid = no return
+	Fields []NativeStructFieldSpec
 }
 
