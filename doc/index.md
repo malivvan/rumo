@@ -2,8 +2,7 @@
 title: index
 ---
 
-rumo's syntax is designed to be familiar to Go developers while being a bit
-simpler and more streamlined.
+rumo's syntax is designed to be familiar to Go developers while being a bit simpler and more streamlined.
 
 ## std library
 
