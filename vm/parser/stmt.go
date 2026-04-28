@@ -142,6 +142,25 @@ func (s *BranchStmt) String() string {
 	return s.Token.String() + label
 }
 
+// LabeledStmt represents a labeled statement (e.g. `L: stmt`).
+type LabeledStmt struct {
+	Label *Ident
+	Colon Pos
+	Stmt  Stmt
+}
+
+func (s *LabeledStmt) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *LabeledStmt) Pos() Pos { return s.Label.Pos() }
+
+// End returns the position of first character immediately after the node.
+func (s *LabeledStmt) End() Pos { return s.Stmt.End() }
+
+func (s *LabeledStmt) String() string {
+	return s.Label.Name + ": " + s.Stmt.String()
+}
+
 // EmptyStmt represents an empty statement.
 type EmptyStmt struct {
 	Semicolon Pos

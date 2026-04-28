@@ -147,8 +147,8 @@ server := func() {
 	}
 }
 
-rClient := go client(2)
-rServer := go server()
+rClient := start client(2)
+rServer := start server()
 
 if ok := rClient.wait(5); !ok {
 	rClient.stop()

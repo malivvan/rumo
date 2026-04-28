@@ -94,6 +94,7 @@ const (
 	Default
 	Fallthrough
 	Select
+	Goto
 	_keywordEnd
 )
 
@@ -178,6 +179,7 @@ var tokens = [...]string{
 	Default:      "default",
 	Fallthrough:  "fallthrough",
 	Select:       "select",
+	Goto:         "goto",
 }
 
 func (tok Token) String() string {

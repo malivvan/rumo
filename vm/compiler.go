@@ -19,6 +19,14 @@ type compilationScope struct {
 	SymbolInit   map[string]bool
 	SourceMap    map[int]parser.Pos
 	hasDefer     bool // true if this scope emitted at least one OpDefer
+	labels       map[string]int
+	pendingGotos map[string][]pendingGoto
+}
+
+// pendingGoto records an unresolved goto jump waiting for its label.
+type pendingGoto struct {
+	pos  int
+	node parser.Node
 }
 
 // CompilerWarning represents a non-fatal diagnostic emitted during compilation.
@@ -118,8 +126,10 @@ func (c *Compiler) addWarning(node parser.Node, format string, args ...interface
 // NewCompiler creates a Compiler.
 func NewCompiler(file *parser.SourceFile, symbolTable *SymbolTable, constants []Object, modules *ModuleMap, trace io.Writer) *Compiler {
 	mainScope := compilationScope{
-		SymbolInit: make(map[string]bool),
-		SourceMap:  make(map[int]parser.Pos),
+		SymbolInit:   make(map[string]bool),
+		SourceMap:    make(map[int]parser.Pos),
+		labels:       make(map[string]int),
+		pendingGotos: make(map[string][]pendingGoto),
 	}
 
 	// symbol table
@@ -166,6 +176,9 @@ func (c *Compiler) Compile(node parser.Node) error {
 			if err := c.Compile(stmt); err != nil {
 				return err
 			}
+		}
+		if err := c.checkPendingGotos(node); err != nil {
+			return err
 		}
 	case *parser.ExprStmt:
 		if err := c.Compile(node.Expr); err != nil {
@@ -322,6 +335,24 @@ func (c *Compiler) Compile(node parser.Node) error {
 		return c.compileSwitchStmt(node)
 	case *parser.SelectStmt:
 		return c.compileSelectStmt(node)
+	case *parser.LabeledStmt:
+		name := node.Label.Name
+		scope := &c.scopes[c.scopeIndex]
+		if _, dup := scope.labels[name]; dup {
+			return c.errorf(node, "label '%s' already defined", name)
+		}
+		target := len(c.currentInstructions())
+		scope.labels[name] = target
+		// patch any pending forward gotos to this label
+		if pending, ok := scope.pendingGotos[name]; ok {
+			for _, pg := range pending {
+				c.changeOperand(pg.pos, target)
+			}
+			delete(scope.pendingGotos, name)
+		}
+		if err := c.Compile(node.Stmt); err != nil {
+			return err
+		}
 	case *parser.BranchStmt:
 		if node.Token == token.Break {
 			curLoop := c.currentLoop()
@@ -347,6 +378,21 @@ func (c *Compiler) Compile(node parser.Node) error {
 			}
 			pos := c.emit(node, parser.OpJump, 0)
 			sw.Fallthroughs = append(sw.Fallthroughs, pos)
+		} else if node.Token == token.Goto {
+			if node.Label == nil {
+				return c.errorf(node, "goto requires a label")
+			}
+			name := node.Label.Name
+			scope := &c.scopes[c.scopeIndex]
+			if target, ok := scope.labels[name]; ok {
+				// backward jump to known label
+				c.emit(node, parser.OpJump, target)
+			} else {
+				// forward jump: emit placeholder and record for patching
+				pos := c.emit(node, parser.OpJump, 0)
+				scope.pendingGotos[name] = append(
+					scope.pendingGotos[name], pendingGoto{pos: pos, node: node})
+			}
 		} else {
 			panic(fmt.Errorf("invalid branch statement: %s",
 				node.Token.String()))
@@ -462,6 +508,10 @@ func (c *Compiler) Compile(node parser.Node) error {
 		}
 
 		if err := c.Compile(node.Body); err != nil {
+			return err
+		}
+
+		if err := c.checkPendingGotos(node); err != nil {
 			return err
 		}
 
@@ -1922,14 +1972,29 @@ func (c *Compiler) currentInstructions() []byte {
 	return c.scopes[c.scopeIndex].Instructions
 }
 
+// checkPendingGotos returns an error if the current scope still has any
+// unresolved forward gotos (the labels were never defined).
+func (c *Compiler) checkPendingGotos(node parser.Node) error {
+	scope := &c.scopes[c.scopeIndex]
+	for name, pending := range scope.pendingGotos {
+		if len(pending) == 0 {
+			continue
+		}
+		return c.errorf(pending[0].node, "label '%s' not defined", name)
+	}
+	return nil
+}
+
 func (c *Compiler) currentSourceMap() map[int]parser.Pos {
 	return c.scopes[c.scopeIndex].SourceMap
 }
 
 func (c *Compiler) enterScope() {
 	scope := compilationScope{
-		SymbolInit: make(map[string]bool),
-		SourceMap:  make(map[int]parser.Pos),
+		SymbolInit:   make(map[string]bool),
+		SourceMap:    make(map[int]parser.Pos),
+		labels:       make(map[string]int),
+		pendingGotos: make(map[string][]pendingGoto),
 	}
 	c.scopes = append(c.scopes, scope)
 	c.scopeIndex++

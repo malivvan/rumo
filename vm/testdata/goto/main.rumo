@@ -1,0 +1,11 @@
+fmt := import("fmt")
+
+i := 0
+
+BEFORE:
+
+fmt.println("Before goto, i =", i)
+if i < 5 {
+    i++
+    goto BEFORE
+}

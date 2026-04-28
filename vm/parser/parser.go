@@ -25,6 +25,7 @@ var stmtStart = map[token.Token]bool{
 	token.Type:     true,
 	token.Switch:   true,
 	token.Select:   true,
+	token.Goto:     true,
 }
 
 // Error represents a parser error.
@@ -702,6 +703,10 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		token.LBrack, token.Add, token.Sub, token.Mul, token.And, token.Xor,
 		token.Not:
 		s := p.parseSimpleStmt(false)
+		if _, isLabel := s.(*LabeledStmt); isLabel {
+			// labeled statement already consumed its own terminator
+			return s
+		}
 		p.expectSemi()
 		return s
 	case token.Return:
@@ -718,7 +723,7 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return p.parseSwitchStmt()
 	case token.Select:
 		return p.parseSelectStmt()
-	case token.Break, token.Continue, token.Fallthrough:
+	case token.Break, token.Continue, token.Fallthrough, token.Goto:
 		return p.parseBranchStmt(p.token)
 	case token.Native:
 		return p.parseNativeStmt()
@@ -730,6 +735,9 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return s
 	case token.RBrace:
 		// semicolon may be omitted before a closing "}"
+		return &EmptyStmt{Semicolon: p.pos, Implicit: true}
+	case token.EOF:
+		// allow a labeled statement to terminate the file with no body
 		return &EmptyStmt{Semicolon: p.pos, Implicit: true}
 	default:
 		pos := p.pos
@@ -817,6 +825,8 @@ func (p *Parser) parseBranchStmt(tok token.Token) Stmt {
 	var label *Ident
 	if p.token == token.Ident {
 		label = p.parseIdent()
+	} else if tok == token.Goto {
+		p.errorExpected(p.pos, "label name")
 	}
 	p.expectSemi()
 	return &BranchStmt{
@@ -1141,6 +1151,20 @@ func (p *Parser) parseSimpleStmt(forIn bool) Stmt {
 	p.pendingEmbed = nil
 
 	x := p.parseExprList()
+
+	// Labeled statement: `Ident: stmt`
+	if !forIn && len(x) == 1 && p.token == token.Colon {
+		if ident, ok := x[0].(*Ident); ok {
+			colonPos := p.pos
+			p.next()
+			stmt := p.parseStmt()
+			return &LabeledStmt{
+				Label: ident,
+				Colon: colonPos,
+				Stmt:  stmt,
+			}
+		}
+	}
 
 	switch p.token {
 	case token.Assign, token.Define: // assignment statement
