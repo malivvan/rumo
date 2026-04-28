@@ -50,8 +50,8 @@ var Module = module.NewBuiltin().
 		return randRand(rand.New(src)), nil
 	})
 
-func randRand(r *rand.Rand) *vm.ImmutableMap {
-	return &vm.ImmutableMap{Value: map[string]vm.Object{
+func randRand(r *rand.Rand) *vm.Map {
+	return &vm.Map{Frozen: true, Value: map[string]vm.Object{
 		"int":        &vm.BuiltinFunction{Name: "int", Value: module.Func(r.Int63)},
 		"float":      &vm.BuiltinFunction{Name: "float", Value: module.Func(r.Float64)},
 		"intn":       &vm.BuiltinFunction{Name: "intn", Value: module.Func(r.Int63n)},

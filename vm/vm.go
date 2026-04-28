@@ -637,40 +637,6 @@ func (v *VM) run() {
 				return
 			}
 			v.stack[v.sp-1] = e
-		case parser.OpImmutable:
-			value := v.stack[v.sp-1]
-			switch value := value.(type) {
-			case *Array:
-				value.mu.RLock()
-				arr := make([]Object, len(value.Value))
-				copy(arr, value.Value)
-				value.mu.RUnlock()
-				var immutableArray Object = &ImmutableArray{
-					Value: arr,
-				}
-				v.allocs--
-				if v.allocs == 0 {
-					v.err = ErrObjectAllocLimit
-					return
-				}
-				v.stack[v.sp-1] = immutableArray
-			case *Map:
-				value.mu.RLock()
-				m := make(map[string]Object, len(value.Value))
-				for k, val := range value.Value {
-					m[k] = val
-				}
-				value.mu.RUnlock()
-				var immutableMap Object = &ImmutableMap{
-					Value: m,
-				}
-				v.allocs--
-				if v.allocs == 0 {
-					v.err = ErrObjectAllocLimit
-					return
-				}
-				v.stack[v.sp-1] = immutableMap
-			}
 		case parser.OpIndex:
 			index := v.stack[v.sp-1]
 			left := v.stack[v.sp-2]
@@ -714,43 +680,6 @@ func (v *VM) run() {
 
 			switch left := left.(type) {
 			case *Array:
-				numElements := int64(len(left.Value))
-				var highIdx int64
-				if high == UndefinedValue {
-					highIdx = numElements
-				} else if high, ok := high.(*Int); ok {
-					highIdx = high.Value
-				} else {
-					v.err = fmt.Errorf("invalid slice index type: %s",
-						high.TypeName())
-					return
-				}
-				if lowIdx > highIdx {
-					v.err = fmt.Errorf("invalid slice index: %d > %d",
-						lowIdx, highIdx)
-					return
-				}
-				if lowIdx < 0 {
-					lowIdx = 0
-				} else if lowIdx > numElements {
-					lowIdx = numElements
-				}
-				if highIdx < 0 {
-					highIdx = 0
-				} else if highIdx > numElements {
-					highIdx = numElements
-				}
-				var val Object = &Array{
-					Value: left.Value[lowIdx:highIdx],
-				}
-				v.allocs--
-				if v.allocs == 0 {
-					v.err = ErrObjectAllocLimit
-					return
-				}
-				v.stack[v.sp] = val
-				v.sp++
-			case *ImmutableArray:
 				numElements := int64(len(left.Value))
 				var highIdx int64
 				if high == UndefinedValue {
@@ -885,15 +814,6 @@ func (v *VM) run() {
 						v.sp++
 					}
 					numArgs += len(arr.Value) - 1
-				case *ImmutableArray:
-					if !v.checkGrowStack(len(arr.Value)) {
-						return
-					}
-					for _, item := range arr.Value {
-						v.stack[v.sp] = item
-						v.sp++
-					}
-					numArgs += len(arr.Value) - 1
 				default:
 					v.err = fmt.Errorf("not an array: %s", arr.TypeName())
 					return
@@ -1019,15 +939,6 @@ func (v *VM) run() {
 						v.sp++
 					}
 					numArgs += len(arr.Value) - 1
-				case *ImmutableArray:
-					if !v.checkGrowStack(len(arr.Value)) {
-						return
-					}
-					for _, item := range arr.Value {
-						v.stack[v.sp] = item
-						v.sp++
-					}
-					numArgs += len(arr.Value) - 1
 				default:
 					v.err = fmt.Errorf("not an array: %s", arr.TypeName())
 					return
@@ -1072,15 +983,6 @@ func (v *VM) run() {
 				v.sp--
 				switch arr := v.stack[v.sp].(type) {
 				case *Array:
-					if !v.checkGrowStack(len(arr.Value)) {
-						return
-					}
-					for _, item := range arr.Value {
-						v.stack[v.sp] = item
-						v.sp++
-					}
-					numArgs += len(arr.Value) - 1
-				case *ImmutableArray:
 					if !v.checkGrowStack(len(arr.Value)) {
 						return
 					}

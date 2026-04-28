@@ -74,6 +74,11 @@ var (
 	// format string exceeds Config.MaxFormatWidth.  This prevents a DoS where a
 	// tiny format string such as "%999999d" would allocate ~1 MB of padding.
 	ErrFormatWidthLimit = errors.New("format width/precision exceeds limit")
+
+	// ErrModifyFrozen is returned when a script attempts to mutate (e.g.
+	// IndexSet, append-in-place, delete) a value that has been frozen via the
+	// `freeze` builtin or constructed as a frozen module export.
+	ErrModifyFrozen = errors.New("cannot modify frozen object")
 )
 
 // ErrInvalidArgumentType represents an invalid argument value type error.

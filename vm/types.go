@@ -148,8 +148,6 @@ func (t *UserType) callStruct(args []Object) (Object, error) {
 			m.mu.RLock()
 			defer m.mu.RUnlock()
 			return t.fillFromMap(inst, m.Value)
-		case *ImmutableMap:
-			return t.fillFromMap(inst, m.Value)
 		}
 	}
 
@@ -348,12 +346,8 @@ func valueTypeConverter(name string) (CallableFunc, bool) {
 		return builtinPtr, true
 	case "array":
 		return builtinArray, true
-	case "immutable_array":
-		return builtinImmutableArray, true
 	case "map":
 		return builtinMap, true
-	case "immutable_map":
-		return builtinImmutableMap, true
 	}
 	return nil, false
 }
@@ -435,14 +429,8 @@ func isOfType(typeName string, v Object) bool {
 	case "array":
 		_, ok := v.(*Array)
 		return ok
-	case "immutable_array":
-		_, ok := v.(*ImmutableArray)
-		return ok
 	case "map":
 		_, ok := v.(*Map)
-		return ok
-	case "immutable_map":
-		_, ok := v.(*ImmutableMap)
 		return ok
 	case "undefined":
 		_, ok := v.(*Undefined)
@@ -495,12 +483,8 @@ func zeroForType(typeName string) Object {
 		return &Bytes{}
 	case "array":
 		return &Array{}
-	case "immutable_array":
-		return &ImmutableArray{}
 	case "map":
 		return &Map{Value: make(map[string]Object)}
-	case "immutable_map":
-		return &ImmutableMap{Value: make(map[string]Object)}
 	}
 	return UndefinedValue
 }
@@ -514,6 +498,28 @@ type StructInstance struct {
 	Type   *UserType
 	mu     sync.RWMutex
 	Values map[string]Object
+	Frozen bool
+}
+
+// Freeze marks the struct instance as immutable.
+func (s *StructInstance) Freeze() {
+	s.mu.Lock()
+	s.Frozen = true
+	s.mu.Unlock()
+}
+
+// Melt makes the struct instance mutable again.
+func (s *StructInstance) Melt() {
+	s.mu.Lock()
+	s.Frozen = false
+	s.mu.Unlock()
+}
+
+// IsFrozen reports whether the struct instance has been Frozen.
+func (s *StructInstance) IsFrozen() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Frozen
 }
 
 // TypeName returns the name of the type.
@@ -569,8 +575,9 @@ func (s *StructInstance) copyWithMemo(memo map[uintptr]Object) Object {
 	for k, v := range s.Values {
 		snap[k] = v
 	}
+	Frozen := s.Frozen
 	s.mu.RUnlock()
-	c := &StructInstance{Type: s.Type, Values: make(map[string]Object, len(snap))}
+	c := &StructInstance{Type: s.Type, Values: make(map[string]Object, len(snap)), Frozen: Frozen}
 	memo[key] = c
 	for k, v := range snap {
 		c.Values[k] = copyElem(v, memo)
@@ -657,6 +664,9 @@ func (s *StructInstance) IndexSet(index, value Object) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.Frozen {
+		return ErrNotIndexAssignable
+	}
 	if _, known := s.Values[key]; !known {
 		return fmt.Errorf("type %s: no such field %q", s.TypeName(), key)
 	}

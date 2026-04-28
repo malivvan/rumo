@@ -376,9 +376,9 @@ func (b *Bytecode) RemoveDuplicates() {
 	floats32 := make(map[uint32]int)
 	floats64 := make(map[uint64]int)
 	chars := make(map[rune]int)
-	immutableMaps := make(map[string]int)    // for modules
-	bytesConsts := make(map[[32]byte]int)    // keyed by SHA-256 of content
-	mapConsts := make(map[[32]byte]int)      // keyed by canonical content hash
+	modules := make(map[string]int)       // for modules
+	bytesConsts := make(map[[32]byte]int) // keyed by SHA-256 of content
+	mapConsts := make(map[[32]byte]int)   // keyed by canonical content hash
 
 	for curIdx, c := range b.Constants {
 		switch c := c.(type) {
@@ -391,16 +391,30 @@ func (b *Bytecode) RemoveDuplicates() {
 				indexMap[curIdx] = newIdx
 				deduped = append(deduped, c)
 			}
-		case *ImmutableMap:
-			modName := inferModuleName(c)
-			newIdx, ok := immutableMaps[modName]
-			if modName != "" && ok {
-				indexMap[curIdx] = newIdx
+		case *Map:
+			// Frozen maps with a module name are deduplicated by module
+			// name; all others use canonical content hash so multi-file
+			// embed directives matching the same files share one constant.
+			if c.IsFrozen() && c.moduleName != "" {
+				modName := c.moduleName
+				if newIdx, ok := modules[modName]; ok {
+					indexMap[curIdx] = newIdx
+				} else {
+					newIdx := len(deduped)
+					modules[modName] = newIdx
+					indexMap[curIdx] = newIdx
+					deduped = append(deduped, c)
+				}
 			} else {
-				newIdx = len(deduped)
-				immutableMaps[modName] = newIdx
-				indexMap[curIdx] = newIdx
-				deduped = append(deduped, c)
+				h := mapContentHash(c)
+				if newIdx, ok := mapConsts[h]; ok {
+					indexMap[curIdx] = newIdx
+				} else {
+					newIdx := len(deduped)
+					mapConsts[h] = newIdx
+					indexMap[curIdx] = newIdx
+					deduped = append(deduped, c)
+				}
 			}
 		case *Int:
 			if newIdx, ok := ints[c.Value]; ok {
@@ -458,20 +472,6 @@ func (b *Bytecode) RemoveDuplicates() {
 			} else {
 				newIdx = len(deduped)
 				bytesConsts[h] = newIdx
-				indexMap[curIdx] = newIdx
-				deduped = append(deduped, c)
-			}
-		case *Map:
-			// Deduplicate by a canonical content hash (sorted keys + marshalled
-			// values). Multi-file embed directives that match the same set of
-			// files produce structurally identical Map constants; sharing one
-			// constant avoids duplicating potentially large embedded data.
-			h := mapContentHash(c)
-			if newIdx, ok := mapConsts[h]; ok {
-				indexMap[curIdx] = newIdx
-			} else {
-				newIdx = len(deduped)
-				mapConsts[h] = newIdx
 				indexMap[curIdx] = newIdx
 				deduped = append(deduped, c)
 			}
@@ -567,28 +567,13 @@ func fixDecodedObject(
 			}
 			o.Value[i] = fv
 		}
-	case *ImmutableArray:
-		for i, v := range o.Value {
-			fv, err := fixDecodedObject(v, modules)
-			if err != nil {
-				return nil, err
-			}
-			o.Value[i] = fv
-		}
 	case *Map:
-		for k, v := range o.Value {
-			fv, err := fixDecodedObject(v, modules)
-			if err != nil {
-				return nil, err
+		// Frozen map with a module name — restore the live module proxy.
+		if o.IsFrozen() && o.moduleName != "" {
+			if mod := modules.GetBuiltinModule(o.moduleName); mod != nil {
+				return mod.AsFrozenMap(o.moduleName), nil
 			}
-			o.Value[k] = fv
 		}
-	case *ImmutableMap:
-		modName := inferModuleName(o)
-		if mod := modules.GetBuiltinModule(modName); mod != nil {
-			return mod.AsImmutableMap(modName), nil
-		}
-
 		for k, v := range o.Value {
 
 			fv, err := fixDecodedObject(v, modules)
@@ -630,7 +615,7 @@ func updateConstIndexes(insts []byte, indexMap map[int]int) {
 	}
 }
 
-func inferModuleName(mod *ImmutableMap) string {
+func inferModuleName(mod *Map) string {
 	return mod.moduleName
 }
 
@@ -638,9 +623,8 @@ func inferModuleName(mod *ImmutableMap) string {
 // builtins / bools / undefined values inside o. Use it on objects produced
 // by UnmarshalLive (e.g. globals shipped from another worker) before letting
 // a VM call them — without it, *BuiltinFunction values have a nil Value
-// pointer and *ImmutableMap module proxies are still detached from their
+// pointer and *Map module proxies are still detached from their
 // host implementations.
 func FixDecodedObject(o Object, modules *ModuleMap) (Object, error) {
 	return fixDecodedObject(o, modules)
 }
-

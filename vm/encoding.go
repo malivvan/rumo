@@ -9,20 +9,20 @@ import (
 )
 
 const (
-	_undefined        byte = 1
-	_bool             byte = 2
-	_bytes            byte = 3
-	_char             byte = 4
-	_int              byte = 5
-	_float            byte = 6  // legacy alias for _float64
-	_float64          byte = 6  // float64 / C double
-	_float32          byte = 16 // float32 / C float
-	_string           byte = 7
-	_time             byte = 8 // reserved (formerly *Time); do not reuse to preserve bytecode compatibility
-	_array            byte = 9
-	_map              byte = 10
-	_immutableArray   byte = 11
-	_immutableMap     byte = 12
+	_undefined byte = 1
+	_bool      byte = 2
+	_bytes     byte = 3
+	_char      byte = 4
+	_int       byte = 5
+	_float     byte = 6  // legacy alias for _float64
+	_float64   byte = 6  // float64 / C double
+	_float32   byte = 16 // float32 / C float
+	_string    byte = 7
+	//	_time             byte = 8 // reserved (formerly *Time); do not reuse to preserve bytecode compatibility
+	_array byte = 9
+	_map   byte = 10
+	//	_immutableArray   byte = 11
+	//	_immutableMap     byte = 12
 	_objectPtr        byte = 13
 	_compiledFunction byte = 14
 	_error            byte = 15
@@ -66,8 +66,6 @@ var _typeMap = map[byte]func() Object{
 	_string:           func() Object { return &String{} },
 	_array:            func() Object { return &Array{} },
 	_map:              func() Object { return &Map{Value: make(map[string]Object)} },
-	_immutableArray:   func() Object { return &ImmutableArray{} },
-	_immutableMap:     func() Object { return &ImmutableMap{Value: make(map[string]Object)} },
 	_objectPtr:        func() Object { return &ObjectPtr{} },
 	_compiledFunction: func() Object { return &CompiledFunction{SourceMap: make(map[int]parser.Pos)} },
 	_builtinFunction:  func() Object { return &BuiltinFunction{} },
@@ -145,10 +143,6 @@ func TypeOfObject(o Object) byte {
 		return _array
 	case *Map:
 		return _map
-	case *ImmutableArray:
-		return _immutableArray
-	case *ImmutableMap:
-		return _immutableMap
 	case *ObjectPtr:
 		return _objectPtr
 	case *CompiledFunction:
@@ -214,7 +208,7 @@ func SizeOfObject(o Object) int {
 		arr.mu.RLock()
 		snap := append([]Object(nil), arr.Value...)
 		arr.mu.RUnlock()
-		return codec.SizeByte() + codec.SizeSlice(snap, SizeOfObject)
+		return codec.SizeByte() + codec.SizeBool() + codec.SizeSlice(snap, SizeOfObject)
 	case _map:
 		m := o.(*Map)
 		m.mu.RLock()
@@ -222,13 +216,9 @@ func SizeOfObject(o Object) int {
 		for k, v := range m.Value {
 			snapM[k] = v
 		}
+		modName := m.moduleName
 		m.mu.RUnlock()
-		return codec.SizeByte() + codec.SizeMap(snapM, codec.SizeString, SizeOfObject)
-	case _immutableArray:
-		return codec.SizeByte() + codec.SizeSlice(o.(*ImmutableArray).Value, SizeOfObject)
-	case _immutableMap:
-		im := o.(*ImmutableMap)
-		return codec.SizeByte() + codec.SizeString(im.moduleName) + codec.SizeMap(im.Value, codec.SizeString, SizeOfObject)
+		return codec.SizeByte() + codec.SizeBool() + codec.SizeString(modName) + codec.SizeMap(snapM, codec.SizeString, SizeOfObject)
 	case _objectPtr:
 		v := o.(*ObjectPtr)
 		if v.Value != nil {
@@ -346,8 +336,10 @@ func MarshalObject(n int, b []byte, o Object) int {
 		arr := o.(*Array)
 		arr.mu.RLock()
 		snap := append([]Object(nil), arr.Value...)
+		frozen := arr.Frozen
 		arr.mu.RUnlock()
 		n = codec.MarshalByte(n, b, _array)
+		n = codec.MarshalBool(n, b, frozen)
 		n = codec.MarshalSlice(n, b, snap, MarshalObject)
 	case _map:
 		m := o.(*Map)
@@ -356,17 +348,13 @@ func MarshalObject(n int, b []byte, o Object) int {
 		for k, v := range m.Value {
 			snapM[k] = v
 		}
+		frozen := m.Frozen
+		modName := m.moduleName
 		m.mu.RUnlock()
 		n = codec.MarshalByte(n, b, _map)
+		n = codec.MarshalBool(n, b, frozen)
+		n = codec.MarshalString(n, b, modName)
 		n = codec.MarshalMap(n, b, snapM, codec.MarshalString, MarshalObject)
-	case _immutableArray:
-		n = codec.MarshalByte(n, b, _immutableArray)
-		n = codec.MarshalSlice(n, b, o.(*ImmutableArray).Value, MarshalObject)
-	case _immutableMap:
-		im := o.(*ImmutableMap)
-		n = codec.MarshalByte(n, b, _immutableMap)
-		n = codec.MarshalString(n, b, im.moduleName)
-		n = codec.MarshalMap(n, b, im.Value, codec.MarshalString, MarshalObject)
 	case _objectPtr:
 		n = codec.MarshalByte(n, b, _objectPtr)
 		if o.(*ObjectPtr).Value != nil {
@@ -549,34 +537,31 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		}
 		return n, o, nil
 	case _array:
-		n, o.(*Array).Value, err = codec.UnmarshalSlice[Object](n, b, UnmarshalObject)
+		arr := o.(*Array)
+		n, arr.Frozen, err = codec.UnmarshalBool(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, arr.Value, err = codec.UnmarshalSlice[Object](n, b, UnmarshalObject)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
 	case _map:
-		n, o.(*Map).Value, err = codec.UnmarshalMap[string, Object](n, b, codec.UnmarshalString, UnmarshalObject)
+		m := o.(*Map)
+		n, m.Frozen, err = codec.UnmarshalBool(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, m.moduleName, err = codec.UnmarshalString(n, b)
+		if err != nil {
+			return nn, nil, err
+		}
+		n, m.Value, err = codec.UnmarshalMap[string, Object](n, b, codec.UnmarshalString, UnmarshalObject)
 		if err != nil {
 			return nn, nil, err
 		}
 		return n, o, nil
-	case _immutableArray:
-		n, o.(*ImmutableArray).Value, err = codec.UnmarshalSlice[Object](n, b, UnmarshalObject)
-		if err != nil {
-			return nn, nil, err
-		}
-		return n, o, nil
-	case _immutableMap:
-		im := o.(*ImmutableMap)
-		n, im.moduleName, err = codec.UnmarshalString(n, b)
-		if err != nil {
-			return nn, nil, err
-		}
-		n, im.Value, err = codec.UnmarshalMap[string, Object](n, b, codec.UnmarshalString, UnmarshalObject)
-		if err != nil {
-			return nn, nil, err
-		}
-		return n, im, nil
 	case _objectPtr:
 		var v Object
 		n, v, err = UnmarshalObject(n, b)

@@ -229,15 +229,7 @@ func CountObjects(o Object) (c int) {
 		for _, v := range o.Value {
 			c += CountObjects(v)
 		}
-	case *ImmutableArray:
-		for _, v := range o.Value {
-			c += CountObjects(v)
-		}
 	case *Map:
-		for _, v := range o.Value {
-			c += CountObjects(v)
-		}
-	case *ImmutableMap:
 		for _, v := range o.Value {
 			c += CountObjects(v)
 		}
@@ -532,29 +524,7 @@ func toInterfaceWithMemo(o Object, memo map[uintptr]interface{}) (res interface{
 			sl[i] = toInterfaceWithMemo(val, memo)
 		}
 		res = sl
-	case *ImmutableArray:
-		key := uintptr(unsafe.Pointer(o))
-		if existing, ok := memo[key]; ok {
-			return existing
-		}
-		sl := make([]interface{}, len(o.Value))
-		memo[key] = sl
-		for i, val := range o.Value {
-			sl[i] = toInterfaceWithMemo(val, memo)
-		}
-		res = sl
 	case *Map:
-		key := uintptr(unsafe.Pointer(o))
-		if existing, ok := memo[key]; ok {
-			return existing
-		}
-		m := make(map[string]interface{})
-		memo[key] = m
-		for k, v := range o.Value {
-			m[k] = toInterfaceWithMemo(v, memo)
-		}
-		res = m
-	case *ImmutableMap:
 		key := uintptr(unsafe.Pointer(o))
 		if existing, ok := memo[key]; ok {
 			return existing

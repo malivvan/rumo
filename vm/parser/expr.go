@@ -306,30 +306,6 @@ func (e *Ident) String() string {
 	return nullRep
 }
 
-// ImmutableExpr represents an immutable expression
-type ImmutableExpr struct {
-	Expr     Expr
-	ErrorPos Pos
-	LParen   Pos
-	RParen   Pos
-}
-
-func (e *ImmutableExpr) exprNode() {}
-
-// Pos returns the position of first character belonging to the node.
-func (e *ImmutableExpr) Pos() Pos {
-	return e.ErrorPos
-}
-
-// End returns the position of first character immediately after the node.
-func (e *ImmutableExpr) End() Pos {
-	return e.RParen
-}
-
-func (e *ImmutableExpr) String() string {
-	return "immutable(" + e.Expr.String() + ")"
-}
-
 // GoExpr represents a go expression that launches a function as a routine.
 // Syntax: go callExpr
 // Returns a routine handle map with wait/cancel/result methods.

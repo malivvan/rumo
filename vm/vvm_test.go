@@ -74,16 +74,16 @@ func TestNumObjects(t *testing.T) {
 	testCountObjects(t, &vm.CompiledFunction{}, 1)
 	testCountObjects(t, &vm.Error{Value: &vm.Int{Value: 5}}, 2)
 	testCountObjects(t, &vm.Float{Value: 19.84}, 1)
-	testCountObjects(t, &vm.ImmutableArray{Value: []vm.Object{
+	testCountObjects(t, &vm.Array{Frozen: true, Value: []vm.Object{
 		&vm.Int{Value: 1},
 		&vm.Int{Value: 2},
-		&vm.ImmutableArray{Value: []vm.Object{
+		&vm.Array{Frozen: true, Value: []vm.Object{
 			&vm.Int{Value: 3},
 			&vm.Int{Value: 4},
 			&vm.Int{Value: 5},
 		}},
 	}}, 7)
-	testCountObjects(t, &vm.ImmutableMap{
+	testCountObjects(t, &vm.Map{Frozen: true, 
 		Value: map[string]vm.Object{
 			"k1": &vm.Int{Value: 1},
 			"k2": &vm.Int{Value: 2},

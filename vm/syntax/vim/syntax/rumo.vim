@@ -36,8 +36,8 @@ hi def link     RawString           character
 syn keyword     BuiltinFuncs        format len copy append delete splice type_name
 syn keyword     BuiltinFuncs        string int bool float char bytes time error range
 syn keyword     BuiltinFuncs        is_string is_int is_bool is_float is_char is_bytes is_error
-syn keyword     BuiltinFuncs        is_undefined is_function is_callable is_array is_immutable_array
-syn keyword     BuiltinFuncs        is_map is_immutable_map is_iterable is_time
+syn keyword     BuiltinFuncs        is_undefined is_function is_callable is_array
+syn keyword     BuiltinFuncs        is_map is_frozen is_iterable is_time
 
 hi def link     BuiltinFuncs        Keyword
 
@@ -70,7 +70,7 @@ syn keyword     CtrlWords           return break continue
 syn keyword     CondWords           if else
 syn keyword     Directive           import export native
 syn keyword     RepeatWords         for in
-syn keyword     Declaration         var error immutable
+syn keyword     Declaration         var error
 
 hi def link     CtrlWords           Statement
 hi def link     CondWords           Conditional

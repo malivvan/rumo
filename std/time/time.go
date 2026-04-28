@@ -1,20 +1,13 @@
 // Package time exposes Go's time.Time / time.Duration helpers as a Rumo
 // standard-library module.
 //
-// Time values are represented at the script/VM level as a *vm.ImmutableMap
+// Time values are represented at the script/VM level as a *vm.Map
 // whose values are bound *vm.BuiltinFunction methods (year, month, format,
 // ...) plus two hidden sentinel keys, "__unix_nano" (*vm.Int) and "__zone"
 // (*vm.String), that allow the package's freestanding helpers to losslessly
-// rehydrate the original time.Time. Both ImmutableMap and BuiltinFunction
-// already participate in bytecode encoding, so this representation
-// round-trips through compile / load without requiring a dedicated
-// VM-level Object type.
-//
-// Note: the previous representation as a *vm.Time Object supported
-// script-level arithmetic (`t1 - t2`, `t + dur`, comparisons) via its
-// BinaryOp implementation. ImmutableMap does not support those operators,
-// so equivalent behaviour is now exposed through the freestanding helpers
-// `time.sub`, `time.add`, `time.before`, `time.after`, etc.
+// rehydrate the original time.Time. BuiltinFunctions already participate in
+// bytecode encoding, so this representation round-trips through compile / load
+// without requiring a dedicated VM-level Object type.
 package time
 
 import (
@@ -36,12 +29,12 @@ const (
 
 // TimeObject returns the canonical Rumo representation of a Go time.Time.
 //
-// The returned ImmutableMap carries:
+// The returned Map carries:
 //   - the bound accessor methods (year, month, day, hour, minute, second,
 //     nanosecond, unix, unix_nano, string, location, is_zero, format),
 //   - and the two hidden sentinel keys (TimeKeyUnixNano, TimeKeyZone) used
 //     by ToGoTime to recover the original value.
-func TimeObject(t time.Time) *vm.ImmutableMap {
+func TimeObject(t time.Time) *vm.Map {
 	mkInt := func(n int64) vm.CallableFunc {
 		return func(_ context.Context, args ...vm.Object) (vm.Object, error) {
 			if len(args) != 0 {
@@ -98,7 +91,7 @@ func TimeObject(t time.Time) *vm.ImmutableMap {
 	if t.IsZero() {
 		attrs[TimeKeyZero] = vm.TrueValue
 	}
-	return &vm.ImmutableMap{Value: attrs}
+	return &vm.Map{Frozen: true, Value: attrs}
 }
 
 // ToGoTime extracts a Go time.Time from any Rumo value produced by
@@ -108,7 +101,7 @@ func ToGoTime(o vm.Object) (time.Time, bool) {
 	switch o := o.(type) {
 	case *vm.Int:
 		return time.Unix(o.Value, 0), true
-	case *vm.ImmutableMap:
+	case *vm.Map:
 		if z, ok := o.Value[TimeKeyZero].(*vm.Bool); ok && z == vm.TrueValue {
 			return time.Time{}, true
 		}
@@ -128,9 +121,9 @@ func ToGoTime(o vm.Object) (time.Time, bool) {
 }
 
 // isTimeShape reports whether o is the canonical Rumo time representation
-// (a *vm.ImmutableMap carrying the TimeKeyUnixNano sentinel).
+// (a *vm.Map carrying the TimeKeyUnixNano sentinel).
 func isTimeShape(o vm.Object) bool {
-	m, ok := o.(*vm.ImmutableMap)
+	m, ok := o.(*vm.Map)
 	if !ok {
 		return false
 	}

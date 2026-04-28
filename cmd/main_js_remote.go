@@ -303,7 +303,7 @@ func isShipFriendly(o vm.Object) bool {
 			}
 		}
 		return true
-	case *vm.ImmutableMap:
+	case *vm.Map:
 		// Modules are already keyed by moduleName so FixDecodedObject
 		// rebinds them wholesale — no need to inspect children.
 		if v.ModuleName() != "" {
@@ -322,7 +322,7 @@ func isShipFriendly(o vm.Object) bool {
 			}
 		}
 		return true
-	case *vm.ImmutableArray:
+	case *vm.Array:
 		for _, e := range v.Value {
 			if !isShipFriendly(e) {
 				return false

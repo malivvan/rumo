@@ -265,11 +265,11 @@ func TestRoutineVMRetOrderingIsCorrect(t *testing.T) {
 	}
 }
 
-// ── 3.5 BuiltinModule.AsImmutableMap shares ObjectPtr references ─────────
+// ── 3.5 BuiltinModule.AsFrozenMap shares ObjectPtr references ─────────
 //
 // ObjectPtr.Copy() returns the receiver itself (same pointer). When
-// AsImmutableMap calls v.Copy() for each attribute, ObjectPtr attributes are
-// shared across every ImmutableMap it produces. Two VMs importing the same
+// AsFrozenMap calls v.Copy() for each attribute, ObjectPtr attributes are
+// shared across every Map it produces. Two VMs importing the same
 // module therefore hold identical ObjectPtr cells; a write through one VM's
 // cell is immediately visible in the other, causing a silent data race. The
 // fix creates a new ObjectPtr cell containing a Copy() of the pointed-to
@@ -303,20 +303,20 @@ func TestObjectPtrCopyCellIsIndependent(t *testing.T) {
 	}
 }
 
-// Two calls to AsImmutableMap must produce independently-celled ObjectPtr
+// Two calls to AsFrozenMap must produce independently-celled ObjectPtr
 // attributes.
 func TestBuiltinModuleObjectPtrAttrsAreIndependent(t *testing.T) {
 	val := Object(&Int{Value: 1})
 	mod := &BuiltinModule{Attrs: map[string]Object{
 		"cell": &ObjectPtr{Value: &val},
 	}}
-	m1 := mod.AsImmutableMap("mymod")
-	m2 := mod.AsImmutableMap("mymod")
+	m1 := mod.AsFrozenMap("mymod")
+	m2 := mod.AsFrozenMap("mymod")
 
 	ptr1 := m1.Value["cell"].(*ObjectPtr)
 	ptr2 := m2.Value["cell"].(*ObjectPtr)
 	if ptr1 == ptr2 {
-		t.Fatal("AsImmutableMap returned the same ObjectPtr for two callers.\n" +
+		t.Fatal("AsFrozenMap returned the same ObjectPtr for two callers.\n" +
 			"Concurrent VMs will share a mutable free-variable cell.")
 	}
 }

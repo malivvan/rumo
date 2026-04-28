@@ -22,7 +22,6 @@ const (
 	OpArray                       // Array object
 	OpMap                         // Map object
 	OpError                       // Error object
-	OpImmutable                   // Immutable object
 	OpIndex                       // Index operation
 	OpSliceIndex                  // Slice operation
 	OpCall                        // Call function
@@ -73,7 +72,6 @@ var OpcodeNames = [...]string{
 	OpArray:         "ARR",
 	OpMap:           "MAP",
 	OpError:         "ERROR",
-	OpImmutable:     "IMMUT",
 	OpIndex:         "INDEX",
 	OpSliceIndex:    "SLICE",
 	OpCall:          "CALL",
@@ -121,7 +119,6 @@ var OpcodeOperands = [...][]int{
 	OpArray:         {2},
 	OpMap:           {2},
 	OpError:         {},
-	OpImmutable:     {},
 	OpIndex:         {},
 	OpSliceIndex:    {},
 	OpCall:          {1, 1},

@@ -203,9 +203,7 @@ These are the basic types the rumo runtime supports out of the box:
   [Bytes](https://godoc.org/github.com/malivvan/rumo#Bytes),
   [Time](https://godoc.org/github.com/malivvan/rumo#Time)
 - Composite value types: [Array](https://godoc.org/github.com/malivvan/rumo#Array),
-  [ImmutableArray](https://godoc.org/github.com/malivvan/rumo#ImmutableArray),
   [Map](https://godoc.org/github.com/malivvan/rumo#Map),
-  [ImmutableMap](https://godoc.org/github.com/malivvan/rumo#ImmutableMap)
 - Functions:
   [CompiledFunction](https://godoc.org/github.com/malivvan/rumo#CompiledFunction),
   [BuiltinFunction](https://godoc.org/github.com/malivvan/rumo#BuiltinFunction),
@@ -214,7 +212,6 @@ These are the basic types the rumo runtime supports out of the box:
   [StringIterator](https://godoc.org/github.com/malivvan/rumo#StringIterator),
   [ArrayIterator](https://godoc.org/github.com/malivvan/rumo#ArrayIterator),
   [MapIterator](https://godoc.org/github.com/malivvan/rumo#MapIterator),
-  [ImmutableMapIterator](https://godoc.org/github.com/malivvan/rumo#ImmutableMapIterator)
 - [Error](https://godoc.org/github.com/malivvan/rumo#Error)
 - [Undefined](https://godoc.org/github.com/malivvan/rumo#Undefined)
 - Other internal objects: [Break](https://godoc.org/github.com/malivvan/rumo#Break),

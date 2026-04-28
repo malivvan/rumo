@@ -22,10 +22,10 @@ func newInlineScript(src string) *rumo.Script {
 // Program.Unmarshal always resolves imported modules using the global Modules()
 // map. Embedders that supply custom builtin modules via Script.SetImports cannot
 // inject those modules into deserialization: the BuiltinFunction values inside the
-// serialized ImmutableMap constants are not recoverable from the global map, so
-// calling any function exported by the custom module after an Unmarshal round-trip
-// either returns an error or panics.  UnmarshalWithModules must accept a caller-
-// supplied ModuleMap so that custom modules survive Marshal/Unmarshal round-trips.
+// serialized Map constants are not recoverable from the global map, so calling
+// any function exported by the custom module after an Unmarshal round-trip either
+// returns an error or panics.  UnmarshalWithModules must accept a caller-supplied
+// ModuleMap so that custom modules survive Marshal/Unmarshal round-trips.
 
 // TestProgramMarshalUnmarshalRoundTripWithCustomModules verifies that a program
 // compiled with a custom builtin module can be serialized and then deserialized

@@ -199,19 +199,21 @@ func builtinPtr(ctx context.Context, args ...Object) (Object, error) {
 	return UndefinedValue, nil
 }
 
-// builtinArray ensures the value is an Array. It copies the elements of an
-// ImmutableArray into a new mutable Array; Arrays are returned as-is.
+// builtinArray ensures the value is a mutable Array. A Frozen Array is
+// shallow-copied into a fresh, mutable Array.
 func builtinArray(ctx context.Context, args ...Object) (Object, error) {
 	argsLen := len(args)
 	if !(argsLen == 1 || argsLen == 2) {
 		return nil, ErrWrongNumArguments
 	}
-	switch a := args[0].(type) {
-	case *Array:
-		return a, nil
-	case *ImmutableArray:
+	if a, ok := args[0].(*Array); ok {
+		if !a.IsFrozen() {
+			return a, nil
+		}
+		a.mu.RLock()
 		arr := make([]Object, len(a.Value))
 		copy(arr, a.Value)
+		a.mu.RUnlock()
 		return &Array{Value: arr}, nil
 	}
 	if argsLen == 2 {
@@ -220,42 +222,22 @@ func builtinArray(ctx context.Context, args ...Object) (Object, error) {
 	return UndefinedValue, nil
 }
 
-// builtinImmutableArray converts an Array into an ImmutableArray.
-func builtinImmutableArray(ctx context.Context, args ...Object) (Object, error) {
-	argsLen := len(args)
-	if !(argsLen == 1 || argsLen == 2) {
-		return nil, ErrWrongNumArguments
-	}
-	switch a := args[0].(type) {
-	case *ImmutableArray:
-		return a, nil
-	case *Array:
-		a.mu.RLock()
-		arr := make([]Object, len(a.Value))
-		copy(arr, a.Value)
-		a.mu.RUnlock()
-		return &ImmutableArray{Value: arr}, nil
-	}
-	if argsLen == 2 {
-		return args[1], nil
-	}
-	return UndefinedValue, nil
-}
-
-// builtinMap ensures the value is a Map.
+// builtinMap ensures the value is a mutable Map.
 func builtinMap(ctx context.Context, args ...Object) (Object, error) {
 	argsLen := len(args)
 	if !(argsLen == 1 || argsLen == 2) {
 		return nil, ErrWrongNumArguments
 	}
-	switch m := args[0].(type) {
-	case *Map:
-		return m, nil
-	case *ImmutableMap:
+	if m, ok := args[0].(*Map); ok {
+		if !m.IsFrozen() {
+			return m, nil
+		}
+		m.mu.RLock()
 		c := make(map[string]Object, len(m.Value))
 		for k, v := range m.Value {
 			c[k] = v
 		}
+		m.mu.RUnlock()
 		return &Map{Value: c}, nil
 	}
 	if argsLen == 2 {
@@ -264,28 +246,34 @@ func builtinMap(ctx context.Context, args ...Object) (Object, error) {
 	return UndefinedValue, nil
 }
 
-// builtinImmutableMap converts a Map into an ImmutableMap.
-func builtinImmutableMap(ctx context.Context, args ...Object) (Object, error) {
-	argsLen := len(args)
-	if !(argsLen == 1 || argsLen == 2) {
+// builtinFreeze marks the given object as immutable and returns it. For
+// objects that are inherently immutable (scalars), Freeze is a no-op.
+func builtinFreeze(_ context.Context, args ...Object) (Object, error) {
+	if len(args) != 1 {
 		return nil, ErrWrongNumArguments
 	}
-	switch m := args[0].(type) {
-	case *ImmutableMap:
-		return m, nil
-	case *Map:
-		m.mu.RLock()
-		c := make(map[string]Object, len(m.Value))
-		for k, v := range m.Value {
-			c[k] = v
-		}
-		m.mu.RUnlock()
-		return &ImmutableMap{Value: c}, nil
+	args[0].Freeze()
+	return args[0], nil
+}
+
+// builtinMelt restores mutability on the given object and returns it.
+func builtinMelt(_ context.Context, args ...Object) (Object, error) {
+	if len(args) != 1 {
+		return nil, ErrWrongNumArguments
 	}
-	if argsLen == 2 {
-		return args[1], nil
+	args[0].Melt()
+	return args[0], nil
+}
+
+// builtinIsFrozen returns true if the given object is currently immutable.
+func builtinIsFrozen(_ context.Context, args ...Object) (Object, error) {
+	if len(args) != 1 {
+		return nil, ErrWrongNumArguments
 	}
-	return UndefinedValue, nil
+	if args[0].IsFrozen() {
+		return TrueValue, nil
+	}
+	return FalseValue, nil
 }
 
 // ---------------------------------------------------------------------------

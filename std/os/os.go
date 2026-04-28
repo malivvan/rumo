@@ -214,7 +214,7 @@ func osStat(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 	if err != nil {
 		return module.WrapError(err), nil
 	}
-	fstat := &vm.ImmutableMap{Value: map[string]vm.Object{"name": &vm.String{Value: stat.Name()}, "mtime": stdtime.TimeObject(stat.ModTime()), "size": &vm.Int{Value: stat.Size()}, "mode": &vm.Int{Value: int64(stat.Mode())}}}
+	fstat := &vm.Map{Frozen: true, Value: map[string]vm.Object{"name": &vm.String{Value: stat.Name()}, "mtime": stdtime.TimeObject(stat.ModTime()), "size": &vm.Int{Value: stat.Size()}, "mode": &vm.Int{Value: int64(stat.Mode())}}}
 	if stat.IsDir() {
 		fstat.Value["directory"] = vm.TrueValue
 	} else {
@@ -450,11 +450,6 @@ func osStartProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-	case *vm.ImmutableArray:
-		argv, err = stringArray(arg1.Value, "second")
-		if err != nil {
-			return nil, err
-		}
 	default:
 		return nil, vm.ErrInvalidArgumentType{
 			Name:     "second",
@@ -475,11 +470,6 @@ func osStartProcess(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	var env []string
 	switch arg3 := args[3].(type) {
 	case *vm.Array:
-		env, err = stringArray(arg3.Value, "fourth")
-		if err != nil {
-			return nil, err
-		}
-	case *vm.ImmutableArray:
 		env, err = stringArray(arg3.Value, "fourth")
 		if err != nil {
 			return nil, err
@@ -518,8 +508,8 @@ func stringArray(arr []vm.Object, argName string) ([]string, error) {
 	return sarr, nil
 }
 
-func makeOSExecCommand(cmd *exec.Cmd) *vm.ImmutableMap {
-	return &vm.ImmutableMap{
+func makeOSExecCommand(cmd *exec.Cmd) *vm.Map {
+	return &vm.Map{Frozen: true, 
 		Value: map[string]vm.Object{
 			// combined_output() => bytes/error
 			"combined_output": &vm.BuiltinFunction{Name: "combined_output", Value: module.Func(cmd.CombinedOutput)},
@@ -585,11 +575,6 @@ func makeOSExecCommand(cmd *exec.Cmd) *vm.ImmutableMap {
 						if err != nil {
 							return nil, err
 						}
-					case *vm.ImmutableArray:
-						env, err = stringArray(arg0.Value, "first")
-						if err != nil {
-							return nil, err
-						}
 					default:
 						return nil, vm.ErrInvalidArgumentType{
 							Name:     "first",
@@ -615,8 +600,8 @@ func makeOSExecCommand(cmd *exec.Cmd) *vm.ImmutableMap {
 	}
 }
 
-func makeOSFile(file *os.File) *vm.ImmutableMap {
-	return &vm.ImmutableMap{
+func makeOSFile(file *os.File) *vm.Map {
+	return &vm.Map{Frozen: true, 
 		Value: map[string]vm.Object{
 			// chdir() => true/error
 			"chdir": &vm.BuiltinFunction{Name: "chdir", Value: module.Func(file.Chdir)}, //
@@ -698,8 +683,8 @@ func makeOSFile(file *os.File) *vm.ImmutableMap {
 	}
 }
 
-func makeOSProcessState(state *os.ProcessState) *vm.ImmutableMap {
-	return &vm.ImmutableMap{
+func makeOSProcessState(state *os.ProcessState) *vm.Map {
+	return &vm.Map{Frozen: true, 
 		Value: map[string]vm.Object{
 			"exited":  &vm.BuiltinFunction{Name: "exited", Value: module.Func(state.Exited)},
 			"pid":     &vm.BuiltinFunction{Name: "pid", Value: module.Func(state.Pid)},
@@ -709,8 +694,8 @@ func makeOSProcessState(state *os.ProcessState) *vm.ImmutableMap {
 	}
 }
 
-func makeOSProcess(proc *os.Process) *vm.ImmutableMap {
-	return &vm.ImmutableMap{
+func makeOSProcess(proc *os.Process) *vm.Map {
+	return &vm.Map{Frozen: true, 
 		Value: map[string]vm.Object{
 			"kill":    &vm.BuiltinFunction{Name: "kill", Value: module.Func(proc.Kill)},
 			"release": &vm.BuiltinFunction{Name: "release", Value: module.Func(proc.Release)},

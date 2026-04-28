@@ -397,8 +397,8 @@ out = func() {
 `, nil, 136)
 
 	// assigning different type value
-	expectRun(t, `a := 1; a = "foo"; out = a`, nil, "foo")                                                               // global
-	expectRun(t, `func() { a := 1; a = "foo"; out = a }()`, nil, "foo")                                                  // local
+	expectRun(t, `a := 1; a = "foo"; out = a`, nil, "foo")              // global
+	expectRun(t, `func() { a := 1; a = "foo"; out = a }()`, nil, "foo") // local
 	expectRun(t, `
 out = func() { 
 	a := 5
@@ -564,10 +564,10 @@ func TestBuiltinFunction(t *testing.T) {
 	expectRun(t, `out = len([1, 2, 3])`, nil, 3)
 	expectRun(t, `out = len({})`, nil, 0)
 	expectRun(t, `out = len({a:1, b:2})`, nil, 2)
-	expectRun(t, `out = len(immutable([]))`, nil, 0)
-	expectRun(t, `out = len(immutable([1, 2, 3]))`, nil, 3)
-	expectRun(t, `out = len(immutable({}))`, nil, 0)
-	expectRun(t, `out = len(immutable({a:1, b:2}))`, nil, 2)
+	expectRun(t, `out = len(freeze([]))`, nil, 0)
+	expectRun(t, `out = len(freeze([1, 2, 3]))`, nil, 3)
+	expectRun(t, `out = len(freeze({}))`, nil, 0)
+	expectRun(t, `out = len(freeze({a:1, b:2}))`, nil, 2)
 	expectError(t, `len(1)`, nil, "invalid type for argument")
 	expectError(t, `len("one", "two")`, nil, "wrong number of arguments")
 
@@ -756,9 +756,9 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'first'`)
 	expectError(t, `delete(char(0), 1)`, nil,
 		`invalid type for argument 'first'`)
-	expectError(t, `delete(immutable({}), "key")`, nil,
-		`invalid type for argument 'first'`)
-	expectError(t, `delete(immutable([]), "")`, nil,
+	expectError(t, `delete(freeze({}), "key")`, nil,
+		vm.ErrNotIndexAssignable.Error())
+	expectError(t, `delete(freeze([]), "")`, nil,
 		`invalid type for argument 'first'`)
 	expectError(t, `delete([], "")`, nil, `invalid type for argument 'first'`)
 	expectError(t, `delete({}, 1)`, nil, `invalid type for argument 'second'`)
@@ -775,9 +775,9 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'second'`)
 	expectError(t, `delete({}, char(0))`, nil,
 		`invalid type for argument 'second'`)
-	expectError(t, `delete({}, immutable({}))`, nil,
+	expectError(t, `delete({}, freeze({}))`, nil,
 		`invalid type for argument 'second'`)
-	expectError(t, `delete({}, immutable([]))`, nil,
+	expectError(t, `delete({}, freeze([]))`, nil,
 		`invalid type for argument 'second'`)
 
 	expectRun(t, `out = delete({}, "")`, nil, vm.UndefinedValue)
@@ -803,10 +803,10 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'first'`)
 	expectError(t, `splice(char(0))`, nil,
 		`invalid type for argument 'first'`)
-	expectError(t, `splice(immutable({}))`, nil,
+	expectError(t, `splice(freeze({}))`, nil,
 		`invalid type for argument 'first'`)
-	expectError(t, `splice(immutable([]))`, nil,
-		`invalid type for argument 'first'`)
+	expectError(t, `splice(freeze([]))`, nil,
+		vm.ErrNotIndexAssignable.Error())
 	expectError(t, `splice({})`, nil, `invalid type for argument 'first'`)
 	expectError(t, `splice([], 1.0)`, nil,
 		`invalid type for argument 'second'`)
@@ -828,9 +828,9 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'second'`)
 	expectError(t, `splice([], {})`, nil,
 		`invalid type for argument 'second'`)
-	expectError(t, `splice([], immutable([]))`, nil,
+	expectError(t, `splice([], freeze([]))`, nil,
 		`invalid type for argument 'second'`)
-	expectError(t, `splice([], immutable({}))`, nil,
+	expectError(t, `splice([], freeze({}))`, nil,
 		`invalid type for argument 'second'`)
 	expectError(t, `splice([], 0, 1.0)`, nil,
 		`invalid type for argument 'third'`)
@@ -852,9 +852,9 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'third'`)
 	expectError(t, `splice([], 0, {})`, nil,
 		`invalid type for argument 'third'`)
-	expectError(t, `splice([], 0, immutable([]))`, nil,
+	expectError(t, `splice([], 0, freeze([]))`, nil,
 		`invalid type for argument 'third'`)
-	expectError(t, `splice([], 0, immutable({}))`, nil,
+	expectError(t, `splice([], 0, freeze({}))`, nil,
 		`invalid type for argument 'third'`)
 	expectError(t, `splice([], 1)`, nil, vm.ErrIndexOutOfBounds.Error())
 	expectError(t, `splice([1, 2, 3], 0, -1)`, nil,
@@ -1980,7 +1980,7 @@ out = func() {
 		if is_error(b) { 
 			return b 
 		} else if !is_undefined(b) { 
-			return immutable(b)
+			return freeze(b)
 		}
 	}
 	
@@ -1992,7 +1992,7 @@ out = func() {
 		if is_error(b) { 
 			return b 
 		} else if !is_undefined(b) { 
-			return immutable(b)
+			return freeze(b)
 		}
 	}
 
@@ -2001,118 +2001,63 @@ out = func() {
 `, nil, 3)
 }
 
-func TestImmutable(t *testing.T) {
+func TestFreeze(t *testing.T) {
 	// primitive types are already immutable values
 	// immutable expression has no effects.
-	expectRun(t, `a := immutable(1); out = a`, nil, 1)
-	expectRun(t, `a := 5; b := immutable(a); out = b`, nil, 5)
-	expectRun(t, `a := immutable(1); a = 5; out = a`, nil, 5)
+	expectRun(t, `a := freeze(1); out = a`, nil, 1)
+	expectRun(t, `a := 5; b := freeze(a); out = b`, nil, 5)
+	expectRun(t, `a := freeze(1); a = 5; out = a`, nil, 5)
 
 	// array
-	expectError(t, `a := immutable([1, 2, 3]); a[1] = 5`,
-		nil, "not index-assignable")
-	expectError(t, `a := immutable(["foo", [1,2,3]]); a[1] = "bar"`,
-		nil, "not index-assignable")
-	expectRun(t, `a := immutable(["foo", [1,2,3]]); a[1][1] = "bar"; out = a`,
-		nil, IARR{"foo", ARR{1, "bar", 3}})
-	expectError(t, `a := immutable(["foo", immutable([1,2,3])]); a[1][1] = "bar"`,
-		nil, "not index-assignable")
-	expectError(t, `a := ["foo", immutable([1,2,3])]; a[1][1] = "bar"`,
-		nil, "not index-assignable")
-	expectRun(t, `a := immutable([1,2,3]); b := copy(a); b[1] = 5; out = b`,
-		nil, ARR{1, 5, 3})
-	expectRun(t, `a := immutable([1,2,3]); b := copy(a); b[1] = 5; out = a`,
-		nil, IARR{1, 2, 3})
-	expectRun(t, `out = immutable([1,2,3]) == [1,2,3]`,
-		nil, true)
-	expectRun(t, `out = immutable([1,2,3]) == immutable([1,2,3])`,
-		nil, true)
-	expectRun(t, `out = [1,2,3] == immutable([1,2,3])`,
-		nil, true)
-	expectRun(t, `out = immutable([1,2,3]) == [1,2]`,
-		nil, false)
-	expectRun(t, `out = immutable([1,2,3]) == immutable([1,2])`,
-		nil, false)
-	expectRun(t, `out = [1,2,3] == immutable([1,2])`,
-		nil, false)
-	expectRun(t, `out = immutable([1, 2, 3, 4])[1]`,
-		nil, 2)
-	expectRun(t, `out = immutable([1, 2, 3, 4])[1:3]`,
-		nil, ARR{2, 3})
-	expectRun(t, `a := immutable([1,2,3]); a = 5; out = a`,
-		nil, 5)
-	expectRun(t, `a := immutable([1, 2, 3]); out = a[5]`,
-		nil, vm.UndefinedValue)
+	expectError(t, `a := freeze([1, 2, 3]); a[1] = 5`, nil, "not index-assignable")
+	expectError(t, `a := freeze(["foo", [1,2,3]]); a[1] = "bar"`, nil, "not index-assignable")
+	expectRun(t, `a := freeze(["foo", [1,2,3]]); a[1][1] = "bar"; out = a`, nil, IARR{"foo", ARR{1, "bar", 3}})
+	expectError(t, `a := freeze(["foo", freeze([1,2,3])]); a[1][1] = "bar"`, nil, "not index-assignable")
+	expectError(t, `a := ["foo", freeze([1,2,3])]; a[1][1] = "bar"`, nil, "not index-assignable")
+	expectRun(t, `a := freeze([1,2,3]); b := copy(a); b[1] = 5; out = b`, nil, ARR{1, 5, 3})
+	expectRun(t, `a := freeze([1,2,3]); b := copy(a); b[1] = 5; out = a`, nil, IARR{1, 2, 3})
+	expectRun(t, `out = freeze([1,2,3]) == [1,2,3]`, nil, true)
+	expectRun(t, `out = freeze([1,2,3]) == freeze([1,2,3])`, nil, true)
+	expectRun(t, `out = [1,2,3] == freeze([1,2,3])`, nil, true)
+	expectRun(t, `out = freeze([1,2,3]) == [1,2]`, nil, false)
+	expectRun(t, `out = freeze([1,2,3]) == freeze([1,2])`, nil, false)
+	expectRun(t, `out = [1,2,3] == freeze([1,2])`, nil, false)
+	expectRun(t, `out = freeze([1, 2, 3, 4])[1]`, nil, 2)
+	expectRun(t, `out = freeze([1, 2, 3, 4])[1:3]`, nil, ARR{2, 3})
+	expectRun(t, `a := freeze([1,2,3]); a = 5; out = a`, nil, 5)
+	expectRun(t, `a := freeze([1, 2, 3]); out = a[5]`, nil, vm.UndefinedValue)
 
 	// map
-	expectError(t, `a := immutable({b: 1, c: 2}); a.b = 5`,
-		nil, "not index-assignable")
-	expectError(t, `a := immutable({b: 1, c: 2}); a["b"] = "bar"`,
-		nil, "not index-assignable")
-	expectRun(t, `a := immutable({b: 1, c: [1,2,3]}); a.c[1] = "bar"; out = a`,
-		nil, IMAP{"b": 1, "c": ARR{1, "bar", 3}})
-	expectError(t, `a := immutable({b: 1, c: immutable([1,2,3])}); a.c[1] = "bar"`,
-		nil, "not index-assignable")
-	expectError(t, `a := {b: 1, c: immutable([1,2,3])}; a.c[1] = "bar"`,
-		nil, "not index-assignable")
-	expectRun(t, `out = immutable({a:1,b:2}) == {a:1,b:2}`,
-		nil, true)
-	expectRun(t, `out = immutable({a:1,b:2}) == immutable({a:1,b:2})`,
-		nil, true)
-	expectRun(t, `out = {a:1,b:2} == immutable({a:1,b:2})`,
-		nil, true)
-	expectRun(t, `out = immutable({a:1,b:2}) == {a:1,b:3}`,
-		nil, false)
-	expectRun(t, `out = immutable({a:1,b:2}) == immutable({a:1,b:3})`,
-		nil, false)
-	expectRun(t, `out = {a:1,b:2} == immutable({a:1,b:3})`,
-		nil, false)
-	expectRun(t, `out = immutable({a:1,b:2}).b`,
-		nil, 2)
-	expectRun(t, `out = immutable({a:1,b:2})["b"]`,
-		nil, 2)
-	expectRun(t, `a := immutable({a:1,b:2}); a = 5; out = 5`,
-		nil, 5)
-	expectRun(t, `a := immutable({a:1,b:2}); out = a.c`,
-		nil, vm.UndefinedValue)
+	expectError(t, `a := freeze({b: 1, c: 2}); a.b = 5`, nil, "not index-assignable")
+	expectError(t, `a := freeze({b: 1, c: 2}); a["b"] = "bar"`, nil, "not index-assignable")
+	expectRun(t, `a := freeze({b: 1, c: [1,2,3]}); a.c[1] = "bar"; out = a`, nil, IMAP{"b": 1, "c": ARR{1, "bar", 3}})
+	expectError(t, `a := freeze({b: 1, c: freeze([1,2,3])}); a.c[1] = "bar"`, nil, "not index-assignable")
+	expectError(t, `a := {b: 1, c: freeze([1,2,3])}; a.c[1] = "bar"`, nil, "not index-assignable")
+	expectRun(t, `out = freeze({a:1,b:2}) == {a:1,b:2}`, nil, true)
+	expectRun(t, `out = freeze({a:1,b:2}) == freeze({a:1,b:2})`, nil, true)
+	expectRun(t, `out = {a:1,b:2} == freeze({a:1,b:2})`, nil, true)
+	expectRun(t, `out = freeze({a:1,b:2}) == {a:1,b:3}`, nil, false)
+	expectRun(t, `out = freeze({a:1,b:2}) == freeze({a:1,b:3})`, nil, false)
+	expectRun(t, `out = {a:1,b:2} == freeze({a:1,b:3})`, nil, false)
+	expectRun(t, `out = freeze({a:1,b:2}).b`, nil, 2)
+	expectRun(t, `out = freeze({a:1,b:2})["b"]`, nil, 2)
+	expectRun(t, `a := freeze({a:1,b:2}); a = 5; out = 5`, nil, 5)
+	expectRun(t, `a := freeze({a:1,b:2}); out = a.c`, nil, vm.UndefinedValue)
 
-	expectRun(t, `a := immutable({b: 5, c: "foo"}); out = a.b`,
-		nil, 5)
-	expectError(t, `a := immutable({b: 5, c: "foo"}); a.b = 10`,
-		nil, "not index-assignable")
+	expectRun(t, `a := freeze({b: 5, c: "foo"}); out = a.b`, nil, 5)
+	expectError(t, `a := freeze({b: 5, c: "foo"}); a.b = 10`, nil, "not index-assignable")
 
-	// OpImmutable does not actually freeze data.
-	//
-	// The OpImmutable instruction previously wrapped the original mutable
-	// container in an ImmutableArray/ImmutableMap while sharing the same
-	// underlying slice/map pointer.  As a result, any mutation through the
-	// original mutable variable was visible through the supposedly-immutable
-	// view, breaking the fundamental immutability guarantee and opening a
-	// security hole for module exports (BuiltinModule.AsImmutableMap).
-	//
-	// Fix: OpImmutable must copy the slice/map before wrapping it, matching
-	// the copy-on-wrap behaviour of the builtinImmutableArray /
-	// builtinImmutableMap functions.
-	// ---------------------------------------------------------------------------
+	// freeze() freezes the object in-place. To get a frozen detached copy,
+	// callers should compose copy() with freeze().
+	expectError(t, `arr := [1, 2, 3]; imm := freeze(arr); arr[0] = 99`, nil, "not index-assignable")
+	expectRun(t, `arr := [1, 2, 3]; imm := freeze(copy(arr)); arr[0] = 99; out = imm[0]`, nil, 1)
+	expectRun(t, `arr := [1, 2, 3]; imm := freeze(copy(arr)); arr[1] = 42; out = imm`, nil, IARR{1, 2, 3})
 
-	// Mutating the original array must NOT be visible through the immutable copy.
-	expectRun(t, `arr := [1, 2, 3]; imm := immutable(arr); arr[0] = 99; out = imm[0]`,
-		nil, 1)
-	// Mutating the immutable's backing array via the original must not work.
-	expectRun(t, `arr := [1, 2, 3]; imm := immutable(arr); arr[1] = 42; out = imm`,
-		nil, IARR{1, 2, 3})
+	expectError(t, `m := {a: 1, b: 2}; imm := freeze(m); m.a = 99`, nil, "not index-assignable")
+	expectRun(t, `m := {a: 1, b: 2}; imm := freeze(copy(m)); m.a = 99; out = imm.a`, nil, 1)
+	expectRun(t, `m := {a: 1}; imm := freeze(copy(m)); m.x = 7; out = imm`, nil, IMAP{"a": 1})
 
-	// Mutating the original map must NOT be visible through the immutable copy.
-	expectRun(t, `m := {a: 1, b: 2}; imm := immutable(m); m.a = 99; out = imm.a`,
-		nil, 1)
-	// A new key added to the original map must NOT appear in the immutable copy.
-	expectRun(t, `m := {a: 1}; imm := immutable(m); m.x = 7; out = imm`,
-		nil, IMAP{"a": 1})
-
-	// Symmetric: mutating the slice after immutable() via append-and-replace
-	// should not affect the immutable view (covers slice-growth aliasing).
-	expectRun(t, `arr := [10, 20]; imm := immutable(arr); arr[0] = 55; out = imm[0]`,
-		nil, 10)
+	expectRun(t, `arr := [10, 20]; imm := freeze(copy(arr)); arr[0] = 55; out = imm[0]`, nil, 10)
 }
 
 // TestPtr verifies the security contract for the ptr() builtin and the Ptr
@@ -3192,27 +3137,22 @@ func TestSourceModules(t *testing.T) {
 	testEnumModule(t, `out = enum.all([true, 1], enum.value)`, true)
 	testEnumModule(t, `out = enum.all([true, 0], enum.value)`, false)
 	testEnumModule(t, `out = enum.all([true, 0, 1], enum.value)`, false)
-	testEnumModule(t, `out = enum.all(immutable([true, 0, 1]), enum.value)`,
-		false) // immutable-array
+	testEnumModule(t, `out = enum.all(freeze([true, 0, 1]), enum.value)`, false)
 	testEnumModule(t, `out = enum.all({}, enum.value)`, true)
 	testEnumModule(t, `out = enum.all({a:1}, enum.value)`, true)
 	testEnumModule(t, `out = enum.all({a:true, b:1}, enum.value)`, true)
-	testEnumModule(t, `out = enum.all(immutable({a:true, b:1}), enum.value)`,
-		true) // immutable-map
+	testEnumModule(t, `out = enum.all(freeze({a:true, b:1}), enum.value)`, true)
 	testEnumModule(t, `out = enum.all({a:true, b:0}, enum.value)`, false)
 	testEnumModule(t, `out = enum.all({a:true, b:0, c:1}, enum.value)`, false)
-	testEnumModule(t, `out = enum.all(0, enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
-	testEnumModule(t, `out = enum.all("123", enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
+	testEnumModule(t, `out = enum.all(0, enum.value)`, vm.UndefinedValue)     // non-enumerable: undefined
+	testEnumModule(t, `out = enum.all("123", enum.value)`, vm.UndefinedValue) // non-enumerable: undefined
 
 	testEnumModule(t, `out = enum.any([], enum.value)`, false)
 	testEnumModule(t, `out = enum.any([1], enum.value)`, true)
 	testEnumModule(t, `out = enum.any([true, 1], enum.value)`, true)
 	testEnumModule(t, `out = enum.any([true, 0], enum.value)`, true)
 	testEnumModule(t, `out = enum.any([true, 0, 1], enum.value)`, true)
-	testEnumModule(t, `out = enum.any(immutable([true, 0, 1]), enum.value)`,
-		true) // immutable-array
+	testEnumModule(t, `out = enum.any(freeze([true, 0, 1]), enum.value)`, true)
 	testEnumModule(t, `out = enum.any([false], enum.value)`, false)
 	testEnumModule(t, `out = enum.any([false, 0], enum.value)`, false)
 	testEnumModule(t, `out = enum.any({}, enum.value)`, false)
@@ -3220,165 +3160,98 @@ func TestSourceModules(t *testing.T) {
 	testEnumModule(t, `out = enum.any({a:true, b:1}, enum.value)`, true)
 	testEnumModule(t, `out = enum.any({a:true, b:0}, enum.value)`, true)
 	testEnumModule(t, `out = enum.any({a:true, b:0, c:1}, enum.value)`, true)
-	testEnumModule(t, `out = enum.any(immutable({a:true, b:0, c:1}), enum.value)`,
-		true) // immutable-map
+	testEnumModule(t, `out = enum.any(freeze({a:true, b:0, c:1}), enum.value)`, true)
 	testEnumModule(t, `out = enum.any({a:false}, enum.value)`, false)
 	testEnumModule(t, `out = enum.any({a:false, b:0}, enum.value)`, false)
-	testEnumModule(t, `out = enum.any(0, enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
-	testEnumModule(t, `out = enum.any("123", enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
+	testEnumModule(t, `out = enum.any(0, enum.value)`, vm.UndefinedValue)     // non-enumerable: undefined
+	testEnumModule(t, `out = enum.any("123", enum.value)`, vm.UndefinedValue) // non-enumerable: undefined
 
 	testEnumModule(t, `out = enum.chunk([], 1)`, ARR{})
 	testEnumModule(t, `out = enum.chunk([1], 1)`, ARR{ARR{1}})
-	testEnumModule(t, `out = enum.chunk([1,2,3], 1)`,
-		ARR{ARR{1}, ARR{2}, ARR{3}})
-	testEnumModule(t, `out = enum.chunk([1,2,3], 2)`,
-		ARR{ARR{1, 2}, ARR{3}})
-	testEnumModule(t, `out = enum.chunk([1,2,3], 3)`,
-		ARR{ARR{1, 2, 3}})
-	testEnumModule(t, `out = enum.chunk([1,2,3], 4)`,
-		ARR{ARR{1, 2, 3}})
-	testEnumModule(t, `out = enum.chunk([1,2,3,4], 3)`,
-		ARR{ARR{1, 2, 3}, ARR{4}})
-	testEnumModule(t, `out = enum.chunk([], 0)`,
-		vm.UndefinedValue) // size=0: undefined
-	testEnumModule(t, `out = enum.chunk([1], 0)`,
-		vm.UndefinedValue) // size=0: undefined
-	testEnumModule(t, `out = enum.chunk([1,2,3], 0)`,
-		vm.UndefinedValue) // size=0: undefined
-	testEnumModule(t, `out = enum.chunk({a:1,b:2,c:3}, 1)`,
-		vm.UndefinedValue) // map: undefined
-	testEnumModule(t, `out = enum.chunk(0, 1)`,
-		vm.UndefinedValue) // non-enumerable: undefined
-	testEnumModule(t, `out = enum.chunk("123", 1)`,
-		vm.UndefinedValue) // non-enumerable: undefined
+	testEnumModule(t, `out = enum.chunk([1,2,3], 1)`, ARR{ARR{1}, ARR{2}, ARR{3}})
+	testEnumModule(t, `out = enum.chunk([1,2,3], 2)`, ARR{ARR{1, 2}, ARR{3}})
+	testEnumModule(t, `out = enum.chunk([1,2,3], 3)`, ARR{ARR{1, 2, 3}})
+	testEnumModule(t, `out = enum.chunk([1,2,3], 4)`, ARR{ARR{1, 2, 3}})
+	testEnumModule(t, `out = enum.chunk([1,2,3,4], 3)`, ARR{ARR{1, 2, 3}, ARR{4}})
+	testEnumModule(t, `out = enum.chunk([], 0)`, vm.UndefinedValue)            // size=0: undefined
+	testEnumModule(t, `out = enum.chunk([1], 0)`, vm.UndefinedValue)           // size=0: undefined
+	testEnumModule(t, `out = enum.chunk([1,2,3], 0)`, vm.UndefinedValue)       // size=0: undefined
+	testEnumModule(t, `out = enum.chunk({a:1,b:2,c:3}, 1)`, vm.UndefinedValue) // map: undefined
+	testEnumModule(t, `out = enum.chunk(0, 1)`, vm.UndefinedValue)             // non-enumerable: undefined
+	testEnumModule(t, `out = enum.chunk("123", 1)`, vm.UndefinedValue)         // non-enumerable: undefined
 
-	testEnumModule(t, `out = enum.at([], 0)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at([], 1)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at([], -1)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at(["one"], 0)`,
-		"one")
-	testEnumModule(t, `out = enum.at(["one"], 1)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at(["one"], -1)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at(["one","two","three"], 0)`,
-		"one")
-	testEnumModule(t, `out = enum.at(["one","two","three"], 1)`,
-		"two")
-	testEnumModule(t, `out = enum.at(["one","two","three"], 2)`,
-		"three")
-	testEnumModule(t, `out = enum.at(["one","two","three"], -1)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at(["one","two","three"], 3)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at(["one","two","three"], "1")`,
-		vm.UndefinedValue) // non-int index: undefined
-	testEnumModule(t, `out = enum.at({}, "a")`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at({a:"one"}, "a")`,
-		"one")
-	testEnumModule(t, `out = enum.at({a:"one"}, "b")`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "a")`,
-		"one")
-	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "b")`,
-		"two")
-	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "c")`,
-		"three")
-	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "d")`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, 'a')`,
-		vm.UndefinedValue) // non-string index: undefined
-	testEnumModule(t, `out = enum.at(0, 1)`,
-		vm.UndefinedValue) // non-enumerable: undefined
-	testEnumModule(t, `out = enum.at("abc", 1)`,
-		vm.UndefinedValue) // non-enumerable: undefined
+	testEnumModule(t, `out = enum.at([], 0)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at([], 1)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at([], -1)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at(["one"], 0)`, "one")
+	testEnumModule(t, `out = enum.at(["one"], 1)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at(["one"], -1)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at(["one","two","three"], 0)`, "one")
+	testEnumModule(t, `out = enum.at(["one","two","three"], 1)`, "two")
+	testEnumModule(t, `out = enum.at(["one","two","three"], 2)`, "three")
+	testEnumModule(t, `out = enum.at(["one","two","three"], -1)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at(["one","two","three"], 3)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at(["one","two","three"], "1")`, vm.UndefinedValue) // non-int index: undefined
+	testEnumModule(t, `out = enum.at({}, "a")`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at({a:"one"}, "a")`, "one")
+	testEnumModule(t, `out = enum.at({a:"one"}, "b")`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "a")`, "one")
+	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "b")`, "two")
+	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "c")`, "three")
+	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, "d")`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.at({a:"one",b:"two",c:"three"}, 'a')`, vm.UndefinedValue) // non-string index: undefined
+	testEnumModule(t, `out = enum.at(0, 1)`, vm.UndefinedValue)                             // non-enumerable: undefined
+	testEnumModule(t, `out = enum.at("abc", 1)`, vm.UndefinedValue)                         // non-enumerable: undefined
 
 	testEnumModule(t, `out=0; enum.each([],func(k,v){out+=v})`, 0)
 	testEnumModule(t, `out=0; enum.each([1,2,3],func(k,v){out+=v})`, 6)
 	testEnumModule(t, `out=0; enum.each([1,2,3],func(k,v){out+=k})`, 3)
 	testEnumModule(t, `out=0; enum.each({a:1,b:2,c:3},func(k,v){out+=v})`, 6)
-	testEnumModule(t, `out=""; enum.each({a:1,b:2,c:3},func(k,v){out+=k}); out=len(out)`,
-		3)
+	testEnumModule(t, `out=""; enum.each({a:1,b:2,c:3},func(k,v){out+=k}); out=len(out)`, 3)
 	testEnumModule(t, `out=0; enum.each(5,func(k,v){out+=v})`, 0)     // non-enumerable: no iteration
 	testEnumModule(t, `out=0; enum.each("123",func(k,v){out+=v})`, 0) // non-enumerable: no iteration
 
-	testEnumModule(t, `out = enum.filter([], enum.value)`,
-		ARR{})
-	testEnumModule(t, `out = enum.filter([false,1,2], enum.value)`,
-		ARR{1, 2})
-	testEnumModule(t, `out = enum.filter([false,1,0,2], enum.value)`,
-		ARR{1, 2})
-	testEnumModule(t, `out = enum.filter({}, enum.value)`,
-		vm.UndefinedValue) // non-array: undefined
-	testEnumModule(t, `out = enum.filter(0, enum.value)`,
-		vm.UndefinedValue) // non-array: undefined
-	testEnumModule(t, `out = enum.filter("123", enum.value)`,
-		vm.UndefinedValue) // non-array: undefined
+	testEnumModule(t, `out = enum.filter([], enum.value)`, ARR{})
+	testEnumModule(t, `out = enum.filter([false,1,2], enum.value)`, ARR{1, 2})
+	testEnumModule(t, `out = enum.filter([false,1,0,2], enum.value)`, ARR{1, 2})
+	testEnumModule(t, `out = enum.filter({}, enum.value)`, vm.UndefinedValue)    // non-array: undefined
+	testEnumModule(t, `out = enum.filter(0, enum.value)`, vm.UndefinedValue)     // non-array: undefined
+	testEnumModule(t, `out = enum.filter("123", enum.value)`, vm.UndefinedValue) // non-array: undefined
 
-	testEnumModule(t, `out = enum.find([], enum.value)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.find([0], enum.value)`,
-		vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find([], enum.value)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find([0], enum.value)`, vm.UndefinedValue)
 	testEnumModule(t, `out = enum.find([1], enum.value)`, 1)
 	testEnumModule(t, `out = enum.find([false,0,undefined,1], enum.value)`, 1)
 	testEnumModule(t, `out = enum.find([1,2,3], enum.value)`, 1)
-	testEnumModule(t, `out = enum.find({}, enum.value)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.find({a:0}, enum.value)`,
-		vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find({}, enum.value)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find({a:0}, enum.value)`, vm.UndefinedValue)
 	testEnumModule(t, `out = enum.find({a:1}, enum.value)`, 1)
-	testEnumModule(t, `out = enum.find({a:false,b:0,c:undefined,d:1}, enum.value)`,
-		1)
+	testEnumModule(t, `out = enum.find({a:false,b:0,c:undefined,d:1}, enum.value)`, 1)
 	//testEnumModule(t, `out = enum.find({a:1,b:2,c:3}, enum.value)`, 1)
-	testEnumModule(t, `out = enum.find(0, enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
-	testEnumModule(t, `out = enum.find("123", enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
+	testEnumModule(t, `out = enum.find(0, enum.value)`, vm.UndefinedValue)     // non-enumerable: undefined
+	testEnumModule(t, `out = enum.find("123", enum.value)`, vm.UndefinedValue) // non-enumerable: undefined
 
-	testEnumModule(t, `out = enum.find_key([], enum.value)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.find_key([0], enum.value)`,
-		vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find_key([], enum.value)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find_key([0], enum.value)`, vm.UndefinedValue)
 	testEnumModule(t, `out = enum.find_key([1], enum.value)`, 0)
-	testEnumModule(t, `out = enum.find_key([false,0,undefined,1], enum.value)`,
-		3)
+	testEnumModule(t, `out = enum.find_key([false,0,undefined,1], enum.value)`, 3)
 	testEnumModule(t, `out = enum.find_key([1,2,3], enum.value)`, 0)
-	testEnumModule(t, `out = enum.find_key({}, enum.value)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.find_key({a:0}, enum.value)`,
-		vm.UndefinedValue)
-	testEnumModule(t, `out = enum.find_key({a:1}, enum.value)`,
-		"a")
-	testEnumModule(t, `out = enum.find_key({a:false,b:0,c:undefined,d:1}, enum.value)`,
-		"d")
+	testEnumModule(t, `out = enum.find_key({}, enum.value)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find_key({a:0}, enum.value)`, vm.UndefinedValue)
+	testEnumModule(t, `out = enum.find_key({a:1}, enum.value)`, "a")
+	testEnumModule(t, `out = enum.find_key({a:false,b:0,c:undefined,d:1}, enum.value)`, "d")
 	//testEnumModule(t, `out = enum.find_key({a:1,b:2,c:3}, enum.value)`, "a")
-	testEnumModule(t, `out = enum.find_key(0, enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
-	testEnumModule(t, `out = enum.find_key("123", enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
+	testEnumModule(t, `out = enum.find_key(0, enum.value)`, vm.UndefinedValue)     // non-enumerable: undefined
+	testEnumModule(t, `out = enum.find_key("123", enum.value)`, vm.UndefinedValue) // non-enumerable: undefined
 
-	testEnumModule(t, `out = enum.map([], enum.value)`,
-		ARR{})
-	testEnumModule(t, `out = enum.map([1,2,3], enum.value)`,
-		ARR{1, 2, 3})
-	testEnumModule(t, `out = enum.map([1,2,3], enum.key)`,
-		ARR{0, 1, 2})
-	testEnumModule(t, `out = enum.map([1,2,3], func(k,v) { return v*2 })`,
-		ARR{2, 4, 6})
-	testEnumModule(t, `out = enum.map({}, enum.value)`,
-		ARR{})
-	testEnumModule(t, `out = enum.map({a:1}, func(k,v) { return v*2 })`,
-		ARR{2})
-	testEnumModule(t, `out = enum.map(0, enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
-	testEnumModule(t, `out = enum.map("123", enum.value)`,
-		vm.UndefinedValue) // non-enumerable: undefined
+	testEnumModule(t, `out = enum.map([], enum.value)`, ARR{})
+	testEnumModule(t, `out = enum.map([1,2,3], enum.value)`, ARR{1, 2, 3})
+	testEnumModule(t, `out = enum.map([1,2,3], enum.key)`, ARR{0, 1, 2})
+	testEnumModule(t, `out = enum.map([1,2,3], func(k,v) { return v*2 })`, ARR{2, 4, 6})
+	testEnumModule(t, `out = enum.map({}, enum.value)`, ARR{})
+	testEnumModule(t, `out = enum.map({a:1}, func(k,v) { return v*2 })`, ARR{2})
+	testEnumModule(t, `out = enum.map(0, enum.value)`, vm.UndefinedValue)     // non-enumerable: undefined
+	testEnumModule(t, `out = enum.map("123", enum.value)`, vm.UndefinedValue) // non-enumerable: undefined
 }
 
 func testEnumModule(t *testing.T, input string, expected interface{}) {
@@ -3692,7 +3565,7 @@ func TestSpread(t *testing.T) {
 			return append(append([a], b...), c...)
 		}()
 	}
-	out = f(1, immutable([2, 3])...)
+	out = f(1, freeze([2, 3])...)
 	`, nil, ARR{1, 2, 3, 2, 3, 4})
 
 	expectError(t, `func(a) {}([1, 2]...)`, nil,
@@ -3747,9 +3620,9 @@ func expectRun(
 		expectedObj := toObject(expected)
 		switch eo := expectedObj.(type) {
 		case *vm.Array:
-			expectedObj = &vm.ImmutableArray{Value: eo.Value}
+			expectedObj = &vm.Array{Frozen: true, Value: eo.Value}
 		case *vm.Map:
-			expectedObj = &vm.ImmutableMap{Value: eo.Value}
+			expectedObj = &vm.Map{Frozen: true, Value: eo.Value}
 		}
 
 		modules.AddSourceModule("__code__",
@@ -4026,14 +3899,14 @@ func toObject(v interface{}) vm.Object {
 			objs[k] = toObject(v)
 		}
 
-		return &vm.ImmutableMap{Value: objs}
+		return &vm.Map{Frozen: true, Value: objs}
 	case IARR:
 		var objs []vm.Object
 		for _, e := range v {
 			objs = append(objs, toObject(e))
 		}
 
-		return &vm.ImmutableArray{Value: objs}
+		return &vm.Array{Frozen: true, Value: objs}
 	}
 
 	panic(fmt.Errorf("unknown type: %T", v))
@@ -4061,10 +3934,6 @@ func objectZeroCopy(o vm.Object) vm.Object {
 		return &vm.Error{}
 	case *vm.Bytes:
 		return &vm.Bytes{}
-	case *vm.ImmutableArray:
-		return &vm.ImmutableArray{}
-	case *vm.ImmutableMap:
-		return &vm.ImmutableMap{}
 	case nil:
 		panic("nil")
 	default:

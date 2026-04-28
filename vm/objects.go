@@ -112,6 +112,20 @@ type Object interface {
 
 	// CanCall should return whether the Object can be Called.
 	CanCall() bool
+
+	// Freeze makes the object immutable. After Freeze, mutating operations
+	// (such as IndexSet) must return ErrNotIndexAssignable. Freeze is idempotent
+	// and is a no-op for objects whose value is already inherently immutable
+	// (Int, Float, String, Char, Bool, Bytes, ...).
+	Freeze()
+
+	// Melt makes the object mutable again. Melt is idempotent and is a
+	// no-op for objects whose value is inherently immutable.
+	Melt()
+
+	// IsFrozen reports whether the object is currently immutable. Inherently
+	// immutable objects always return true.
+	IsFrozen() bool
 }
 
 // ObjectImpl represents a default Object Implementation. To defined a new
@@ -183,11 +197,51 @@ func (o *ObjectImpl) CanCall() bool {
 	return false
 }
 
+// Freeze is a no-op for inherently immutable objects.
+func (o *ObjectImpl) Freeze() {}
+
+// Melt is a no-op for inherently immutable objects.
+func (o *ObjectImpl) Melt() {}
+
+// IsFrozen returns true: types using the default ObjectImpl have no mutable
+// state. Container types (Array, Map, StructInstance) override this method
+// with a runtime-checked flag.
+func (o *ObjectImpl) IsFrozen() bool { return true }
+
 // Array represents an array of objects.
 type Array struct {
 	ObjectImpl
-	mu    sync.RWMutex
-	Value []Object
+	mu     sync.RWMutex
+	Value  []Object
+	Frozen bool
+}
+
+// NewFrozenArray returns a Frozen *Array wrapping the given slice. The slice
+// is used as-is (the caller must not retain a mutable reference to it).
+func NewFrozenArray(values []Object) *Array {
+	return &Array{Value: values, Frozen: true}
+}
+
+// Freeze marks the array as immutable. Subsequent IndexSet calls return
+// ErrModifyFrozen.
+func (o *Array) Freeze() {
+	o.mu.Lock()
+	o.Frozen = true
+	o.mu.Unlock()
+}
+
+// Melt makes the array mutable again.
+func (o *Array) Melt() {
+	o.mu.Lock()
+	o.Frozen = false
+	o.mu.Unlock()
+}
+
+// IsFrozen reports whether the array has been Frozen.
+func (o *Array) IsFrozen() bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.Frozen
 }
 
 // TypeName returns the name of the type.
@@ -253,6 +307,7 @@ func (o *Array) copyWithMemo(memo map[uintptr]Object) Object {
 	snap := make([]Object, len(o.Value))
 	copy(snap, o.Value)
 	o.mu.RUnlock()
+	// Copy intentionally drops the Frozen flag so that `copy(freeze(x))` produces a thawed working copy.
 	c := &Array{Value: make([]Object, len(snap))}
 	memo[key] = c // register before recursing to break cycles
 	for i, elem := range snap {
@@ -276,19 +331,11 @@ func (o *Array) Equals(x Object) bool {
 
 func (o *Array) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
 	oPtr := uintptr(unsafe.Pointer(o))
-	var xArr *Array
-	var xIArr *ImmutableArray
-	var xPtr uintptr
-	switch x := xObj.(type) {
-	case *Array:
-		xArr = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	case *ImmutableArray:
-		xIArr = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	default:
+	xArr, ok := xObj.(*Array)
+	if !ok {
 		return false
 	}
+	xPtr := uintptr(unsafe.Pointer(xArr))
 	lo, hi := oPtr, xPtr
 	if lo > hi {
 		lo, hi = hi, lo
@@ -300,16 +347,11 @@ func (o *Array) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
 	vis[pairKey] = true
 	o.mu.RLock()
 	defer o.mu.RUnlock()
-	var xVal []Object
-	if xArr != nil {
-		if xArr != o {
-			xArr.mu.RLock()
-			defer xArr.mu.RUnlock()
-		}
-		xVal = xArr.Value
-	} else {
-		xVal = xIArr.Value
+	if xArr != o {
+		xArr.mu.RLock()
+		defer xArr.mu.RUnlock()
 	}
+	xVal := xArr.Value
 	if len(o.Value) != len(xVal) {
 		return false
 	}
@@ -348,6 +390,10 @@ func (o *Array) IndexSet(index, value Object) (err error) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.Frozen {
+		err = ErrNotIndexAssignable
+		return
+	}
 	if intIdx < 0 || intIdx >= len(o.Value) {
 		err = ErrIndexOutOfBounds
 		return
@@ -459,18 +505,21 @@ type BuiltinModule struct {
 	Attrs map[string]Object
 }
 
-// Import returns an immutable map for the module.
+// Import returns a Frozen map for the module.
 func (m *BuiltinModule) Import(moduleName string) (interface{}, error) {
-	return m.AsImmutableMap(moduleName), nil
+	return m.AsFrozenMap(moduleName), nil
 }
 
-// AsImmutableMap converts builtin module into an immutable map.
-func (m *BuiltinModule) AsImmutableMap(moduleName string) *ImmutableMap {
+// AsFrozenMap converts builtin module into a Frozen *Map carrying the
+// given module name. The name "AsFrozenMap" is preserved for API
+// compatibility — the returned map is now an ordinary *Map with its Frozen
+// flag set.
+func (m *BuiltinModule) AsFrozenMap(moduleName string) *Map {
 	attrs := make(map[string]Object, len(m.Attrs))
 	for k, v := range m.Attrs {
 		attrs[k] = v.Copy()
 	}
-	return &ImmutableMap{Value: attrs, moduleName: moduleName}
+	return NewFrozenMap(attrs, moduleName)
 }
 
 // Bytes represents a byte array.
@@ -1048,291 +1097,6 @@ func (o *Float64) Equals(x Object) bool {
 	return o.Value == t.Value
 }
 
-// ImmutableArray represents an immutable array of objects.
-type ImmutableArray struct {
-	ObjectImpl
-	Value []Object
-}
-
-// TypeName returns the name of the type.
-func (o *ImmutableArray) TypeName() string {
-	return "immutable-array"
-}
-
-func (o *ImmutableArray) String() string {
-	return o.stringWithVisited(make(map[uintptr]bool))
-}
-
-func (o *ImmutableArray) stringWithVisited(vis map[uintptr]bool) string {
-	key := uintptr(unsafe.Pointer(o))
-	if vis[key] {
-		return "[...]"
-	}
-	vis[key] = true
-	defer delete(vis, key)
-	var elements []string
-	for _, e := range o.Value {
-		elements = append(elements, elemString(e, vis))
-	}
-	return fmt.Sprintf("[%s]", strings.Join(elements, ", "))
-}
-
-// BinaryOp returns another object that is the result of a given binary
-// operator and a right-hand side object.
-func (o *ImmutableArray) BinaryOp(op token.Token, rhs Object) (Object, error) {
-	if rhs, ok := rhs.(*ImmutableArray); ok {
-		switch op {
-		case token.Add:
-			arr := make([]Object, 0, len(o.Value)+len(rhs.Value))
-			arr = append(arr, o.Value...)
-			arr = append(arr, rhs.Value...)
-			return &Array{Value: arr}, nil
-		}
-	}
-	return nil, ErrInvalidOperator
-}
-
-// Copy returns a copy of the type.
-func (o *ImmutableArray) Copy() Object {
-	return o.copyWithMemo(make(map[uintptr]Object))
-}
-
-func (o *ImmutableArray) copyWithMemo(memo map[uintptr]Object) Object {
-	key := uintptr(unsafe.Pointer(o))
-	if existing, ok := memo[key]; ok {
-		return existing
-	}
-	c := &Array{Value: make([]Object, len(o.Value))}
-	memo[key] = c
-	for i, elem := range o.Value {
-		c.Value[i] = copyElem(elem, memo)
-	}
-	return c
-}
-
-// IsFalsy returns true if the value of the type is falsy.
-func (o *ImmutableArray) IsFalsy() bool {
-	return len(o.Value) == 0
-}
-
-// Equals returns true if the value of the type is equal to the value of
-// another object.
-func (o *ImmutableArray) Equals(x Object) bool {
-	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
-}
-
-func (o *ImmutableArray) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
-	oPtr := uintptr(unsafe.Pointer(o))
-	var xArr *Array
-	var xIArr *ImmutableArray
-	var xPtr uintptr
-	switch x := xObj.(type) {
-	case *Array:
-		xArr = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	case *ImmutableArray:
-		xIArr = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	default:
-		return false
-	}
-	lo, hi := oPtr, xPtr
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	pairKey := [2]uintptr{lo, hi}
-	if vis[pairKey] {
-		return true
-	}
-	vis[pairKey] = true
-	var xVal []Object
-	if xArr != nil {
-		xArr.mu.RLock()
-		defer xArr.mu.RUnlock()
-		xVal = xArr.Value
-	} else {
-		xVal = xIArr.Value
-	}
-	if len(o.Value) != len(xVal) {
-		return false
-	}
-	for i, e := range o.Value {
-		if !equalsElem(e, xVal[i], vis) {
-			return false
-		}
-	}
-	return true
-}
-
-// IndexGet returns an element at a given index.
-func (o *ImmutableArray) IndexGet(index Object) (res Object, err error) {
-	intIdx, ok := index.(*Int)
-	if !ok {
-		err = ErrInvalidIndexType
-		return
-	}
-	idxVal := int(intIdx.Value)
-	if idxVal < 0 || idxVal >= len(o.Value) {
-		res = UndefinedValue
-		return
-	}
-	res = o.Value[idxVal]
-	return
-}
-
-// Iterate creates an array iterator.
-func (o *ImmutableArray) Iterate() Iterator {
-	return &ArrayIterator{
-		v: o.Value,
-		l: len(o.Value),
-	}
-}
-
-// CanIterate returns whether the Object can be Iterated.
-func (o *ImmutableArray) CanIterate() bool {
-	return true
-}
-
-// ImmutableMap represents an immutable map object.
-type ImmutableMap struct {
-	ObjectImpl
-	Value      map[string]Object
-	moduleName string // set only by AsImmutableMap; not present in user-constructed maps
-}
-
-// TypeName returns the name of the type.
-func (o *ImmutableMap) TypeName() string {
-	return "immutable-map"
-}
-
-// ModuleName returns the module name associated with this map, or an empty
-// string for user-constructed immutable maps that are not module objects.
-func (o *ImmutableMap) ModuleName() string {
-	return o.moduleName
-}
-
-func (o *ImmutableMap) String() string {
-	return o.stringWithVisited(make(map[uintptr]bool))
-}
-
-func (o *ImmutableMap) stringWithVisited(vis map[uintptr]bool) string {
-	key := uintptr(unsafe.Pointer(o))
-	if vis[key] {
-		return "{...}"
-	}
-	vis[key] = true
-	defer delete(vis, key)
-	var pairs []string
-	for k, v := range o.Value {
-		pairs = append(pairs, fmt.Sprintf("%s: %s", k, elemString(v, vis)))
-	}
-	return fmt.Sprintf("{%s}", strings.Join(pairs, ", "))
-}
-
-// Copy returns a copy of the type.
-func (o *ImmutableMap) Copy() Object {
-	return o.copyWithMemo(make(map[uintptr]Object))
-}
-
-func (o *ImmutableMap) copyWithMemo(memo map[uintptr]Object) Object {
-	key := uintptr(unsafe.Pointer(o))
-	if existing, ok := memo[key]; ok {
-		return existing
-	}
-	c := &Map{Value: make(map[string]Object, len(o.Value))}
-	memo[key] = c
-	for k, v := range o.Value {
-		c.Value[k] = copyElem(v, memo)
-	}
-	return c
-}
-
-// IsFalsy returns true if the value of the type is falsy.
-func (o *ImmutableMap) IsFalsy() bool {
-	return len(o.Value) == 0
-}
-
-// IndexGet returns the value for the given key.
-func (o *ImmutableMap) IndexGet(index Object) (res Object, err error) {
-	strIdx, ok := ToString(index)
-	if !ok {
-		err = ErrInvalidIndexType
-		return
-	}
-	res, ok = o.Value[strIdx]
-	if !ok {
-		res = UndefinedValue
-	}
-	return
-}
-
-// Equals returns true if the value of the type is equal to the value of
-// another object.
-func (o *ImmutableMap) Equals(x Object) bool {
-	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
-}
-
-func (o *ImmutableMap) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
-	oPtr := uintptr(unsafe.Pointer(o))
-	var xMap *Map
-	var xIMap *ImmutableMap
-	var xPtr uintptr
-	switch x := xObj.(type) {
-	case *Map:
-		xMap = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	case *ImmutableMap:
-		xIMap = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	default:
-		return false
-	}
-	lo, hi := oPtr, xPtr
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	pairKey := [2]uintptr{lo, hi}
-	if vis[pairKey] {
-		return true
-	}
-	vis[pairKey] = true
-	var xVal map[string]Object
-	if xMap != nil {
-		xMap.mu.RLock()
-		defer xMap.mu.RUnlock()
-		xVal = xMap.Value
-	} else {
-		xVal = xIMap.Value
-	}
-	if len(o.Value) != len(xVal) {
-		return false
-	}
-	for k, v := range o.Value {
-		if !equalsElem(v, xVal[k], vis) {
-			return false
-		}
-	}
-	return true
-}
-
-// Iterate creates an immutable map iterator.
-func (o *ImmutableMap) Iterate() Iterator {
-	var keys []string
-	for k := range o.Value {
-		keys = append(keys, k)
-	}
-	return &MapIterator{
-		v: o.Value,
-		k: keys,
-		l: len(keys),
-	}
-}
-
-// CanIterate returns whether the Object can be Iterated.
-func (o *ImmutableMap) CanIterate() bool {
-	return true
-}
-
 // Int represents an integer value.
 type Int struct {
 	ObjectImpl
@@ -1541,8 +1305,45 @@ func (o *Int) Equals(x Object) bool {
 // Map represents a map of objects.
 type Map struct {
 	ObjectImpl
-	mu    sync.RWMutex
-	Value map[string]Object
+	mu         sync.RWMutex
+	Value      map[string]Object
+	Frozen     bool
+	moduleName string // set only by AsFrozenMap; non-empty only on Frozen maps
+}
+
+// NewFrozenMap returns a Frozen *Map. moduleName may be empty for ordinary
+// Frozen maps; module proxies set it to the imported module's name.
+func NewFrozenMap(values map[string]Object, moduleName string) *Map {
+	return &Map{Value: values, Frozen: true, moduleName: moduleName}
+}
+
+// ModuleName returns the module name associated with this map (only set on
+// Frozen module proxies). Returns an empty string for user-constructed maps.
+func (o *Map) ModuleName() string {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.moduleName
+}
+
+// Freeze marks the map as immutable.
+func (o *Map) Freeze() {
+	o.mu.Lock()
+	o.Frozen = true
+	o.mu.Unlock()
+}
+
+// Melt makes the map mutable again.
+func (o *Map) Melt() {
+	o.mu.Lock()
+	o.Frozen = false
+	o.mu.Unlock()
+}
+
+// IsFrozen reports whether the map has been Frozen.
+func (o *Map) IsFrozen() bool {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	return o.Frozen
 }
 
 // TypeName returns the name of the type.
@@ -1613,19 +1414,11 @@ func (o *Map) Equals(x Object) bool {
 
 func (o *Map) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
 	oPtr := uintptr(unsafe.Pointer(o))
-	var xMap *Map
-	var xIMap *ImmutableMap
-	var xPtr uintptr
-	switch x := xObj.(type) {
-	case *Map:
-		xMap = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	case *ImmutableMap:
-		xIMap = x
-		xPtr = uintptr(unsafe.Pointer(x))
-	default:
+	xMap, ok := xObj.(*Map)
+	if !ok {
 		return false
 	}
+	xPtr := uintptr(unsafe.Pointer(xMap))
 	lo, hi := oPtr, xPtr
 	if lo > hi {
 		lo, hi = hi, lo
@@ -1637,16 +1430,11 @@ func (o *Map) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
 	vis[pairKey] = true
 	o.mu.RLock()
 	defer o.mu.RUnlock()
-	var xVal map[string]Object
-	if xMap != nil {
-		if xMap != o {
-			xMap.mu.RLock()
-			defer xMap.mu.RUnlock()
-		}
-		xVal = xMap.Value
-	} else {
-		xVal = xIMap.Value
+	if xMap != o {
+		xMap.mu.RLock()
+		defer xMap.mu.RUnlock()
 	}
+	xVal := xMap.Value
 	if len(o.Value) != len(xVal) {
 		return false
 	}
@@ -1683,6 +1471,10 @@ func (o *Map) IndexSet(index, value Object) (err error) {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	if o.Frozen {
+		err = ErrNotIndexAssignable
+		return
+	}
 	o.Value[strIdx] = value
 	return nil
 }
@@ -1898,7 +1690,6 @@ func (o *String) CanIterate() bool {
 	return true
 }
 
-
 // Undefined represents an undefined value.
 type Undefined struct {
 	ObjectImpl
@@ -1971,11 +1762,7 @@ func equalsElem(a, b Object, vis map[[2]uintptr]bool) bool {
 	switch a := a.(type) {
 	case *Array:
 		return a.equalsWithVisited(b, vis)
-	case *ImmutableArray:
-		return a.equalsWithVisited(b, vis)
 	case *Map:
-		return a.equalsWithVisited(b, vis)
-	case *ImmutableMap:
 		return a.equalsWithVisited(b, vis)
 	case *StructInstance:
 		return a.equalsWithVisited(b, vis)
@@ -1989,11 +1776,7 @@ func copyElem(o Object, memo map[uintptr]Object) Object {
 	switch o := o.(type) {
 	case *Array:
 		return o.copyWithMemo(memo)
-	case *ImmutableArray:
-		return o.copyWithMemo(memo)
 	case *Map:
-		return o.copyWithMemo(memo)
-	case *ImmutableMap:
 		return o.copyWithMemo(memo)
 	case *StructInstance:
 		return o.copyWithMemo(memo)
@@ -2007,15 +1790,10 @@ func elemString(o Object, vis map[uintptr]bool) string {
 	switch o := o.(type) {
 	case *Array:
 		return o.stringWithVisited(vis)
-	case *ImmutableArray:
-		return o.stringWithVisited(vis)
 	case *Map:
-		return o.stringWithVisited(vis)
-	case *ImmutableMap:
 		return o.stringWithVisited(vis)
 	case *StructInstance:
 		return o.stringWithVisited(vis)
 	}
 	return o.String()
 }
-

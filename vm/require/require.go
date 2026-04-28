@@ -87,14 +87,14 @@ func Object(v interface{}) vm.Object {
 			objs[k] = Object(v)
 		}
 
-		return &vm.ImmutableMap{Value: objs}
+		return &vm.Map{Frozen: true, Value: objs}
 	case IARR:
 		var objs []vm.Object
 		for _, e := range v {
 			objs = append(objs, Object(e))
 		}
 
-		return &vm.ImmutableArray{Value: objs}
+		return &vm.Array{Frozen: true, Value: objs}
 	case time.Time:
 		return stdtime.TimeObject(v)
 	case []int:
@@ -158,7 +158,7 @@ func (c CallRes) Call(funcName string, args ...interface{}) CallRes {
 	case *vm.BuiltinFunction:
 		res, err := o.Value(context.Background(), oargs...)
 		return CallRes{T: c.T, O: res, E: err}
-	case *vm.ImmutableMap:
+	case *vm.Map:
 		m, ok := o.Value[funcName]
 		if !ok {
 			return CallRes{T: c.T, E: fmt.Errorf("function not found: %s", funcName)}
@@ -324,9 +324,6 @@ func Equal(t *testing.T, expected, actual interface{}, msg ...interface{}) {
 	case *vm.Array:
 		equalObjectSlice(t, expected.Value,
 			actual.(*vm.Array).Value, msg...)
-	case *vm.ImmutableArray:
-		equalObjectSlice(t, expected.Value,
-			actual.(*vm.ImmutableArray).Value, msg...)
 	case *vm.Bytes:
 		if !bytes.Equal(expected.Value, actual.(*vm.Bytes).Value) {
 			failExpectedActual(t, string(expected.Value),
@@ -335,9 +332,6 @@ func Equal(t *testing.T, expected, actual interface{}, msg ...interface{}) {
 	case *vm.Map:
 		equalObjectMap(t, expected.Value,
 			actual.(*vm.Map).Value, msg...)
-	case *vm.ImmutableMap:
-		equalObjectMap(t, expected.Value,
-			actual.(*vm.ImmutableMap).Value, msg...)
 	case *vm.CompiledFunction:
 		equalCompiledFunction(t, expected,
 			actual.(*vm.CompiledFunction), msg...)

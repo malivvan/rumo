@@ -48,7 +48,7 @@ func (e *liveCodecError) Error() string { return e.msg }
 
 // ResolveChans walks o and binds every *Chan with a nil Core to either a
 // local core (when the chan is in registry) or a fresh RemoteChanCore using
-// fallback. The walk handles arrays, maps, immutables, error wrappers, and
+// fallback. The walk handles arrays, maps, error wrappers, and
 // CompiledFunction Free cells. ObjectPtr is followed.
 //
 // Cycles are tolerated through a visited-set keyed by *Chan/*Map/*Array to
@@ -87,11 +87,6 @@ func resolveChans(o Object, registry *ChanRegistry, fb ChanTransport, seen map[O
 		for _, e := range snap {
 			resolveChans(e, registry, fb, seen)
 		}
-	case *ImmutableArray:
-		seen[v] = struct{}{}
-		for _, e := range v.Value {
-			resolveChans(e, registry, fb, seen)
-		}
 	case *Map:
 		seen[v] = struct{}{}
 		v.mu.RLock()
@@ -101,11 +96,6 @@ func resolveChans(o Object, registry *ChanRegistry, fb ChanTransport, seen map[O
 		}
 		v.mu.RUnlock()
 		for _, e := range snap {
-			resolveChans(e, registry, fb, seen)
-		}
-	case *ImmutableMap:
-		seen[v] = struct{}{}
-		for _, e := range v.Value {
 			resolveChans(e, registry, fb, seen)
 		}
 	case *Error:

@@ -230,13 +230,13 @@ func Stat(path string) (*Info, error) {
 		}
 	}
 
-	// Scan constants for imported builtin modules (ImmutableMap with a
+	// Scan constants for imported builtin modules (Frozen Map with a
 	// non-empty module name) and native FFI loader objects.
 	modSet := make(map[string]struct{})
 	nativeSet := make(map[string]struct{})
 	for _, c := range bc.Constants {
 		switch obj := c.(type) {
-		case *vm.ImmutableMap:
+		case *vm.Map:
 			if name := obj.ModuleName(); name != "" {
 				modSet[name] = struct{}{}
 			}
@@ -264,4 +264,3 @@ func Stat(path string) (*Info, error) {
 
 	return info, nil
 }
-

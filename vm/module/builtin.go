@@ -943,18 +943,6 @@ func funcASsSRS(fn func([]string, string) string) vm.CallableFunc {
 				}
 				ss1 = append(ss1, as)
 			}
-		case *vm.ImmutableArray:
-			for idx, a := range arg0.Value {
-				as, ok := vm.ToString(a)
-				if !ok {
-					return nil, vm.ErrInvalidArgumentType{
-						Name:     fmt.Sprintf("first[%d]", idx),
-						Expected: "string(compatible)",
-						Found:    a.TypeName(),
-					}
-				}
-				ss1 = append(ss1, as)
-			}
 		default:
 			return nil, vm.ErrInvalidArgumentType{
 				Name:     "first",

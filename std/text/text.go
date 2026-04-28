@@ -156,7 +156,7 @@ func textREFind(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 		arr := &vm.Array{}
 		for i := 0; i < len(m); i += 2 {
 			arr.Value = append(arr.Value,
-				&vm.ImmutableMap{Value: map[string]vm.Object{
+				&vm.Map{Frozen: true, Value: map[string]vm.Object{
 					"text":  &vm.String{Value: s2[m[i]:m[i+1]]},
 					"begin": &vm.Int{Value: int64(m[i])},
 					"end":   &vm.Int{Value: int64(m[i+1])},
@@ -188,7 +188,7 @@ func textREFind(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 		subMatch := &vm.Array{}
 		for i := 0; i < len(m); i += 2 {
 			subMatch.Value = append(subMatch.Value,
-				&vm.ImmutableMap{Value: map[string]vm.Object{
+				&vm.Map{Frozen: true, Value: map[string]vm.Object{
 					"text":  &vm.String{Value: s2[m[i]:m[i+1]]},
 					"begin": &vm.Int{Value: int64(m[i])},
 					"end":   &vm.Int{Value: int64(m[i+1])},
@@ -639,19 +639,6 @@ func textJoin(ctx context.Context, args ...vm.Object) (ret vm.Object, err error)
 			slen += len(as)
 			ss1 = append(ss1, as)
 		}
-	case *vm.ImmutableArray:
-		for idx, a := range arg0.Value {
-			as, ok := vm.ToString(a)
-			if !ok {
-				return nil, vm.ErrInvalidArgumentType{
-					Name:     fmt.Sprintf("first[%d]", idx),
-					Expected: "string(compatible)",
-					Found:    a.TypeName(),
-				}
-			}
-			slen += len(as)
-			ss1 = append(ss1, as)
-		}
 	default:
 		return nil, vm.ErrInvalidArgumentType{
 			Name:     "first",
@@ -955,8 +942,8 @@ func doTextReplace(ctx context.Context, s, old, new string, n int) (string, bool
 
 // regexp:
 
-func makeTextRegexp(re *regexp.Regexp) *vm.ImmutableMap {
-	return &vm.ImmutableMap{
+func makeTextRegexp(re *regexp.Regexp) *vm.Map {
+	return &vm.Map{Frozen: true, 
 		Value: map[string]vm.Object{
 			// match(text) => bool
 			"match": &vm.BuiltinFunction{
@@ -1016,7 +1003,7 @@ func makeTextRegexp(re *regexp.Regexp) *vm.ImmutableMap {
 						arr := &vm.Array{}
 						for i := 0; i < len(m); i += 2 {
 							arr.Value = append(arr.Value,
-								&vm.ImmutableMap{
+								&vm.Map{Frozen: true, 
 									Value: map[string]vm.Object{
 										"text": &vm.String{
 											Value: s1[m[i]:m[i+1]],
@@ -1055,7 +1042,7 @@ func makeTextRegexp(re *regexp.Regexp) *vm.ImmutableMap {
 						subMatch := &vm.Array{}
 						for i := 0; i < len(m); i += 2 {
 							subMatch.Value = append(subMatch.Value,
-								&vm.ImmutableMap{
+								&vm.Map{Frozen: true, 
 									Value: map[string]vm.Object{
 										"text": &vm.String{
 											Value: s1[m[i]:m[i+1]],

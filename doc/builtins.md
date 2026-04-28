@@ -127,6 +127,24 @@ items := splice(v, 0, 0, "d", "e") // items == [], v == ["d", "e", "a", "b", "c"
 v := ["a", "b", "c"]
 items := splice(v, 1, 1, "d", "e") // items == ["b"], v == ["a", "d", "e", "c"]
 ```
+
+
+## freeze
+Freezes an object. Frozen objects are immutable and their content cannot be changed.
+
+```golang
+v := freeze([1, 2, 3])
+v[0] = 0 // runtime error, frozen objects cannot be modified
+```
+
+## melts a frozen object. After melting, the object becomes mutable again.
+
+```golang
+v := freeze([1, 2, 3])
+v = melt(v)
+v[0] = 0 // works fine, 'v' is mutable again
+```
+
 ## type_name
 
 Returns the type_name of an object.
@@ -437,18 +455,13 @@ function, or user-provided callable objects). Or it returns `false`.
 ## is_array
 Returns `true` if the object's type is array. Or it returns `false`.
 
-## is_immutable_array
-Returns `true` if the object's type is immutable array. Or it returns `false`.
-
 ## is_map
 Returns `true` if the object's type is map. Or it returns `false`.
 
-## is_immutable_map
-Returns `true` if the object's type is immutable map. Or it returns `false`.
-
 ## is_iterable
-Returns `true` if the object's type is iterable: array, immutable array, map,
-immutable map, string, and bytes are iterable types in rumo.
+Returns `true` if the object's type is iterable: array, map, string, and
+bytes are iterable types in rumo.
 
-## is_time
-Returns `true` if the object's type is time. Or it returns `false`.
+## is_frozen
+Returns `true` if the object is frozen. Or it returns `false`. Frozen objects are
+immutable and their content cannot be changed.

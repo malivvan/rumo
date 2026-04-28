@@ -220,7 +220,7 @@ func RunREPL(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.W
 	for _, name := range modules {
 		if mod, ok := BuiltinModules[name]; ok {
 			sym := symbolTable.Define(name)
-			globals[sym.Index] = (&vm.BuiltinModule{Attrs: mod.Objects()}).AsImmutableMap(name)
+			globals[sym.Index] = (&vm.BuiltinModule{Attrs: mod.Objects()}).AsFrozenMap(name)
 		} else if _, ok := SourceModules[name]; ok {
 			src := fmt.Sprintf(`__result__ := import("%s")`, name)
 			s := NewScript(MapFS(map[string][]byte{"__repl_mod__.rumo": []byte(src)}), "__repl_mod__.rumo")

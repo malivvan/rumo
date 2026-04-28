@@ -160,36 +160,25 @@ Tests whether two times represent the same time instance. Uses
 - `(time) <= (time) = (bool)`: less than or equal to
 - `(time) >= (time) = (bool)`: greater than or equal to
 
-## Array and ImmutableArray
+## Array
 
 ### Equality
 
-Tests whether two _(immutable)_ arrays contain the same objects.
+Tests whether two arrays contain the same objects.
 
 - `(array) == (array) = (bool)`: equality
 - `(array) != (array) = (bool)`: inequality
-- `(array) == (immutable-array) = (bool)`: equality
-- `(array) != (immutable-array) = (bool)`: inequality
-- `(immutable-array) == (immutable-array) = (bool)`: equality
-- `(immutable-array) != (immutable-array) = (bool)`: inequality
-- `(immutable-array) == (array) = (bool)`: equality
-- `(immutable-array) != (array) = (bool)`: inequality
 
 ### Concatenation
 
 - `(array) + (array)`: return a concatenated array  
 
-## Map and ImmutableMap
+## Map
 
 ### Equality
 
-Tests whether two _(immutable)_ maps contain the same key-objects.
+Tests whether two maps contain the same key-objects.
 
 - `(map) == (map) = (bool)`: equality
 - `(map) != (map) = (bool)`: inequality
-- `(map) == (immutable-map) = (bool)`: equality
-- `(map) != (immutable-map) = (bool)`: inequality
-- `(immutable-map) == (immutable-map) = (bool)`: equality
-- `(immutable-map) != (immutable-map) = (bool)`: inequality
-- `(immutable-map) == (map) = (bool)`: equality
-- `(immutable-map) != (map) = (bool)`: inequality
+

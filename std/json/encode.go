@@ -143,39 +143,7 @@ func Encode(o vm.Object) ([]byte, error) {
 			}
 		}
 		b = append(b, ']')
-	case *vm.ImmutableArray:
-		b = append(b, '[')
-		len1 := len(o.Value) - 1
-		for idx, elem := range o.Value {
-			eb, err := Encode(elem)
-			if err != nil {
-				return nil, err
-			}
-			b = append(b, eb...)
-			if idx < len1 {
-				b = append(b, ',')
-			}
-		}
-		b = append(b, ']')
 	case *vm.Map:
-		b = append(b, '{')
-		len1 := len(o.Value) - 1
-		idx := 0
-		for key, value := range o.Value {
-			b = encodeString(b, key)
-			b = append(b, ':')
-			eb, err := Encode(value)
-			if err != nil {
-				return nil, err
-			}
-			b = append(b, eb...)
-			if idx < len1 {
-				b = append(b, ',')
-			}
-			idx++
-		}
-		b = append(b, '}')
-	case *vm.ImmutableMap:
 		b = append(b, '{')
 		len1 := len(o.Value) - 1
 		idx := 0

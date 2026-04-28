@@ -740,21 +740,27 @@ func (c *Compiler) Compile(node parser.Node) error {
 		if c.parent == nil {
 			break
 		}
+		freezeIdx := -1
+		for i, bf := range builtinFuncs {
+			if bf.Name == "freeze" {
+				freezeIdx = i
+				break
+			}
+		}
+		if freezeIdx < 0 {
+			return c.errorf(node, "freeze builtin not registered")
+		}
+		c.emit(node, parser.OpGetBuiltin, freezeIdx)
 		if err := c.Compile(node.Result); err != nil {
 			return err
 		}
-		c.emit(node, parser.OpImmutable)
+		c.emit(node, parser.OpCall, 1, 0)
 		c.emit(node, parser.OpReturn, 1)
 	case *parser.ErrorExpr:
 		if err := c.Compile(node.Expr); err != nil {
 			return err
 		}
 		c.emit(node, parser.OpError)
-	case *parser.ImmutableExpr:
-		if err := c.Compile(node.Expr); err != nil {
-			return err
-		}
-		c.emit(node, parser.OpImmutable)
 	case *parser.CondExpr:
 		if err := c.Compile(node.Cond); err != nil {
 			return err

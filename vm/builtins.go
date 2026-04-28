@@ -54,9 +54,7 @@ func init() {
 	addBuiltinFunction("error", builtinError)
 	addBuiltinFunction("ptr", builtinPtr)
 	addBuiltinFunction("array", builtinArray)
-	addBuiltinFunction("immutable_array", builtinImmutableArray)
 	addBuiltinFunction("map", builtinMap)
-	addBuiltinFunction("immutable_map", builtinImmutableMap)
 
 	// --- type predicates ---
 	addBuiltinFunction("is_int", builtinIsInt)
@@ -80,9 +78,7 @@ func init() {
 	addBuiltinFunction("is_rune", builtinIsChar)
 	addBuiltinFunction("is_bytes", builtinIsBytes)
 	addBuiltinFunction("is_array", builtinIsArray)
-	addBuiltinFunction("is_immutable_array", builtinIsImmutableArray)
 	addBuiltinFunction("is_map", builtinIsMap)
-	addBuiltinFunction("is_immutable_map", builtinIsImmutableMap)
 	addBuiltinFunction("is_iterable", builtinIsIterable)
 	addBuiltinFunction("is_error", builtinIsError)
 	addBuiltinFunction("is_ptr", builtinIsPtr)
@@ -105,6 +101,11 @@ func init() {
 	// leading underscore reserves it from idiomatic user identifiers; keep
 	// it at the end of the table so existing bytecode indices don't shift.
 	addBuiltinFunction("__select", builtinSelect)
+
+	// --- mutability control ---
+	addBuiltinFunction("freeze", builtinFreeze)
+	addBuiltinFunction("melt", builtinMelt)
+	addBuiltinFunction("is_frozen", builtinIsFrozen)
 }
 
 // GetAllBuiltinFunctions returns all builtin function objects.
@@ -210,31 +211,11 @@ func builtinIsArray(ctx context.Context, args ...Object) (Object, error) {
 	return FalseValue, nil
 }
 
-func builtinIsImmutableArray(ctx context.Context, args ...Object) (Object, error) {
-	if len(args) != 1 {
-		return nil, ErrWrongNumArguments
-	}
-	if _, ok := args[0].(*ImmutableArray); ok {
-		return TrueValue, nil
-	}
-	return FalseValue, nil
-}
-
 func builtinIsMap(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 1 {
 		return nil, ErrWrongNumArguments
 	}
 	if _, ok := args[0].(*Map); ok {
-		return TrueValue, nil
-	}
-	return FalseValue, nil
-}
-
-func builtinIsImmutableMap(ctx context.Context, args ...Object) (Object, error) {
-	if len(args) != 1 {
-		return nil, ErrWrongNumArguments
-	}
-	if _, ok := args[0].(*ImmutableMap); ok {
 		return TrueValue, nil
 	}
 	return FalseValue, nil
@@ -299,15 +280,11 @@ func builtinLen(ctx context.Context, args ...Object) (Object, error) {
 	switch arg := args[0].(type) {
 	case *Array:
 		return NewInt(int64(len(arg.Value))), nil
-	case *ImmutableArray:
-		return NewInt(int64(len(arg.Value))), nil
 	case *String:
 		return NewInt(int64(len(arg.Value))), nil
 	case *Bytes:
 		return NewInt(int64(len(arg.Value))), nil
 	case *Map:
-		return NewInt(int64(len(arg.Value))), nil
-	case *ImmutableMap:
 		return NewInt(int64(len(arg.Value))), nil
 	case *RangeObject:
 		return &Int{Value: rangeLen(arg.Start, arg.Stop, arg.Step)}, nil
@@ -586,8 +563,6 @@ func builtinAppend(ctx context.Context, args ...Object) (Object, error) {
 	switch arg := args[0].(type) {
 	case *Array:
 		return &Array{Value: append(arg.Value, args[1:]...)}, nil
-	case *ImmutableArray:
-		return &Array{Value: append(arg.Value, args[1:]...)}, nil
 	default:
 		return nil, ErrInvalidArgumentType{
 			Name:     "first",
@@ -609,6 +584,10 @@ func builtinDelete(ctx context.Context, args ...Object) (Object, error) {
 	case *Map:
 		if key, ok := args[1].(*String); ok {
 			arg.mu.Lock()
+			if arg.Frozen {
+				arg.mu.Unlock()
+				return nil, ErrNotIndexAssignable
+			}
 			delete(arg.Value, key.Value)
 			arg.mu.Unlock()
 			return UndefinedValue, nil
@@ -687,6 +666,10 @@ func builtinSplice(ctx context.Context, args ...Object) (Object, error) {
 
 	array.mu.Lock()
 	defer array.mu.Unlock()
+
+	if array.Frozen {
+		return nil, ErrNotIndexAssignable
+	}
 
 	arrayLen := len(array.Value)
 

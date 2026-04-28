@@ -33,26 +33,6 @@ true || false         // bool values
 func() { /*...*/ }    // function value
 ```
 
-Here's a list of all available value types in rumo.
-
-|    Rumo Type    |                Description                |  Equivalent Type in Go   |
-|:---------------:|:-----------------------------------------:|:------------------------:|
-|       int       |        signed 64-bit integer value        |         `int64`          |
-|      float      |        64-bit floating point value        |        `float64`         |
-|      bool       |               boolean value               |          `bool`          |
-|      char       |             unicode character             |          `rune`          |
-|     string      |              unicode string               |         `string`         |
-|     bytes       |                byte array                 |         `[]byte`         |
-|      error      |       [error](#error-values) value        |            -             |
-|      time       |                time value                 |       `time.Time`        |
-|      array      |          value array _(mutable)_          |     `[]interface{}`      |
-| immutable array |   [immutable](#immutable-values) array    |            -             |
-|       map       |  value map with string keys _(mutable)_   | `map[string]interface{}` |
-|  immutable map  |    [immutable](#immutable-values) map     |            -             |
-|    undefined    |   [undefined](#undefined-values) value    |            -             |
-|    function     |    [function](#function-values) value     |            -             |  
-| _user-defined_  | value of [user-defined types](objects.md) |            -             |
-
 ### Error Values
 
 In rumo, an error can be represented using "error" typed values. An error
@@ -66,49 +46,6 @@ err2 := error(1+2+3)     // error with int value
 if is_error(err1) {      // 'is_error' builtin function
   err_val := err1.value  // get underlying value
 }  
-```
-
-### Immutable Values
-
-In rumo, basically all values (except for array and map) are immutable.
-
-```golang
-s := "12345"
-s[1] = 'b'    // illegal: String is immutable
-
-a := [1, 2, 3]
-a[1] = "two"  // ok: a is now [1, "two", 3]
-```
-
-An array or map value can be made immutable using `immutable` expression.
-
-```golang
-b := immutable([1, 2, 3])
-b[1] = "foo"  // illegal: 'b' references to an immutable array.
-```
-
-Note that re-assigning a new value to the variable has nothing to do with the
-value immutability.
-
-```golang
-s := "abc"
-s = "foo"                  // ok
-a := immutable([1, 2, 3])
-a = false                  // ok
-```
-
-Note that, if you copy (using `copy` builtin function) an immutable value, it
-will return a "mutable" copy. Also, immutability is not applied to the
-individual elements of the array or map value, unless they are explicitly made
-immutable.
-
-```golang
-a := immutable({b: 4, c: [1, 2, 3]})
-a.b = 5        // illegal
-a.c[1] = 5     // ok: because 'a.c' is not immutable
-
-a = immutable({b: 4, c: immutable([1, 2, 3])})
-a.c[1] = 5     // illegal
 ```
 
 ### Undefined Values

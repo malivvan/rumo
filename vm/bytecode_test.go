@@ -41,9 +41,9 @@ func TestBytecode(t *testing.T) {
 			&vm.Int{Value: 66},
 			&vm.Int{Value: 77},
 			&vm.Int{Value: 88},
-			&vm.ImmutableMap{
+			&vm.Map{Frozen: true,
 				Value: map[string]vm.Object{
-					"array": &vm.ImmutableArray{
+					"array": &vm.Array{Frozen: true,
 						Value: []vm.Object{
 							&vm.Int{Value: 1},
 							&vm.Int{Value: 2},
@@ -61,7 +61,7 @@ func TestBytecode(t *testing.T) {
 						Value: "some error",
 					}},
 					"float": &vm.Float{Value: -19.84},
-					"immutable_array": &vm.ImmutableArray{
+					"frozen_array": &vm.Array{Frozen: true,
 						Value: []vm.Object{
 							&vm.Int{Value: 1},
 							&vm.Int{Value: 2},
@@ -71,7 +71,7 @@ func TestBytecode(t *testing.T) {
 							vm.UndefinedValue,
 						},
 					},
-					"immutable_map": &vm.ImmutableMap{
+					"frozen_map": &vm.Map{Frozen: true,
 						Value: map[string]vm.Object{
 							"a": &vm.Int{Value: 1},
 							"b": &vm.Int{Value: 2},
@@ -359,7 +359,7 @@ func TestBuiltinFunctionRoundTripUnknownName(t *testing.T) {
 	require.Error(t, err, "expected error for unknown builtin name")
 }
 
-// A user-supplied ImmutableMap that happens to contain a "__module_name__" key
+// A user-supplied frozen Map that happens to contain a "__module_name__" key
 // must not be mistaken for a legitimately compiled builtin-module constant.
 // Before the fix, fixDecodedObject replaced any ImmutableMap whose Value map
 // contained {"__module_name__": "x"} with the real "x" builtin module,
@@ -367,7 +367,7 @@ func TestBuiltinFunctionRoundTripUnknownName(t *testing.T) {
 // escalate script privileges.  After the fix the module name is tracked
 // out-of-band (ImmutableMap.ModuleName), so user data with that string key
 // is inert.
-func TestImmutableMap_ModuleNameNotSpoofable(t *testing.T) {
+func TestFrozenMap_ModuleNameNotSpoofable(t *testing.T) {
 	const modName = "testmod"
 
 	// Build a real module with a recognisable sentinel attribute.
@@ -378,7 +378,7 @@ func TestImmutableMap_ModuleNameNotSpoofable(t *testing.T) {
 
 	// Build a fake ImmutableMap that only has __module_name__ in its Value map
 	// — exactly what user script code or crafted bytecode can produce.
-	fakeMap := &vm.ImmutableMap{
+	fakeMap := &vm.Map{Frozen: true,
 		Value: map[string]vm.Object{
 			"__module_name__": &vm.String{Value: modName},
 			"secret":          &vm.String{Value: "FAKE_VALUE"},
@@ -400,8 +400,8 @@ func TestImmutableMap_ModuleNameNotSpoofable(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(restored.Constants))
 
-	im, ok := restored.Constants[0].(*vm.ImmutableMap)
-	require.True(t, ok, "constant must remain an ImmutableMap")
+	im, ok := restored.Constants[0].(*vm.Map)
+	require.True(t, ok, "constant must remain a Map")
 
 	// The fake map must NOT have been replaced by the real module.
 	// Its "secret" attribute must still carry the fake value, not "REAL_SECRET".
@@ -414,18 +414,16 @@ func TestImmutableMap_ModuleNameNotSpoofable(t *testing.T) {
 }
 
 // RemoveDuplicates must not conflate a legitimate module constant with a
-// user-constructed ImmutableMap that carries the same __module_name__ value.
+// user-constructed Map that carries the same __module_name__ value.
 func TestRemoveDuplicates_ModuleNameIsolation(t *testing.T) {
 	const modName = "mymod"
 
-	// real module ImmutableMap (produced by AsImmutableMap)
-	realMod := &vm.BuiltinModule{Attrs: map[string]vm.Object{
-		"val": &vm.String{Value: "real"},
-	}}
-	realMap := realMod.AsImmutableMap(modName)
+	// real module Map (produced by AsFrozenMap)
+	realMod := &vm.BuiltinModule{Attrs: map[string]vm.Object{"val": &vm.String{Value: "real"}}}
+	realMap := realMod.AsFrozenMap(modName)
 
-	// user-constructed ImmutableMap that spoofs the same module name
-	fakeMap := &vm.ImmutableMap{
+	// user-constructed Map that spoofs the same module name
+	fakeMap := &vm.Map{Frozen: true,
 		Value: map[string]vm.Object{
 			"__module_name__": &vm.String{Value: modName},
 			"val":             &vm.String{Value: "fake"},
@@ -745,4 +743,3 @@ func TestRemoveDuplicates_MapDedupDistinct(t *testing.T) {
 	require.Equal(t, 2, len(b.Constants),
 		"two distinct Map constants must remain as two constants")
 }
-

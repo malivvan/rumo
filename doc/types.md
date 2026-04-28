@@ -17,9 +17,7 @@ title: types
 - **Rune**: character (`rune` in Go)
 - **Bytes**: byte array (`[]byte` in Go)
 - **Array**: objects array (`[]Object` in Go)
-- **ImmutableArray**: immutable object array (`[]Object` in Go)
 - **Map**: objects map with string keys (`map[string]Object` in Go)
-- **ImmutableMap**: immutable object map with string keys (`map[string]Object` in Go)
 - **Error**: an error with underlying Object value of any type
 - **Ptr**: pointer (`unsafe.Pointer` in Go)
 
@@ -43,8 +41,6 @@ title: types
 | Bool           | bool                   | bool              | 1            | true/false                               |
 | Array          | array                  | []Object          |              |                                          |
 | Map            | map                    | map[string]Object |              |                                          |
-| ImmutableMap   | map                    | map[string]Object |              |                                          |
-| ImmutableArray | array                  | []Object          |              |                                          |
 | String         | char *                 | string            |              |                                          |
 | Bytes          | char * + length        | []byte            |              |                                          |
 | Error          | error                  | error             |              |                                          |
@@ -101,9 +97,7 @@ should evaluate to `false` (e.g. for condition expression of `if` statement).
 - **Rune**: `r == 0`
 - **Bytes**: `len(bytes) == 0`
 - **Array**: `len(arr) == 0`
-- **ImmutableArray**: `len(arr) == 0`
 - **Map**: `len(map) == 0`
-- **ImmutableMap**: `len(map) == 0`
 - **Error**: `true` _(Error is always falsy)_
 - **Undefined**: `true` _(Undefined is always falsy)_
 - **String**: `len(s) == 0`
@@ -129,9 +123,7 @@ should evaluate to `false` (e.g. for condition expression of `if` statement).
 - `bytes(N)`: as a special case this will create a Bytes variable with the given size `N` (only if `N` is int)
 - `error(x)`: tries to convert `x` into error; returns `undefined` if failed
 - `array(x)`: tries to convert `x` into array; returns `undefined` if failed
-- `immutable_array(x)`: tries to convert `x` into immutable array; returns `undefined` if failed
 - `map(x)`: tries to convert `x` into map; returns `undefined` if failed
-- `immutable_map(x)`: tries to convert `x` into immutable map; returns `undefined` if failed
 - `ptr(x)`: tries to convert `x` into ptr; returns `undefined` if failed
 - See [Builtins](builtins.md) for the full list of builtin functions.
 
@@ -153,9 +145,7 @@ should evaluate to `false` (e.g. for condition expression of `if` statement).
 - `is_double(x)`: returns `true` if `x` is double; `false` otherwise
 - `is_bytes(x)`: returns `true` if `x` is bytes; `false` otherwise
 - `is_array(x)`: return `true` if `x` is array; `false` otherwise
-- `is_immutable_array(x)`: return `true` if `x` is immutable array; `false` otherwise
 - `is_map(x)`: return `true` if `x` is map; `false` otherwise
-- `is_immutable_map(x)`: return `true` if `x` is immutable map; `false` otherwise
 - `is_error(x)`: returns `true` if `x` is error; `false` otherwise
 - `is_ptr(x)`: returns `true` if `x` is ptr; `false` otherwise
 - `is_undefined(x)`: returns `true` if `x` is undefined; `false` otherwise
@@ -177,22 +167,22 @@ Arithmetic operators `+`, `-`, `*`, `/`, `%` are defined for numeric types (Byte
 The `+` operator is also defined for string type and will concatenate two strings. If either operand is not a string, a panic will occur.
 
 ## Indexing Operator
-The indexing operator `[]` is defined for Array, ImmutableArray, Map, ImmutableMap, and String types. For Array and ImmutableArray, the index must be of integer type and within the bounds of the array; otherwise a panic will occur. For Map and ImmutableMap, the index must be of string type; otherwise a panic will occur. For String, the index must be of integer type and within the bounds of the string; otherwise a panic will occur. The result of the indexing operation will be the element at the specified index for Array and ImmutableArray, the value associated with the specified key for Map and ImmutableMap, and the character at the specified index for String. 
+The indexing operator `[]` is defined for Array, Map, and String types. For Arrays, the index must be of integer type and within the bounds of the array; otherwise a panic will occur. For Maps, the index must be of string type; otherwise a panic will occur. For String, the index must be of integer type and within the bounds of the string; otherwise a panic will occur. The result of the indexing operation will be the element at the specified index for Arrays, the value associated with the specified key for Maps, and the character at the specified index for String. 
 
 ## Function Call Operator
-The function call operator `()` is defined for all types. If the operand is a function, it will be called with the provided arguments. If the operand is not a function, a panic will occur. The result of the function call will depend on the implementation of the function being called. For example, if the operand is a Map or ImmutableMap, calling it with a string argument will return the value associated with the specified key. If the operand is an Array or ImmutableArray, calling it with an integer argument will return the element at the specified index. If the operand is a String, calling it with an integer argument will return the character at the specified index. If the operand is an Error, calling it with no arguments will return the error message string. If the operand is an Undefined, calling it with no arguments will return `undefined`. 
+The function call operator `()` is defined for all types. If the operand is a function, it will be called with the provided arguments. If the operand is not a function, a panic will occur. The result of the function call will depend on the implementation of the function being called. For example, if the operand is a Map, calling it with a string argument will return the value associated with the specified key. If the operand is an Array, calling it with an integer argument will return the element at the specified index. If the operand is a String, calling it with an integer argument will return the character at the specified index. If the operand is an Error, calling it with no arguments will return the error message string. If the operand is an Undefined, calling it with no arguments will return `undefined`. 
 
 ## Other Operators
 - The `!` operator is defined for all types and will evaluate the operand in a boolean context using the `Object.IsFalsy()` method. The result will be a boolean value.
 - The `-` operator is defined for numeric types (Byte, Int8, Uint8, Int16, Uint16, Int, Uint, Int64, Uint64, Float, Double) and will negate the value of the operand. The operand will be converted to the same type before the operation. For non-numeric types, a panic will occur. Note that for unsigned integer types (Uint8, Uint16, Uint, Uint64), the `-` operator will not perform negation in the traditional sense, but will instead return the two's complement of the value, which may not be what is expected. For example, `-uint8(1)` will return `255` instead   of `-1`. Therefore, it is recommended to avoid using the `-` operator with unsigned integer types. 
-- The `&` operator is also defined for Map and ImmutableMap types and will return a pointer to the underlying map data structure. The result will be of Ptr type. For other types, a panic will occur. 
+- The `&` operator is also defined for Map types and will return a pointer to the underlying map data structure. The result will be of Ptr type. For other types, a panic will occur. 
 - The `*` operator is also defined for Ptr type and will dereference the pointer to access the underlying value. The result will depend on the type of the underlying value. For other types, a panic will occur. Note that dereferencing a pointer that is nil or points to an invalid memory location will cause a panic. Therefore, it is important to ensure that the pointer is valid before using the `*` operator.
 - The `&` operator is also defined for all types and will return a pointer to the value. The result will be of Ptr type. For example, `&x` will return a pointer to the variable `x`. Note that taking the address of a value that is not addressable (e.g. a literal or a temporary value) will cause a panic. Therefore, it is important to ensure that the value is addressable before using the `&` operator.
-- The `.` operator is defined for Map and ImmutableMap types and will access the value associated with the specified key. For example, `m.key` will return the value associated with the key "key" in the map `m`.
+- The `.` operator is defined for Map types and will access the value associated with the specified key. For example, `m.key` will return the value associated with the key "key" in the map `m`.
 - The `,` operator is defined for function calls and will separate the arguments passed to the function. For example, `f(x, y)` will call the function `f` with arguments `x` and `y`. For other contexts, a panic will occur. Note that the number and types of arguments passed to a function must match the function's signature; otherwise a panic will occur. Therefore, it is important to ensure that the correct number and types of arguments are passed when using the `,` operator in a function call.
 - The `...` operator is defined for function calls and will allow a slice of arguments to be passed to a variadic function. For example, if `f` is a variadic function that accepts a variable number of arguments, then `f(x...)` will pass the elements of the slice `x` as individual arguments to the function `f`. For other contexts, a panic will occur. Note that the slice passed with the `...` operator must be of the correct type expected by the variadic function; otherwise a panic will occur. Therefore, it is important to ensure that the slice is of the correct type when using the `...` operator in a function call.
-- The `?` operator is defined for Map and ImmutableMap types and will check if the specified key exists in the map. For example, `m.key?` will return `true` if the key "key" exists in the map `m`, and `false` otherwise. For other types, a panic will occur. Note that this operator only checks for the existence of the key and does not return the associated value. Therefore, it is important to use this operator in conjunction with the `.` operator to access the value if the key exists.
-- The `|` operator is defined for Map and ImmutableMap types and will return the value associated with the specified key if it exists, or a default value if the key does not exist. For example, `m.key | defaultValue` will return the value associated with the key "key" in the map `m` if it exists, or `defaultValue` if the key does not exist. For other types, a panic will occur. Note that this operator provides a convenient way to access values in a map with a fallback option if the key is not present.
+- The `?` operator is defined for Map types and will check if the specified key exists in the map. For example, `m.key?` will return `true` if the key "key" exists in the map `m`, and `false` otherwise. For other types, a panic will occur. Note that this operator only checks for the existence of the key and does not return the associated value. Therefore, it is important to use this operator in conjunction with the `.` operator to access the value if the key exists.
+- The `|` operator is defined for Map types and will return the value associated with the specified key if it exists, or a default value if the key does not exist. For example, `m.key | defaultValue` will return the value associated with the key "key" in the map `m` if it exists, or `defaultValue` if the key does not exist. For other types, a panic will occur. Note that this operator provides a convenient way to access values in a map with a fallback option if the key is not present.
 - The `??` operator is defined for all types and will return the left operand if it is not falsy, or the right operand if the left operand is falsy. For example, `x ?? y` will return `x` if `x` is not falsy, and `y` if `x` is falsy. This operator can be useful for providing default values or fallback options in expressions. Note that the left operand will be evaluated in a boolean context using the `Object.IsFalsy()` method to determine if it is falsy or not.
 - The `:=` operator is defined for variable assignment and will assign the value of the right operand to the variable on the left. For example, `x := 5` will declare a new variable `x` and assign it the value `5`. For other contexts, a panic will occur. Note that this operator can only be used for declaring and initializing a new variable; it cannot be used for reassigning an existing variable. Therefore, if you want to reassign a value to an existing variable, you should use the `=` operator instead.
 - The `=` operator is defined for variable assignment and will assign the value of the right operand to the variable on the left. For example, `x = 5` will assign the value `5` to the existing variable `x`. For other contexts, a panic will occur. Note that this operator can only be used for reassigning an existing variable; it cannot be used for declaring and initializing a new variable. Therefore, if you want to declare and initialize a new variable, you should use the `:=` operator instead.

@@ -54,7 +54,7 @@ panics. Go's standard `encoding/json` caps nesting at 10 000.
 ### 1.4 JSON encoder has no cycle detection &nbsp; **MED**
 
 `std/json/encode.go:128 Encode` recursively walks `*Array`, `*Map`,
-`*ImmutableArray`, `*ImmutableMap` without a visited set. A self-referencing
+without a visited set. A self-referencing
 map (`m := {}; m["self"] = m`) infinite-loops the encoder until the
 goroutine stack overflows. Note that all the *other* container methods
 (`String`, `Equals`, `Copy`) gained cycle detection (see
@@ -173,24 +173,6 @@ these code paths.
 
 - **Fix:** thread the VM config through the helper signatures, or have
   every wrapper re-read the limit from the context (as `Format` does).
-
-### 2.2 `ImmutableArray.copyWithMemo` returns `*Array`; `ImmutableMap.copyWithMemo` returns `*Map` &nbsp; **MED**
-
-`vm/objects.go:1106` and `vm/objects.go:1237` &mdash; both immutable
-container types deep-copy themselves into the *mutable* variant:
-
-```go
-c := &Array{Value: make([]Object, len(o.Value))}    // ImmutableArray
-c := &Map{Value: make(map[string]Object, len(o.Value))} // ImmutableMap
-```
-
-This breaks immutability: `copy(immutable_array)` quietly returns a
-mutable array. Any code path that relies on
-"immutable-in-≡-immutable-out" (e.g. caching module exports, returning
-constants to scripts) becomes a vector for unintended mutation if the
-caller stores the result and later mutates it.
-
-- **Fix:** return same-kind containers, deep-copying elements as today.
 
 ### 2.3 JSON encoder silently drops unknown types &nbsp; **MED**
 
@@ -357,7 +339,7 @@ to the optional default arg. Because `ok` is unconditionally true,
 `stdlib.go:46 Modules()` and `Exports()` are documented as recomputing
 fresh maps on every call to allow late module registration. Each call
 walks `BuiltinModules` and `SourceModules` and (via
-`BuiltinModule.AsImmutableMap`) deep-copies each Object. The REPL calls
+`BuiltinModule.AsFrozenMap`) deep-copies each Object. The REPL calls
 `Modules()` *per executed REPL line* (rumo.go:287) &mdash; for a normal
 session this means N copies of the entire stdlib live until the next GC.
 Cache the result with a "did anything change since last call" guard, or
@@ -365,7 +347,7 @@ expose a snapshotting helper.
 
 ### 2.16 JSON encoded map ordering is non-deterministic &nbsp; **LOW**
 
-`std/json/encode.go:160-195` iterates `*vm.Map` / `*vm.ImmutableMap` via
+`std/json/encode.go:160-195` iterates `*vm.Map` via
 range over the underlying Go map, so the same input produces different
 byte-for-byte outputs across runs. Surprising for hashing, signing,
 golden-file tests, content-addressable caches. Sort keys on output.
@@ -515,7 +497,7 @@ identical. Pick one; have the other delegate.
 
 ### 5.2 Container cycle-detection scaffolding repeated five times
 
-Each of `Array`, `ImmutableArray`, `Map`, `ImmutableMap`,
+Each of `Array`, `Map`, 
 `StructInstance` re-implements `equalsWithVisited`, `copyWithMemo`,
 `stringWithVisited`. The bodies differ only in the type of the visited
 key and the type assertion. Generic helpers would remove ~300 lines and
