@@ -44,6 +44,21 @@ func (m *BuiltinModule) Const(def string, val any) *BuiltinModule {
 	return m
 }
 
+// Type registers a Type in the BuiltinModule. The Type's constructor is
+// exported as a callable under its declared name; calling it produces an
+// instance whose methods are bound to a fresh per-instance state.
+//
+// Panics if the type's name collides with an existing export.
+func (m *BuiltinModule) Type(t TypeRegistration) *BuiltinModule {
+	name := t.typeName()
+	if _, exists := m.export[name]; exists {
+		panic(fmt.Errorf("export already registered: %s", name))
+	}
+	m.object[name] = t.constructor()
+	m.export[name] = t.typeExport()
+	return m
+}
+
 // Func registers a function in the module with the given export definition and implementation. It panics if the definition is invalid or the implementation type is unsupported.
 func (m *BuiltinModule) Func(def string, impl any) *BuiltinModule {
 	if len(def) == 0 {

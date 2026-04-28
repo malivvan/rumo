@@ -1,3 +1,14 @@
+// Package times exposes Go's time.Time / time.Duration helpers as a Rumo
+// standard-library module.
+//
+// The Time type itself is registered via module.TypeRegistration: calling
+// `times.Time(x)` from a script produces an ImmutableMap whose values are
+// per-instance methods (year, month, format, ...) bound to a captured
+// time.Time state. The time-shaped values used by the freestanding helpers
+// (`now`, `parse`, `add`, ...) are still represented at the VM level by
+// `*vm.Time`, since that representation participates in bytecode encoding
+// and script-level arithmetic (`t1 - t2`, `t + dur`) which the
+// ImmutableMap-based instance shape cannot express.
 package times
 
 import (
@@ -8,1082 +19,443 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
+// Module is the registered "times" builtin module.
 var Module = module.NewBuiltin().
-	Const("format_ansic string", time.ANSIC).
-	Const("format_unix_date string", time.UnixDate).
-	Const("format_ruby_date string", time.RubyDate).
-	Const("format_rfc822 string", time.RFC822).
-	Const("format_rfc822z string", time.RFC822Z).
-	Const("format_rfc850 string", time.RFC850).
-	Const("format_rfc1123 string", time.RFC1123).
-	Const("format_rfc1123z string", time.RFC1123Z).
-	Const("format_rfc3339 string", time.RFC3339).
-	Const("format_rfc3339_nano string", time.RFC3339Nano).
-	Const("format_kitchen string", time.Kitchen).
-	Const("format_stamp string", time.Stamp).
-	Const("format_stamp_milli string", time.StampMilli).
-	Const("format_stamp_micro string", time.StampMicro).
-	Const("format_stamp_nano string", time.StampNano).
-	Const("nanosecond int", time.Nanosecond).
-	Const("microsecond int", time.Microsecond).
-	Const("millisecond int", time.Millisecond).
-	Const("second int", time.Second).
-	Const("minute int", time.Minute).
-	Const("hour int", time.Hour).
-	Const("january int", time.January).
-	Const("february int", time.February).
-	Const("march int", time.March).
-	Const("april int", time.April).
-	Const("may int", time.May).
-	Const("june int", time.June).
-	Const("july int", time.July).
-	Const("august int", time.August).
-	Const("september int", time.September).
-	Const("october int", time.October).
-	Const("november int", time.November).
-	Const("december int", time.December).
-	Func("sleep(d int)																			sleeps for the specified duration", timesSleep).
-	Func("parse_duration(s string) (d int)														parses a duration string and returns the duration in nanoseconds", timesParseDuration).
-	Func("since(t time) (d int)																	returns the duration in nanoseconds since t", timesSince).
-	Func("until(t time) (d int)																	returns the duration in nanoseconds until t", timesUntil).
-	Func("duration_hours(d int) (h float)														returns the duration in hours", timesDurationHours).
-	Func("duration_minutes(d int) (m float)														returns the duration in minutes", timesDurationMinutes).
-	Func("duration_nanoseconds(d int) (ns int)													returns the duration in nanoseconds", timesDurationNanoseconds).
-	Func("duration_seconds(d int) (s float)														returns the duration in seconds", timesDurationSeconds).
-	Func("duration_string(d int) (s string)														returns the string representation of the duration", timesDurationString).
-	Func("month_string(m int) (s string)														returns the string representation of the month", timesMonthString).
-	Func("date(year int, month int, day int, hour int, min int, sec int, nsec int) (t time)		returns a time in UTC corresponding to the given date and time", timesDate).
-	Func("date_in(zone string, year int, month int, day int, hour int, min int, sec int, nsec int) (t time)	returns a time in the given timezone corresponding to the given date and time", timesDateIn).
-	Func("now() (t time)																		returns the current local time", timesNow).
-	Func("parse(format string, value string) (t time)											parses a formatted string and returns the time value it represents", timesParse).
-	Func("unix(sec int, nsec int) (t time)														returns the local Time corresponding to the given Unix time", timesUnix).
-	Func("add(t time, d int) (time)																returns the time t plus the duration d", timesAdd).
-	Func("add_date(t time, years int, months int, days int) (time)								returns the time t with the specified number of years, months, and days added", timesAddDate).
-	Func("sub(t time, u time) (d int)															returns the duration in nanoseconds between t and u", timesSub).
-	Func("after(t time, u time) (b bool)														returns true if t is after u", timesAfter).
-	Func("before(t time, u time) (b bool)														returns true if t is before u", timesBefore).
-	Func("time_year(t time) (year int)															returns the year of the time t", timesTimeYear).
-	Func("time_month(t time) (month int)														returns the month of the time t", timesTimeMonth).
-	Func("time_day(t time) (day int)															returns the day of the month of the time t", timesTimeDay).
-	Func("time_weekday(t time) (weekday int)													returns the day of the week of the time t", timesTimeWeekday).
-	Func("time_hour(t time) (hour int)															returns the hour of the time t", timesTimeHour).
-	Func("time_minute(t time) (minute int)														returns the minute of the time t", timesTimeMinute).
-	Func("time_second(t time) (second int)														returns the second of the time t", timesTimeSecond).
-	Func("time_nanosecond(t time) (nanosecond int)												returns the nanosecond of the time t", timesTimeNanosecond).
-	Func("time_unix(t time) (sec int)															returns the Unix time, the number of seconds elapsed since January 1, 1970 UTC, of the time t", timesTimeUnix).
-	Func("time_unix_nano(t time) (nsec int)														returns the Unix time, the number of nanoseconds elapsed since January 1, 1970 UTC, of the time t", timesTimeUnixNano).
-	Func("time_format(t time, format string) (s string)											returns a formatted string of the time t according to the provided format", timesTimeFormat).
-	Func("time_location(t time) (s string)														returns the location of the time t", timesTimeLocation).
-	Func("time_string(t time) (s string)														returns the string representation of the time t", timesTimeString).
-	Func("is_zero(t time) (b bool)																returns true if t is the zero time", timesIsZero).
-	Func("to_local(t time) (time)																returns t with the location set to local", timesToLocal).
-	Func("to_utc(t time) (time)																	returns t with the location set to UTC", timesToUTC)
+	// --- Time type (registered via module.TypeRegistration) ---
+	Type(module.NewType[time.Time]("Time(x) (t Time) constructs a time instance from x (time-compatible value)", timeCtor).
+		Method("year() (y int) returns the year", func(t time.Time) any { return t.Year }).
+		Method("month() (m int) returns the month [1-12]", func(t time.Time) any { return func() int { return int(t.Month()) } }).
+		Method("day() (d int) returns the day of the month", func(t time.Time) any { return t.Day }).
+		Method("hour() (h int) returns the hour [0-23]", func(t time.Time) any { return t.Hour }).
+		Method("minute() (m int) returns the minute [0-59]", func(t time.Time) any { return t.Minute }).
+		Method("second() (s int) returns the second [0-59]", func(t time.Time) any { return t.Second }).
+		Method("nanosecond() (n int) returns the nanosecond [0-999999999]", func(t time.Time) any { return t.Nanosecond }).
+		Method("unix() (s int) returns the seconds since the Unix epoch", func(t time.Time) any { return t.Unix }).
+		Method("unix_nano() (n int) returns the nanoseconds since the Unix epoch", func(t time.Time) any { return t.UnixNano }).
+		Method("format(layout string) (s string) formats the time", func(t time.Time) any { return func(layout string) string { return t.Format(layout) } }).
+		Method("string() (s string) returns the default string representation", func(t time.Time) any { return t.String }).
+		Method("location() (s string) returns the location name", func(t time.Time) any { return func() string { return t.Location().String() } }).
+		Method("is_zero() (b bool) reports whether t represents the zero time", func(t time.Time) any { return t.IsZero }),
+	).
+	// --- predicates ---
+	Func("is_time(x) (b bool) reports whether x is a time value", isTimeFn).
+	// --- duration / month string helpers ---
+	Func("sleep(d int) sleeps for d nanoseconds (cancellable via context)", sleepFn).
+	Func("parse_duration(s string) (d int) parses a Go duration string", parseDurationFn).
+	Func("since(t time) (d int) returns time.Since(t) in nanoseconds", sinceFn).
+	Func("until(t time) (d int) returns time.Until(t) in nanoseconds", untilFn).
+	Func("duration_hours(d int) (h float) returns d as floating-point hours", durationFloatFn(time.Duration.Hours)).
+	Func("duration_minutes(d int) (m float) returns d as floating-point minutes", durationFloatFn(time.Duration.Minutes)).
+	Func("duration_nanoseconds(d int) (n int) returns d as nanoseconds", func(d int64) int64 { return time.Duration(d).Nanoseconds() }).
+	Func("duration_seconds(d int) (s float) returns d as floating-point seconds", durationFloatFn(time.Duration.Seconds)).
+	Func("duration_string(d int) (s string) returns d as a human-readable string", durationStringFn).
+	Func("month_string(m int) (s string) returns the English name of month m [1-12]", monthStringFn).
+	// --- time constructors ---
+	Func("date(year int, month int, day int, hour int, min int, sec int, nsec int) (t time)", dateFn).
+	Func("now() (t time) returns the current local time", nowFn).
+	Func("parse(layout string, value string) (t time) parses a formatted time string", parseFn).
+	Func("unix(sec int, nsec int) (t time) returns the local Time corresponding to the given Unix time", unixFn).
+	// --- time arithmetic / comparison ---
+	Func("add(t time, d int) (t time) returns t + d", addFn).
+	Func("sub(t time, u time) (d int) returns t - u in nanoseconds", subFn).
+	Func("add_date(t time, years int, months int, days int) (t time)", addDateFn).
+	Func("after(t time, u time) (b bool) reports whether t is after u", afterFn).
+	Func("before(t time, u time) (b bool) reports whether t is before u", beforeFn).
+	// --- time accessors ---
+	Func("time_year(t time) (y int)", timeAccessorInt(func(t time.Time) int64 { return int64(t.Year()) })).
+	Func("time_month(t time) (m int)", timeAccessorInt(func(t time.Time) int64 { return int64(t.Month()) })).
+	Func("time_day(t time) (d int)", timeAccessorInt(func(t time.Time) int64 { return int64(t.Day()) })).
+	Func("time_hour(t time) (h int)", timeAccessorInt(func(t time.Time) int64 { return int64(t.Hour()) })).
+	Func("time_minute(t time) (m int)", timeAccessorInt(func(t time.Time) int64 { return int64(t.Minute()) })).
+	Func("time_second(t time) (s int)", timeAccessorInt(func(t time.Time) int64 { return int64(t.Second()) })).
+	Func("time_nanosecond(t time) (n int)", timeAccessorInt(func(t time.Time) int64 { return int64(t.Nanosecond()) })).
+	Func("time_unix(t time) (s int)", timeAccessorInt(func(t time.Time) int64 { return t.Unix() })).
+	Func("time_unix_nano(t time) (n int)", timeAccessorInt(func(t time.Time) int64 { return t.UnixNano() })).
+	Func("time_format(t time, layout string) (s string)", timeFormatFn).
+	Func("is_zero(t time) (b bool)", isZeroFn).
+	Func("to_local(t time) (t time)", toLocalFn).
+	Func("to_utc(t time) (t time)", toUtcFn).
+	Func("time_location(t time) (s string)", timeLocationFn).
+	Func("time_string(t time) (s string)", timeStringFn)
 
-func timesSleep(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+// --- TypeRegistration constructor -------------------------------------------
+
+// timeCtor mirrors the legacy `time(x)` builtin: it accepts a single
+// time-compatible value (or an additional fallback that is currently ignored
+// because the constructor signature is fixed by TypeRegistration's interface).
+func timeCtor(_ context.Context, args []vm.Object) (time.Time, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return time.Time{}, vm.ErrWrongNumArguments
 	}
-
-	i1, ok := vm.ToInt64(args[0])
+	if t, ok := args[0].(*vm.Time); ok {
+		return t.Value, nil
+	}
+	v, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
+		return time.Time{}, vm.ErrInvalidArgumentType{
+			Name:     "first",
+			Expected: "time(compatible)",
+			Found:    args[0].TypeName(),
+		}
+	}
+	return v, nil
+}
+
+// --- predicates -------------------------------------------------------------
+
+func isTimeFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	if _, ok := args[0].(*vm.Time); ok {
+		return vm.TrueValue, nil
+	}
+	return vm.FalseValue, nil
+}
+
+// --- sleep ------------------------------------------------------------------
+
+// sleepFn sleeps for d nanoseconds, returning early with vm.ErrVMAborted if
+// the context is cancelled. The implementation deliberately uses
+// time.NewTimer + select so that cancellation is observed promptly without
+// leaking a goroutine for the remainder of the requested duration.
+func sleepFn(ctx context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	d, ok := vm.ToInt64(args[0])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{
 			Name:     "first",
 			Expected: "int(compatible)",
 			Found:    args[0].TypeName(),
 		}
-		return
 	}
-	ret = vm.UndefinedValue
-	timer := time.NewTimer(time.Duration(i1))
+	timer := time.NewTimer(time.Duration(d))
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return nil, vm.ErrVMAborted
 	case <-timer.C:
+		return vm.UndefinedValue, nil
 	}
-	return
 }
 
-func timesParseDuration(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
+// --- duration helpers -------------------------------------------------------
 
-	s1, ok := vm.ToString(args[0])
+// durationFloatFn builds a CallableFunc that maps a duration int argument
+// through one of time.Duration's float64-returning accessors (Hours/Minutes/
+// Seconds). Wrapping is needed because module.Func() does not include
+// `func(int64) float64` in its dispatch table.
+func durationFloatFn(extract func(time.Duration) float64) vm.CallableFunc {
+	return func(_ context.Context, args ...vm.Object) (vm.Object, error) {
+		if len(args) != 1 {
+			return nil, vm.ErrWrongNumArguments
+		}
+		d, ok := vm.ToInt64(args[0])
+		if !ok {
+			return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "int(compatible)", Found: args[0].TypeName()}
+		}
+		return &vm.Float64{Value: extract(time.Duration(d))}, nil
+	}
+}
+
+func durationStringFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	d, ok := vm.ToInt64(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "int(compatible)", Found: args[0].TypeName()}
+	}
+	return &vm.String{Value: time.Duration(d).String()}, nil
+}
+
+func monthStringFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	m, ok := vm.ToInt64(args[0])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "int(compatible)", Found: args[0].TypeName()}
+	}
+	return &vm.String{Value: time.Month(m).String()}, nil
+}
+
+func parseDurationFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
+	if len(args) != 1 {
+		return nil, vm.ErrWrongNumArguments
+	}
+	s, ok := vm.ToString(args[0])
+	if !ok {
+		return nil, vm.ErrInvalidArgumentType{
 			Name:     "first",
 			Expected: "string(compatible)",
 			Found:    args[0].TypeName(),
 		}
-		return
 	}
-
-	dur, err := time.ParseDuration(s1)
+	d, err := time.ParseDuration(s)
 	if err != nil {
-		ret = module.WrapError(err)
-		return
+		return module.WrapError(err), nil
 	}
-
-	ret = &vm.Int{Value: int64(dur)}
-
-	return
+	return &vm.Int{Value: int64(d)}, nil
 }
 
-func timesSince(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+// --- since / until ---------------------------------------------------------
+
+func sinceFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	ret = &vm.Int{Value: int64(time.Since(t1))}
-
-	return
+	return &vm.Int{Value: int64(time.Since(t))}, nil
 }
 
-func timesUntil(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func untilFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	ret = &vm.Int{Value: int64(time.Until(t1))}
-
-	return
+	return &vm.Int{Value: int64(time.Until(t))}, nil
 }
 
-func timesDurationHours(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
+// --- time constructors -----------------------------------------------------
 
-	i1, ok := vm.ToInt64(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Float64{Value: time.Duration(i1).Hours()}
-
-	return
-}
-
-func timesDurationMinutes(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	i1, ok := vm.ToInt64(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Float64{Value: time.Duration(i1).Minutes()}
-
-	return
-}
-
-func timesDurationNanoseconds(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	i1, ok := vm.ToInt64(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: time.Duration(i1).Nanoseconds()}
-
-	return
-}
-
-func timesDurationSeconds(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	i1, ok := vm.ToInt64(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Float64{Value: time.Duration(i1).Seconds()}
-
-	return
-}
-
-func timesDurationString(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	i1, ok := vm.ToInt64(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.String{Value: time.Duration(i1).String()}
-
-	return
-}
-
-func timesMonthString(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	i1, ok := vm.ToInt64(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.String{Value: time.Month(i1).String()}
-
-	return
-}
-
-func timesDate(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func dateFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 7 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	i1, ok := vm.ToInt(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
+	parts := make([]int, 7)
+	for i, a := range args {
+		v, ok := vm.ToInt(a)
+		if !ok {
+			return nil, vm.ErrInvalidArgumentType{Expected: "int(compatible)", Found: a.TypeName()}
 		}
-		return
+		parts[i] = v
 	}
-	i2, ok := vm.ToInt(args[1])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "int(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
-	}
-	i3, ok := vm.ToInt(args[2])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "third",
-			Expected: "int(compatible)",
-			Found:    args[2].TypeName(),
-		}
-		return
-	}
-	i4, ok := vm.ToInt(args[3])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "fourth",
-			Expected: "int(compatible)",
-			Found:    args[3].TypeName(),
-		}
-		return
-	}
-	i5, ok := vm.ToInt(args[4])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "fifth",
-			Expected: "int(compatible)",
-			Found:    args[4].TypeName(),
-		}
-		return
-	}
-	i6, ok := vm.ToInt(args[5])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "sixth",
-			Expected: "int(compatible)",
-			Found:    args[5].TypeName(),
-		}
-		return
-	}
-	i7, ok := vm.ToInt(args[6])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "seventh",
-			Expected: "int(compatible)",
-			Found:    args[6].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Time{
-		Value: time.Date(i1, time.Month(i2), i3, i4, i5, i6, i7, time.UTC),
-	}
-
-	return
+	return &vm.Time{Value: time.Date(parts[0], time.Month(parts[1]), parts[2], parts[3], parts[4], parts[5], parts[6], time.UTC)}, nil
 }
 
-func timesDateIn(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 8 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	s1, ok := vm.ToString(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "string(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	loc, locErr := time.LoadLocation(s1)
-	if locErr != nil {
-		ret = module.WrapError(locErr)
-		return
-	}
-
-	i1, ok := vm.ToInt(args[1])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "int(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
-	}
-	i2, ok := vm.ToInt(args[2])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "third",
-			Expected: "int(compatible)",
-			Found:    args[2].TypeName(),
-		}
-		return
-	}
-	i3, ok := vm.ToInt(args[3])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "fourth",
-			Expected: "int(compatible)",
-			Found:    args[3].TypeName(),
-		}
-		return
-	}
-	i4, ok := vm.ToInt(args[4])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "fifth",
-			Expected: "int(compatible)",
-			Found:    args[4].TypeName(),
-		}
-		return
-	}
-	i5, ok := vm.ToInt(args[5])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "sixth",
-			Expected: "int(compatible)",
-			Found:    args[5].TypeName(),
-		}
-		return
-	}
-	i6, ok := vm.ToInt(args[6])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "seventh",
-			Expected: "int(compatible)",
-			Found:    args[6].TypeName(),
-		}
-		return
-	}
-	i7, ok := vm.ToInt(args[7])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "eighth",
-			Expected: "int(compatible)",
-			Found:    args[7].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Time{
-		Value: time.Date(i1, time.Month(i2), i3, i4, i5, i6, i7, loc),
-	}
-
-	return
-}
-
-func timesNow(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func nowFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 0 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	ret = &vm.Time{Value: time.Now()}
-
-	return
+	return &vm.Time{Value: time.Now()}, nil
 }
 
-func timesParse(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func parseFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	s1, ok := vm.ToString(args[0])
+	layout, ok := vm.ToString(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "string(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "string(compatible)", Found: args[0].TypeName()}
 	}
-
-	s2, ok := vm.ToString(args[1])
+	value, ok := vm.ToString(args[1])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "string(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "string(compatible)", Found: args[1].TypeName()}
 	}
-
-	parsed, err := time.Parse(s1, s2)
+	t, err := time.Parse(layout, value)
 	if err != nil {
-		ret = module.WrapError(err)
-		return
+		return module.WrapError(err), nil
 	}
-
-	ret = &vm.Time{Value: parsed}
-
-	return
+	return &vm.Time{Value: t}, nil
 }
 
-func timesUnix(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func unixFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	i1, ok := vm.ToInt64(args[0])
+	sec, ok := vm.ToInt64(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "int(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "int(compatible)", Found: args[0].TypeName()}
 	}
-
-	i2, ok := vm.ToInt64(args[1])
+	nsec, ok := vm.ToInt64(args[1])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "int(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "int(compatible)", Found: args[1].TypeName()}
 	}
-
-	ret = &vm.Time{Value: time.Unix(i1, i2)}
-
-	return
+	return &vm.Time{Value: time.Unix(sec, nsec)}, nil
 }
 
-func timesAdd(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+// --- time arithmetic --------------------------------------------------------
+
+func addFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	i2, ok := vm.ToInt64(args[1])
+	d, ok := vm.ToInt64(args[1])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "int(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "int(compatible)", Found: args[1].TypeName()}
 	}
-
-	ret = &vm.Time{Value: t1.Add(time.Duration(i2))}
-
-	return
+	return &vm.Time{Value: t.Add(time.Duration(d))}, nil
 }
 
-func timesSub(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func subFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	t2, ok := vm.ToTime(args[1])
+	u, ok := vm.ToTime(args[1])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "time(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "time", Found: args[1].TypeName()}
 	}
-
-	ret = &vm.Int{Value: int64(t1.Sub(t2))}
-
-	return
+	return &vm.Int{Value: int64(t.Sub(u))}, nil
 }
 
-func timesAddDate(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func addDateFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 4 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	i2, ok := vm.ToInt(args[1])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "int(compatible)",
-			Found:    args[1].TypeName(),
+	parts := make([]int, 3)
+	for i := 0; i < 3; i++ {
+		v, ok := vm.ToInt(args[i+1])
+		if !ok {
+			return nil, vm.ErrInvalidArgumentType{Expected: "int(compatible)", Found: args[i+1].TypeName()}
 		}
-		return
+		parts[i] = v
 	}
-
-	i3, ok := vm.ToInt(args[2])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "third",
-			Expected: "int(compatible)",
-			Found:    args[2].TypeName(),
-		}
-		return
-	}
-
-	i4, ok := vm.ToInt(args[3])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "fourth",
-			Expected: "int(compatible)",
-			Found:    args[3].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Time{Value: t1.AddDate(i2, i3, i4)}
-
-	return
+	return &vm.Time{Value: t.AddDate(parts[0], parts[1], parts[2])}, nil
 }
 
-func timesAfter(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func afterFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	t2, ok := vm.ToTime(args[1])
+	u, ok := vm.ToTime(args[1])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "time(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "time", Found: args[1].TypeName()}
 	}
-
-	if t1.After(t2) {
-		ret = vm.TrueValue
-	} else {
-		ret = vm.FalseValue
+	if t.After(u) {
+		return vm.TrueValue, nil
 	}
-
-	return
+	return vm.FalseValue, nil
 }
 
-func timesBefore(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func beforeFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	t2, ok := vm.ToTime(args[1])
+	u, ok := vm.ToTime(args[1])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "time", Found: args[1].TypeName()}
 	}
-
-	if t1.Before(t2) {
-		ret = vm.TrueValue
-	} else {
-		ret = vm.FalseValue
+	if t.Before(u) {
+		return vm.TrueValue, nil
 	}
-
-	return
+	return vm.FalseValue, nil
 }
 
-func timesTimeYear(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
+// --- time accessors --------------------------------------------------------
 
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
+// timeAccessorInt builds a CallableFunc that extracts an int64-valued
+// component from a single time argument.
+func timeAccessorInt(extract func(time.Time) int64) vm.CallableFunc {
+	return func(_ context.Context, args ...vm.Object) (vm.Object, error) {
+		if len(args) != 1 {
+			return nil, vm.ErrWrongNumArguments
 		}
-		return
+		t, ok := vm.ToTime(args[0])
+		if !ok {
+			return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
+		}
+		return &vm.Int{Value: extract(t)}, nil
 	}
-
-	ret = &vm.Int{Value: int64(t1.Year())}
-
-	return
 }
 
-func timesTimeMonth(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: int64(t1.Month())}
-
-	return
-}
-
-func timesTimeDay(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: int64(t1.Day())}
-
-	return
-}
-
-func timesTimeWeekday(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: int64(t1.Weekday())}
-
-	return
-}
-
-func timesTimeHour(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: int64(t1.Hour())}
-
-	return
-}
-
-func timesTimeMinute(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: int64(t1.Minute())}
-
-	return
-}
-
-func timesTimeSecond(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: int64(t1.Second())}
-
-	return
-}
-
-func timesTimeNanosecond(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: int64(t1.Nanosecond())}
-
-	return
-}
-
-func timesTimeUnix(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: t1.Unix()}
-
-	return
-}
-
-func timesTimeUnixNano(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
-	}
-
-	t1, ok := vm.ToTime(args[0])
-	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
-	}
-
-	ret = &vm.Int{Value: t1.UnixNano()}
-
-	return
-}
-
-func timesTimeFormat(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func timeFormatFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	s2, ok := vm.ToString(args[1])
+	layout, ok := vm.ToString(args[1])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "second",
-			Expected: "string(compatible)",
-			Found:    args[1].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "string(compatible)", Found: args[1].TypeName()}
 	}
-
-	s := t1.Format(s2)
-	if len(s) > vm.ConfigFromContext(ctx).MaxStringLen {
-
-		return nil, vm.ErrStringLimit
-	}
-
-	ret = &vm.String{Value: s}
-
-	return
+	return &vm.String{Value: t.Format(layout)}, nil
 }
 
-func timesIsZero(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func isZeroFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	if t1.IsZero() {
-		ret = vm.TrueValue
-	} else {
-		ret = vm.FalseValue
+	if t.IsZero() {
+		return vm.TrueValue, nil
 	}
-
-	return
+	return vm.FalseValue, nil
 }
 
-func timesToLocal(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func toLocalFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	ret = &vm.Time{Value: t1.Local()}
-
-	return
+	return &vm.Time{Value: t.Local()}, nil
 }
 
-func timesToUTC(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func toUtcFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	ret = &vm.Time{Value: t1.UTC()}
-
-	return
+	return &vm.Time{Value: t.UTC()}, nil
 }
 
-func timesTimeLocation(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func timeLocationFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	ret = &vm.String{Value: t1.Location().String()}
-
-	return
+	return &vm.String{Value: t.Location().String()}, nil
 }
 
-func timesTimeString(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
+func timeStringFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		err = vm.ErrWrongNumArguments
-		return
+		return nil, vm.ErrWrongNumArguments
 	}
-
-	t1, ok := vm.ToTime(args[0])
+	t, ok := vm.ToTime(args[0])
 	if !ok {
-		err = vm.ErrInvalidArgumentType{
-			Name:     "first",
-			Expected: "time(compatible)",
-			Found:    args[0].TypeName(),
-		}
-		return
+		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-
-	ret = &vm.String{Value: t1.String()}
-
-	return
+	return &vm.String{Value: t.String()}, nil
 }

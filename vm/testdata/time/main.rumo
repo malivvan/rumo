@@ -1,0 +1,7 @@
+times := import("times")
+fmt := import("fmt")
+t := times.now()
+fmt.printf("Current time: %v\n", t)
+
+x := t.nanosecond()
+fmt.printf("Nanosecond: %d\n", x)

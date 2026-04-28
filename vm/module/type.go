@@ -135,8 +135,8 @@ func (t *Type[T]) Methods() map[string]*Export {
 
 // --- TypeRegistration implementation -----------------------------------
 
-func (t *Type[T]) typeName() string                { return t.name }
-func (t *Type[T]) typeExport() *Export             { return t.export }
+func (t *Type[T]) typeName() string    { return t.name }
+func (t *Type[T]) typeExport() *Export { return t.export }
 func (t *Type[T]) methodExports() map[string]*Export {
 	out := make(map[string]*Export, len(t.exports))
 	for k, v := range t.exports {
@@ -174,19 +174,3 @@ func (t *Type[T]) constructor() *vm.BuiltinFunction {
 		},
 	}
 }
-
-// Type registers a Type in the BuiltinModule. The Type's constructor is
-// exported as a callable under its declared name; calling it produces an
-// instance whose methods are bound to a fresh per-instance state.
-//
-// Panics if the type's name collides with an existing export.
-func (m *BuiltinModule) Type(t TypeRegistration) *BuiltinModule {
-	name := t.typeName()
-	if _, exists := m.export[name]; exists {
-		panic(fmt.Errorf("export already registered: %s", name))
-	}
-	m.object[name] = t.constructor()
-	m.export[name] = t.typeExport()
-	return m
-}
-

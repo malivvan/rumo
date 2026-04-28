@@ -1980,6 +1980,84 @@ func (o *Time) Equals(x Object) bool {
 	return o.Value.Equal(t.Value)
 }
 
+// IndexGet exposes time.Time accessor methods as bound *BuiltinFunction
+// values, so that scripts can write `t.nanosecond()` / `t.format(layout)`
+// even though the freestanding `times.now()` / `times.parse()` helpers
+// return a *Time rather than the ImmutableMap produced by the
+// `times.Time(x)` TypeRegistration constructor. Method names mirror the
+// methods registered on times.Time so the two access styles are
+// interchangeable. Unknown keys return UndefinedValue (not an error) to
+// match Map / ImmutableMap convention.
+func (o *Time) IndexGet(index Object) (Object, error) {
+	name, ok := ToString(index)
+	if !ok {
+		return nil, ErrInvalidIndexType
+	}
+	t := o.Value
+	mkInt := func(n int64) CallableFunc {
+		return func(_ context.Context, args ...Object) (Object, error) {
+			if len(args) != 0 {
+				return nil, ErrWrongNumArguments
+			}
+			return &Int{Value: n}, nil
+		}
+	}
+	mkStr := func(s string) CallableFunc {
+		return func(_ context.Context, args ...Object) (Object, error) {
+			if len(args) != 0 {
+				return nil, ErrWrongNumArguments
+			}
+			return &String{Value: s}, nil
+		}
+	}
+	mkBool := func(b bool) CallableFunc {
+		return func(_ context.Context, args ...Object) (Object, error) {
+			if len(args) != 0 {
+				return nil, ErrWrongNumArguments
+			}
+			return boolObject(b), nil
+		}
+	}
+	switch name {
+	case "year":
+		return &BuiltinFunction{Name: "time.year", Value: mkInt(int64(t.Year()))}, nil
+	case "month":
+		return &BuiltinFunction{Name: "time.month", Value: mkInt(int64(t.Month()))}, nil
+	case "day":
+		return &BuiltinFunction{Name: "time.day", Value: mkInt(int64(t.Day()))}, nil
+	case "hour":
+		return &BuiltinFunction{Name: "time.hour", Value: mkInt(int64(t.Hour()))}, nil
+	case "minute":
+		return &BuiltinFunction{Name: "time.minute", Value: mkInt(int64(t.Minute()))}, nil
+	case "second":
+		return &BuiltinFunction{Name: "time.second", Value: mkInt(int64(t.Second()))}, nil
+	case "nanosecond":
+		return &BuiltinFunction{Name: "time.nanosecond", Value: mkInt(int64(t.Nanosecond()))}, nil
+	case "unix":
+		return &BuiltinFunction{Name: "time.unix", Value: mkInt(t.Unix())}, nil
+	case "unix_nano":
+		return &BuiltinFunction{Name: "time.unix_nano", Value: mkInt(t.UnixNano())}, nil
+	case "string":
+		return &BuiltinFunction{Name: "time.string", Value: mkStr(t.String())}, nil
+	case "location":
+		return &BuiltinFunction{Name: "time.location", Value: mkStr(t.Location().String())}, nil
+	case "is_zero":
+		return &BuiltinFunction{Name: "time.is_zero", Value: mkBool(t.IsZero())}, nil
+	case "format":
+		return &BuiltinFunction{Name: "time.format", Value: func(_ context.Context, args ...Object) (Object, error) {
+			if len(args) != 1 {
+				return nil, ErrWrongNumArguments
+			}
+			layout, ok := ToString(args[0])
+			if !ok {
+				return nil, ErrInvalidArgumentType{Name: "first", Expected: "string(compatible)", Found: args[0].TypeName()}
+			}
+			return &String{Value: t.Format(layout)}, nil
+		}}, nil
+	}
+	return UndefinedValue, nil
+}
+
 // Undefined represents an undefined value.
 type Undefined struct {
 	ObjectImpl
