@@ -144,7 +144,7 @@
         <div class="panel">
             <h2>source <span class="small" id="srcInfo"></span></h2>
             <textarea id="src" spellcheck="false">fmt := import("fmt")
-times := import("times")
+time := import("time")
 
 ping := chan(4)
 pong := chan(4)
@@ -160,7 +160,7 @@ go func() {
 for i := 0; i < 5; i++ {
     ping.send(i)
     fmt.println("main got:", pong.recv())
-    times.sleep(times.millisecond * 50)
+    time.sleep(time.millisecond * 50)
 }
 fmt.println("done.")
 </textarea>

@@ -1,5 +1,5 @@
 fmt := import("fmt")
-times := import("times")
+time := import("time")
 
 reqChan := chan(8)
 repChan := chan(8)
@@ -8,7 +8,7 @@ client := func(interval) {
 	reqChan.send("hello")
 	for i := 0; true; i++ {
 		fmt.println(repChan.recv())
-		times.sleep(interval*times.second)
+		time.sleep(interval*time.second)
 		reqChan.send(i)
 	}
 }

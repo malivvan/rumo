@@ -354,8 +354,6 @@ func valueTypeConverter(name string) (CallableFunc, bool) {
 		return builtinMap, true
 	case "immutable_map":
 		return builtinImmutableMap, true
-	case "time":
-		return builtinTime, true
 	}
 	return nil, false
 }
@@ -445,9 +443,6 @@ func isOfType(typeName string, v Object) bool {
 		return ok
 	case "immutable_map":
 		_, ok := v.(*ImmutableMap)
-		return ok
-	case "time":
-		_, ok := v.(*Time)
 		return ok
 	case "undefined":
 		_, ok := v.(*Undefined)

@@ -1,15 +1,21 @@
-// Package times exposes Go's time.Time / time.Duration helpers as a Rumo
+// Package time exposes Go's time.Time / time.Duration helpers as a Rumo
 // standard-library module.
 //
-// The Time type itself is registered via module.TypeRegistration: calling
-// `times.Time(x)` from a script produces an ImmutableMap whose values are
-// per-instance methods (year, month, format, ...) bound to a captured
-// time.Time state. The time-shaped values used by the freestanding helpers
-// (`now`, `parse`, `add`, ...) are still represented at the VM level by
-// `*vm.Time`, since that representation participates in bytecode encoding
-// and script-level arithmetic (`t1 - t2`, `t + dur`) which the
-// ImmutableMap-based instance shape cannot express.
-package times
+// Time values are represented at the script/VM level as a *vm.ImmutableMap
+// whose values are bound *vm.BuiltinFunction methods (year, month, format,
+// ...) plus two hidden sentinel keys, "__unix_nano" (*vm.Int) and "__zone"
+// (*vm.String), that allow the package's freestanding helpers to losslessly
+// rehydrate the original time.Time. Both ImmutableMap and BuiltinFunction
+// already participate in bytecode encoding, so this representation
+// round-trips through compile / load without requiring a dedicated
+// VM-level Object type.
+//
+// Note: the previous representation as a *vm.Time Object supported
+// script-level arithmetic (`t1 - t2`, `t + dur`, comparisons) via its
+// BinaryOp implementation. ImmutableMap does not support those operators,
+// so equivalent behaviour is now exposed through the freestanding helpers
+// `time.sub`, `time.add`, `time.before`, `time.after`, etc.
+package time
 
 import (
 	"context"
@@ -19,24 +25,123 @@ import (
 	"github.com/malivvan/rumo/vm/module"
 )
 
-// Module is the registered "times" builtin module.
+// Sentinel keys used to identify a Rumo-side time value and recover its
+// underlying time.Time without information loss. Exported so that
+// out-of-package helpers (e.g. vm/require) can construct an equal shape.
+const (
+	TimeKeyUnixNano = "__unix_nano"
+	TimeKeyZone     = "__zone"
+	TimeKeyZero     = "__zero"
+)
+
+// TimeObject returns the canonical Rumo representation of a Go time.Time.
+//
+// The returned ImmutableMap carries:
+//   - the bound accessor methods (year, month, day, hour, minute, second,
+//     nanosecond, unix, unix_nano, string, location, is_zero, format),
+//   - and the two hidden sentinel keys (TimeKeyUnixNano, TimeKeyZone) used
+//     by ToGoTime to recover the original value.
+func TimeObject(t time.Time) *vm.ImmutableMap {
+	mkInt := func(n int64) vm.CallableFunc {
+		return func(_ context.Context, args ...vm.Object) (vm.Object, error) {
+			if len(args) != 0 {
+				return nil, vm.ErrWrongNumArguments
+			}
+			return &vm.Int{Value: n}, nil
+		}
+	}
+	mkStr := func(s string) vm.CallableFunc {
+		return func(_ context.Context, args ...vm.Object) (vm.Object, error) {
+			if len(args) != 0 {
+				return nil, vm.ErrWrongNumArguments
+			}
+			return &vm.String{Value: s}, nil
+		}
+	}
+	mkBool := func(b bool) vm.CallableFunc {
+		return func(_ context.Context, args ...vm.Object) (vm.Object, error) {
+			if len(args) != 0 {
+				return nil, vm.ErrWrongNumArguments
+			}
+			if b {
+				return vm.TrueValue, nil
+			}
+			return vm.FalseValue, nil
+		}
+	}
+	attrs := map[string]vm.Object{
+		TimeKeyUnixNano: &vm.Int{Value: t.UnixNano()},
+		TimeKeyZone:     &vm.String{Value: t.Location().String()},
+		"year":          &vm.BuiltinFunction{Name: "time.Time.year", Value: mkInt(int64(t.Year()))},
+		"month":         &vm.BuiltinFunction{Name: "time.Time.month", Value: mkInt(int64(t.Month()))},
+		"day":           &vm.BuiltinFunction{Name: "time.Time.day", Value: mkInt(int64(t.Day()))},
+		"hour":          &vm.BuiltinFunction{Name: "time.Time.hour", Value: mkInt(int64(t.Hour()))},
+		"minute":        &vm.BuiltinFunction{Name: "time.Time.minute", Value: mkInt(int64(t.Minute()))},
+		"second":        &vm.BuiltinFunction{Name: "time.Time.second", Value: mkInt(int64(t.Second()))},
+		"nanosecond":    &vm.BuiltinFunction{Name: "time.Time.nanosecond", Value: mkInt(int64(t.Nanosecond()))},
+		"unix":          &vm.BuiltinFunction{Name: "time.Time.unix", Value: mkInt(t.Unix())},
+		"unix_nano":     &vm.BuiltinFunction{Name: "time.Time.unix_nano", Value: mkInt(t.UnixNano())},
+		"string":        &vm.BuiltinFunction{Name: "time.Time.string", Value: mkStr(t.String())},
+		"location":      &vm.BuiltinFunction{Name: "time.Time.location", Value: mkStr(t.Location().String())},
+		"is_zero":       &vm.BuiltinFunction{Name: "time.Time.is_zero", Value: mkBool(t.IsZero())},
+		"format": &vm.BuiltinFunction{Name: "time.Time.format", Value: func(_ context.Context, args ...vm.Object) (vm.Object, error) {
+			if len(args) != 1 {
+				return nil, vm.ErrWrongNumArguments
+			}
+			layout, ok := vm.ToString(args[0])
+			if !ok {
+				return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "string(compatible)", Found: args[0].TypeName()}
+			}
+			return &vm.String{Value: t.Format(layout)}, nil
+		}},
+	}
+	if t.IsZero() {
+		attrs[TimeKeyZero] = vm.TrueValue
+	}
+	return &vm.ImmutableMap{Value: attrs}
+}
+
+// ToGoTime extracts a Go time.Time from any Rumo value produced by
+// TimeObject (or, for backwards compatibility, from a *vm.Int interpreted
+// as Unix seconds).
+func ToGoTime(o vm.Object) (time.Time, bool) {
+	switch o := o.(type) {
+	case *vm.Int:
+		return time.Unix(o.Value, 0), true
+	case *vm.ImmutableMap:
+		if z, ok := o.Value[TimeKeyZero].(*vm.Bool); ok && z == vm.TrueValue {
+			return time.Time{}, true
+		}
+		nanoObj, ok := o.Value[TimeKeyUnixNano].(*vm.Int)
+		if !ok {
+			return time.Time{}, false
+		}
+		loc := time.UTC
+		if zoneObj, ok := o.Value[TimeKeyZone].(*vm.String); ok && zoneObj.Value != "" && zoneObj.Value != "UTC" {
+			if loaded, err := time.LoadLocation(zoneObj.Value); err == nil {
+				loc = loaded
+			}
+		}
+		return time.Unix(0, nanoObj.Value).In(loc), true
+	}
+	return time.Time{}, false
+}
+
+// isTimeShape reports whether o is the canonical Rumo time representation
+// (a *vm.ImmutableMap carrying the TimeKeyUnixNano sentinel).
+func isTimeShape(o vm.Object) bool {
+	m, ok := o.(*vm.ImmutableMap)
+	if !ok {
+		return false
+	}
+	_, ok = m.Value[TimeKeyUnixNano].(*vm.Int)
+	return ok
+}
+
+// Module is the registered "time" builtin module.
 var Module = module.NewBuiltin().
-	// --- Time type (registered via module.TypeRegistration) ---
-	Type(module.NewType[time.Time]("Time(x) (t Time) constructs a time instance from x (time-compatible value)", timeCtor).
-		Method("year() (y int) returns the year", func(t time.Time) any { return t.Year }).
-		Method("month() (m int) returns the month [1-12]", func(t time.Time) any { return func() int { return int(t.Month()) } }).
-		Method("day() (d int) returns the day of the month", func(t time.Time) any { return t.Day }).
-		Method("hour() (h int) returns the hour [0-23]", func(t time.Time) any { return t.Hour }).
-		Method("minute() (m int) returns the minute [0-59]", func(t time.Time) any { return t.Minute }).
-		Method("second() (s int) returns the second [0-59]", func(t time.Time) any { return t.Second }).
-		Method("nanosecond() (n int) returns the nanosecond [0-999999999]", func(t time.Time) any { return t.Nanosecond }).
-		Method("unix() (s int) returns the seconds since the Unix epoch", func(t time.Time) any { return t.Unix }).
-		Method("unix_nano() (n int) returns the nanoseconds since the Unix epoch", func(t time.Time) any { return t.UnixNano }).
-		Method("format(layout string) (s string) formats the time", func(t time.Time) any { return func(layout string) string { return t.Format(layout) } }).
-		Method("string() (s string) returns the default string representation", func(t time.Time) any { return t.String }).
-		Method("location() (s string) returns the location name", func(t time.Time) any { return func() string { return t.Location().String() } }).
-		Method("is_zero() (b bool) reports whether t represents the zero time", func(t time.Time) any { return t.IsZero }),
-	).
+	// --- Time type constructor (returns the canonical TimeObject shape) ---
+	Func("Time(x) (t time) constructs a time instance from x (time-compatible value)", timeCtorFn).
 	// --- predicates ---
 	Func("is_time(x) (b bool) reports whether x is a time value", isTimeFn).
 	// --- duration / month string helpers ---
@@ -78,27 +183,21 @@ var Module = module.NewBuiltin().
 	Func("time_location(t time) (s string)", timeLocationFn).
 	Func("time_string(t time) (s string)", timeStringFn)
 
-// --- TypeRegistration constructor -------------------------------------------
+// --- Time(x) constructor ----------------------------------------------------
 
-// timeCtor mirrors the legacy `time(x)` builtin: it accepts a single
-// time-compatible value (or an additional fallback that is currently ignored
-// because the constructor signature is fixed by TypeRegistration's interface).
-func timeCtor(_ context.Context, args []vm.Object) (time.Time, error) {
+func timeCtorFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
-		return time.Time{}, vm.ErrWrongNumArguments
+		return nil, vm.ErrWrongNumArguments
 	}
-	if t, ok := args[0].(*vm.Time); ok {
-		return t.Value, nil
-	}
-	v, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
-		return time.Time{}, vm.ErrInvalidArgumentType{
+		return nil, vm.ErrInvalidArgumentType{
 			Name:     "first",
 			Expected: "time(compatible)",
 			Found:    args[0].TypeName(),
 		}
 	}
-	return v, nil
+	return TimeObject(t), nil
 }
 
 // --- predicates -------------------------------------------------------------
@@ -107,7 +206,7 @@ func isTimeFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	if _, ok := args[0].(*vm.Time); ok {
+	if isTimeShape(args[0]) {
 		return vm.TrueValue, nil
 	}
 	return vm.FalseValue, nil
@@ -207,7 +306,7 @@ func sinceFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
@@ -218,7 +317,7 @@ func untilFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
@@ -239,14 +338,14 @@ func dateFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 		}
 		parts[i] = v
 	}
-	return &vm.Time{Value: time.Date(parts[0], time.Month(parts[1]), parts[2], parts[3], parts[4], parts[5], parts[6], time.UTC)}, nil
+	return TimeObject(time.Date(parts[0], time.Month(parts[1]), parts[2], parts[3], parts[4], parts[5], parts[6], time.UTC)), nil
 }
 
 func nowFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 0 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	return &vm.Time{Value: time.Now()}, nil
+	return TimeObject(time.Now()), nil
 }
 
 func parseFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
@@ -265,7 +364,7 @@ func parseFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if err != nil {
 		return module.WrapError(err), nil
 	}
-	return &vm.Time{Value: t}, nil
+	return TimeObject(t), nil
 }
 
 func unixFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
@@ -280,7 +379,7 @@ func unixFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "int(compatible)", Found: args[1].TypeName()}
 	}
-	return &vm.Time{Value: time.Unix(sec, nsec)}, nil
+	return TimeObject(time.Unix(sec, nsec)), nil
 }
 
 // --- time arithmetic --------------------------------------------------------
@@ -289,7 +388,7 @@ func addFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
@@ -297,18 +396,18 @@ func addFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "int(compatible)", Found: args[1].TypeName()}
 	}
-	return &vm.Time{Value: t.Add(time.Duration(d))}, nil
+	return TimeObject(t.Add(time.Duration(d))), nil
 }
 
 func subFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-	u, ok := vm.ToTime(args[1])
+	u, ok := ToGoTime(args[1])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "time", Found: args[1].TypeName()}
 	}
@@ -319,7 +418,7 @@ func addDateFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 4 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
@@ -331,18 +430,18 @@ func addDateFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 		}
 		parts[i] = v
 	}
-	return &vm.Time{Value: t.AddDate(parts[0], parts[1], parts[2])}, nil
+	return TimeObject(t.AddDate(parts[0], parts[1], parts[2])), nil
 }
 
 func afterFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-	u, ok := vm.ToTime(args[1])
+	u, ok := ToGoTime(args[1])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "time", Found: args[1].TypeName()}
 	}
@@ -356,11 +455,11 @@ func beforeFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-	u, ok := vm.ToTime(args[1])
+	u, ok := ToGoTime(args[1])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "second", Expected: "time", Found: args[1].TypeName()}
 	}
@@ -379,7 +478,7 @@ func timeAccessorInt(extract func(time.Time) int64) vm.CallableFunc {
 		if len(args) != 1 {
 			return nil, vm.ErrWrongNumArguments
 		}
-		t, ok := vm.ToTime(args[0])
+		t, ok := ToGoTime(args[0])
 		if !ok {
 			return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 		}
@@ -391,7 +490,7 @@ func timeFormatFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 2 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
@@ -406,7 +505,7 @@ func isZeroFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
@@ -420,29 +519,29 @@ func toLocalFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-	return &vm.Time{Value: t.Local()}, nil
+	return TimeObject(t.Local()), nil
 }
 
 func toUtcFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
-	return &vm.Time{Value: t.UTC()}, nil
+	return TimeObject(t.UTC()), nil
 }
 
 func timeLocationFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}
@@ -453,7 +552,7 @@ func timeStringFn(_ context.Context, args ...vm.Object) (vm.Object, error) {
 	if len(args) != 1 {
 		return nil, vm.ErrWrongNumArguments
 	}
-	t, ok := vm.ToTime(args[0])
+	t, ok := ToGoTime(args[0])
 	if !ok {
 		return nil, vm.ErrInvalidArgumentType{Name: "first", Expected: "time", Found: args[0].TypeName()}
 	}

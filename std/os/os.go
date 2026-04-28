@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 
+	stdtime "github.com/malivvan/rumo/std/time"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
 )
@@ -213,7 +214,7 @@ func osStat(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 	if err != nil {
 		return module.WrapError(err), nil
 	}
-	fstat := &vm.ImmutableMap{Value: map[string]vm.Object{"name": &vm.String{Value: stat.Name()}, "mtime": &vm.Time{Value: stat.ModTime()}, "size": &vm.Int{Value: stat.Size()}, "mode": &vm.Int{Value: int64(stat.Mode())}}}
+	fstat := &vm.ImmutableMap{Value: map[string]vm.Object{"name": &vm.String{Value: stat.Name()}, "mtime": stdtime.TimeObject(stat.ModTime()), "size": &vm.Int{Value: stat.Size()}, "mode": &vm.Int{Value: int64(stat.Mode())}}}
 	if stat.IsDir() {
 		fstat.Value["directory"] = vm.TrueValue
 	} else {

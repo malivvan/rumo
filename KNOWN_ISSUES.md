@@ -40,11 +40,11 @@
 
 ### 1.4 Goroutines used for routines, channels, sleep &nbsp; **MED**
 
-`vm/routinevm.go` and `std/times/times.go:103` spawn raw goroutines.
+`vm/routinevm.go` and `std/time/time.go:103` spawn raw goroutines.
 On `js/wasm` the runtime is cooperative — every blocking syscall has
 to yield to the event loop. This means:
 
-- `times.sleep(950ms)` (≤ 1 s branch) calls `time.Sleep` directly on
+- `time.sleep(950ms)` (≤ 1 s branch) calls `time.Sleep` directly on
   the calling goroutine, blocking the JS thread.
 - `chan.recv()` blocks the entire wasm module if the producing
   goroutine never runs.

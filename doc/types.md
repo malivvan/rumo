@@ -20,7 +20,6 @@ title: types
 - **ImmutableArray**: immutable object array (`[]Object` in Go)
 - **Map**: objects map with string keys (`map[string]Object` in Go)
 - **ImmutableMap**: immutable object map with string keys (`map[string]Object` in Go)
-- **Time**: time (`time.Time` in Go)
 - **Error**: an error with underlying Object value of any type
 - **Ptr**: pointer (`unsafe.Pointer` in Go)
 
@@ -48,7 +47,6 @@ title: types
 | ImmutableArray | array                  | []Object          |              |                                          |
 | String         | char *                 | string            |              |                                          |
 | Bytes          | char * + length        | []byte            |              |                                          |
-| Time           | time_t                 | time.Time         |              |                                          |
 | Error          | error                  | error             |              |                                          |
 | Rune           | wchar_t                | rune              |              |                                          |
 | Ptr            | void *                 | unsafe.Pointer    |              |                                          |
@@ -57,34 +55,32 @@ title: types
 
 ## Type Conversion/Coercion Table
 
-|  src\dst  |    Byte    |     Int8     |      Uint8       |   Int16    |   Uint16   |    Int     |    Uint    |   Int64    |   Uint64   |   Float    |   Double   |    Bool    |    Rune    | Bytes | Array |  Map  |     Time      | Error | Undefined |
-|:---------:|:----------:|:------------:|:----------------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:-----:|:-----:|:-----:|:-------------:|:-----:|:---------:|
-|   Byte    |     -      |   int8(v)    |     uint8(v)     |  int16(v)  | uint16(v)  |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Int8    |  int8(v)   |      -       |     uint8(v)     |  int16(v)  | uint16(v)  |   int(v)   | uint(v   ) |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Uint8   |  uint8(v)  |   int8(v)    |     uint8(v)     |  int16(v)  | uint16(v)  |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Int16   |  int16(v)  |   int16(v)   |    uint16(v)     |     -      | uint16(v)  |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|  Uint16   | uint16(v)  |   int16(v)   |    uint16(v)     | uint16(v)  |     -      |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|    Int    |   int(v)   |    int(v)    |     uint(v)      |   int(v)   |  uint(v)   |     -      |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   | 
-|   Uint    |  uint(v)   |    int(v)    |     uint(v)      |   int(v)   |  uint(v)   |   int(v)   |     -      |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   | 
-|   Int64   |  int64(v)  |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |     -      | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|  Uint64   | uint64(v)  |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  | uint64(v)  |     -      | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Float   | float32(v) |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |     -      | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|  Double   | float64(v) |  float64(v)  |    float64(v)    | float64(v) | float64(v) | float64(v) | float64(v) | float64(v) | float64(v) | float64(v) |     -      | !IsFalsy() |   **X**    | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Bool    |            |    1 / 0     | "true" / "false" |   **X**    |   **X**    |     -      |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |     -      |   **X**    | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Rune    |  int64(v)  |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |   **X**    |   **X**    | !IsFalsy() |     -      | **X** | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Bytes   |   **X**    |  string(v)   |      **X**       |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |            |   **X**    |   **X**    |   **X**    | !IsFalsy() |   -   | **X** | **X** | _time.Unix()_ | **X** |   **X**   |
-|   Array   |            |    **X**     |     "[...]"      |   **X**    |            |   **X**    |   **X**    |   **X**    |            |   **X**    |   **X**    | !IsFalsy() |   **X**    | **X** |   -   | **X** |     **X**     | **X** |   **X**   |
-|    Map    |            |    **X**     |     "{...}"      |   **X**    |            |   **X**    |   **X**    |   **X**    |            |   **X**    |   **X**    | !IsFalsy() |   **X**    | **X** | **X** |   -   |     **X**     | **X** |   **X**   |
-|   Time    |   **X**    |   String()   |      **X**       |   **X**    |   **X**    |   **X**    |            |   **X**    |   **X**    |   **X**    |            |     -      |   **X**    | **X** | **X** | **X** |       -       | **X** |   **X**   |  
-|   Error   |   **X**    | "error: ..." |      **X**       |   **X**    |   false    |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |     -      |   **X**    |            | **X** | **X** | **X** |       -       |
-| Undefined |   **X**    |    **X**     |      **X**       |   **X**    |   false    |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |     -      |   **X**    | **X** | **X** | **X** |       -       |
+|  src\dst  |    Byte    |     Int8     |      Uint8       |   Int16    |   Uint16   |    Int     |    Uint    |   Int64    |   Uint64   |   Float    |   Double   |    Bool    |    Rune    | Bytes | Array |  Map  | Error | Undefined |
+|:---------:|:----------:|:------------:|:----------------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:----------:|:-----:|:-----:|:-----:|:-----:|:---------:|
+|   Byte    |     -      |   int8(v)    |     uint8(v)     |  int16(v)  | uint16(v)  |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|   Int8    |  int8(v)   |      -       |     uint8(v)     |  int16(v)  | uint16(v)  |   int(v)   | uint(v   ) |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|   Uint8   |  uint8(v)  |   int8(v)    |     uint8(v)     |  int16(v)  | uint16(v)  |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|   Int16   |  int16(v)  |   int16(v)   |    uint16(v)     |     -      | uint16(v)  |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|  Uint16   | uint16(v)  |   int16(v)   |    uint16(v)     | uint16(v)  |     -      |   int(v)   |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|    Int    |   int(v)   |    int(v)    |     uint(v)      |   int(v)   |  uint(v)   |     -      |  uint(v)   |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   | 
+|   Uint    |  uint(v)   |    int(v)    |     uint(v)      |   int(v)   |  uint(v)   |   int(v)   |     -      |  int64(v)  | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   | 
+|   Int64   |  int64(v)  |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |     -      | uint64(v)  | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|  Uint64   | uint64(v)  |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  | uint64(v)  |     -      | float32(v) | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|   Float   | float32(v) |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |     -      | float64(v) | !IsFalsy() |  rune(v)   | **X** | **X** | **X** | **X** |   **X**   |
+|  Double   | float64(v) |  float64(v)  |    float64(v)    | float64(v) | float64(v) | float64(v) | float64(v) | float64(v) | float64(v) | float64(v) |     -      | !IsFalsy() |   **X**    | **X** | **X** | **X** | **X** |   **X**   |
+|   Bool    |            |    1 / 0     | "true" / "false" |   **X**    |   **X**    |     -      |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |     -      |   **X**    | **X** | **X** | **X** | **X** |   **X**   |
+|   Rune    |  int64(v)  |   int64(v)   |    uint64(v)     |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |  int64(v)  | uint64(v)  |   **X**    |   **X**    | !IsFalsy() |     -      | **X** | **X** | **X** | **X** |   **X**   |
+|   Bytes   |   **X**    |  string(v)   |      **X**       |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |            |   **X**    |   **X**    |   **X**    | !IsFalsy() |   -   | **X** | **X** | **X** |   **X**   |
+|   Array   |            |    **X**     |     "[...]"      |   **X**    |            |   **X**    |   **X**    |   **X**    |            |   **X**    |   **X**    | !IsFalsy() |   **X**    | **X** |   -   | **X** | **X** |   **X**   |
+|    Map    |            |    **X**     |     "{...}"      |   **X**    |            |   **X**    |   **X**    |   **X**    |            |   **X**    |   **X**    | !IsFalsy() |   **X**    | **X** | **X** |   -   | **X** |   **X**   |
+|   Error   |   **X**    | "error: ..." |      **X**       |   **X**    |   false    |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |     -      |   **X**    |            | **X** | **X** | **X** |
+| Undefined |   **X**    |    **X**     |      **X**       |   **X**    |   false    |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |   **X**    |     -      |   **X**    | **X** | **X** | **X** |
 
 _* **X**: No conversion; Typed value functions for `Variable` will
 return zero values._  
 _* strconv: converted using Go's conversion functions from `strconv` package._  
 _* IsFalsy(): use [Object.IsFalsy()](#objectisfalsy) function_  
 _* String(): use `Object.String()` function_
-_* time.Unix(): use `time.Unix(v, 0)` to convert to Time_
 
 ## Object.IsFalsy()
 `Object.IsFalsy()` interface method is used to determine if a given value
@@ -108,7 +104,6 @@ should evaluate to `false` (e.g. for condition expression of `if` statement).
 - **ImmutableArray**: `len(arr) == 0`
 - **Map**: `len(map) == 0`
 - **ImmutableMap**: `len(map) == 0`
-- **Time**: `Time.IsZero()`
 - **Error**: `true` _(Error is always falsy)_
 - **Undefined**: `true` _(Undefined is always falsy)_
 - **String**: `len(s) == 0`
@@ -132,7 +127,6 @@ should evaluate to `false` (e.g. for condition expression of `if` statement).
 - `float(x)`: tries to convert `x` into float; returns `undefined` if failed
 - `bytes(x)`: tries to convert `x` into bytes; returns `undefined` if failed
 - `bytes(N)`: as a special case this will create a Bytes variable with the given size `N` (only if `N` is int)
-- `time(x)`: tries to convert `x` into time; returns `undefined` if failed
 - `error(x)`: tries to convert `x` into error; returns `undefined` if failed
 - `array(x)`: tries to convert `x` into array; returns `undefined` if failed
 - `immutable_array(x)`: tries to convert `x` into immutable array; returns `undefined` if failed
@@ -162,7 +156,6 @@ should evaluate to `false` (e.g. for condition expression of `if` statement).
 - `is_immutable_array(x)`: return `true` if `x` is immutable array; `false` otherwise
 - `is_map(x)`: return `true` if `x` is map; `false` otherwise
 - `is_immutable_map(x)`: return `true` if `x` is immutable map; `false` otherwise
-- `is_time(x)`: return `true` if `x` is time; `false` otherwise
 - `is_error(x)`: returns `true` if `x` is error; `false` otherwise
 - `is_ptr(x)`: returns `true` if `x` is ptr; `false` otherwise
 - `is_undefined(x)`: returns `true` if `x` is undefined; `false` otherwise
@@ -187,7 +180,7 @@ The `+` operator is also defined for string type and will concatenate two string
 The indexing operator `[]` is defined for Array, ImmutableArray, Map, ImmutableMap, and String types. For Array and ImmutableArray, the index must be of integer type and within the bounds of the array; otherwise a panic will occur. For Map and ImmutableMap, the index must be of string type; otherwise a panic will occur. For String, the index must be of integer type and within the bounds of the string; otherwise a panic will occur. The result of the indexing operation will be the element at the specified index for Array and ImmutableArray, the value associated with the specified key for Map and ImmutableMap, and the character at the specified index for String. 
 
 ## Function Call Operator
-The function call operator `()` is defined for all types. If the operand is a function, it will be called with the provided arguments. If the operand is not a function, a panic will occur. The result of the function call will depend on the implementation of the function being called. For example, if the operand is a Map or ImmutableMap, calling it with a string argument will return the value associated with the specified key. If the operand is an Array or ImmutableArray, calling it with an integer argument will return the element at the specified index. If the operand is a String, calling it with an integer argument will return the character at the specified index. If the operand is a Time, calling it with no arguments will return the Unix timestamp of the time value. If the operand is an Error, calling it with no arguments will return the error message string. If the operand is an Undefined, calling it with no arguments will return `undefined`. 
+The function call operator `()` is defined for all types. If the operand is a function, it will be called with the provided arguments. If the operand is not a function, a panic will occur. The result of the function call will depend on the implementation of the function being called. For example, if the operand is a Map or ImmutableMap, calling it with a string argument will return the value associated with the specified key. If the operand is an Array or ImmutableArray, calling it with an integer argument will return the element at the specified index. If the operand is a String, calling it with an integer argument will return the character at the specified index. If the operand is an Error, calling it with no arguments will return the error message string. If the operand is an Undefined, calling it with no arguments will return `undefined`. 
 
 ## Other Operators
 - The `!` operator is defined for all types and will evaluate the operand in a boolean context using the `Object.IsFalsy()` method. The result will be a boolean value.

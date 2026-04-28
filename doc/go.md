@@ -55,7 +55,7 @@ client := func(interval) {
 	reqChan.send("hello")
 	for i := 0; true; i++ {
 		fmt.println(repChan.recv())
-		times.sleep(interval*times.second)
+		time.sleep(interval*time.second)
 		reqChan.send(i)
 	}
 }
@@ -109,7 +109,7 @@ client = func(name, interval, timeout) {
 		msg.data = i
 		sharedReqChan.send(msg)
 		print(repChan.recv())
-		times.sleep(interval*times.second)
+		time.sleep(interval*time.second)
 	}
 }
 
@@ -148,7 +148,7 @@ rclts := go clients()
 // were cancelled with the req fetched from sharedReqChan before
 // sending back the reply.
 // In such case, do below to cancel() the clients manually
-//go func(){times.sleep(6*times.second); gclts.stop()}()
+//go func(){time.sleep(6*time.second); gclts.stop()}()
 
 // Servers are infinite loop, cancel() them after 5 seconds
 rsrvs := go servers()

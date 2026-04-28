@@ -1,5 +1,5 @@
 fmt := import("fmt")
-times := import("times")
+time := import("time")
 
 writeRoutine := func(num) {
     return func() {
@@ -9,7 +9,7 @@ writeRoutine := func(num) {
         fmt.println("Starting writeRoutine: " + num)
         for i := 0; i < 12; i++ {
             fmt.println("Hello from writeRoutine: "+ num + " i: " + i)
-            times.sleep(250*times.millisecond)
+            time.sleep(250*time.millisecond)
         }
         return "routine " + num + " done"
     }
@@ -18,12 +18,12 @@ writeRoutine := func(num) {
 r1 := start writeRoutine(1)()
 r2 := start writeRoutine(2)()
 r3 := start writeRoutine(3)()
-times.sleep(1 * times.second)
+time.sleep(1 * time.second)
 fmt.println("Cancelling routine 1")
 r1.stop()
 
 
-times.sleep(2 * times.second)
+time.sleep(2 * time.second)
 fmt.println("Cancelling routine 2")
 r2.stop()
 

@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/malivvan/rumo"
+	stdtime "github.com/malivvan/rumo/std/time"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/parser"
 	"github.com/malivvan/rumo/vm/token"
@@ -95,7 +96,7 @@ func Object(v interface{}) vm.Object {
 
 		return &vm.ImmutableArray{Value: objs}
 	case time.Time:
-		return &vm.Time{Value: v}
+		return stdtime.TimeObject(v)
 	case []int:
 		var objs []vm.Object
 		for _, e := range v {

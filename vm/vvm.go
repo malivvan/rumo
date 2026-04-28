@@ -5,11 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"time"
 	"unsafe"
 )
-
-
 
 // Permissions controls which privileged operations in the os standard-library
 // module are available to scripts. The zero value (all fields false) denies
@@ -485,19 +482,6 @@ func ToByteSlice(o Object) (v []byte, ok bool) {
 	return
 }
 
-// ToTime will try to convert object o to time.Time value.
-func ToTime(o Object) (v time.Time, ok bool) {
-	switch o := o.(type) {
-	case *Time:
-		v = o.Value
-		ok = true
-	case *Int:
-		v = time.Unix(o.Value, 0)
-		ok = true
-	}
-	return
-}
-
 // ToInterface attempts to convert an object o to an interface{} value
 func ToInterface(o Object) (res interface{}) {
 	return toInterfaceWithMemo(o, make(map[uintptr]interface{}))
@@ -581,8 +565,6 @@ func toInterfaceWithMemo(o Object, memo map[uintptr]interface{}) (res interface{
 			m[k] = toInterfaceWithMemo(v, memo)
 		}
 		res = m
-	case *Time:
-		res = o.Value
 	case *Error:
 		res = errors.New(o.String())
 	case *Undefined:
@@ -667,8 +649,6 @@ func FromInterface(v interface{}) (Object, error) {
 			arr[i] = vo
 		}
 		return &Array{Value: arr}, nil
-	case time.Time:
-		return &Time{Value: v}, nil
 	case Object:
 		return v, nil
 	case CallableFunc:

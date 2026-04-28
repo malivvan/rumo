@@ -130,7 +130,7 @@ client := func(interval) {
 	reqChan.send("hello")
 	for i := 0; true; i++ {
 		fmt.println(repChan.recv())
-		times.sleep(interval*times.second)
+		time.sleep(interval*time.second)
 		reqChan.send(i)
 	}
 }

@@ -10,7 +10,7 @@ rumo's syntax is designed to be familiar to Go developers while being a bit simp
 - [`os`](stdlib-os.md): platform-independent interface to operating system functionality.
 - [`text`](stdlib-text.md): regular expressions, string conversion, and manipulation
 - [`math`](stdlib-math.md): mathematical constants and functions
-- [`times`](stdlib-times.md): time-related functions
+- [`time`](stdlib-time.md): time-related functions
 - [`rand`](stdlib-rand.md): random functions
 - [`fmt`](stdlib-fmt.md): formatting functions
 - [`json`](stdlib-json.md): JSON functions

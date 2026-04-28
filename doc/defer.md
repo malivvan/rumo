@@ -89,12 +89,12 @@ f := func() {
 #### Timing
 
 ```golang
-times := import("times")
+time := import("time")
 
 timed := func(name, fn) {
-    start := times.now()
+    start := time.now()
     defer func() {
-        elapsed := times.since(start)
+        elapsed := time.since(start)
         fmt.println(name, "took", elapsed)
     }()
     fn()

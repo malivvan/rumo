@@ -32,10 +32,10 @@ for i := 0; i < 4; i++ {
     }
 }
 
-times := import("times")
+time := import("time")
 c4 := chan(1)
 start func() {
-    times.sleep(1 * times.second)
+    time.sleep(1 * time.second)
     c4.send(500)
 }()
 

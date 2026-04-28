@@ -51,7 +51,6 @@ func init() {
 	addBuiltinFunction("char", builtinChar)
 	addBuiltinFunction("rune", builtinRune)
 	addBuiltinFunction("bytes", builtinBytes)
-	addBuiltinFunction("time", builtinTime)
 	addBuiltinFunction("error", builtinError)
 	addBuiltinFunction("ptr", builtinPtr)
 	addBuiltinFunction("array", builtinArray)
@@ -85,7 +84,6 @@ func init() {
 	addBuiltinFunction("is_map", builtinIsMap)
 	addBuiltinFunction("is_immutable_map", builtinIsImmutableMap)
 	addBuiltinFunction("is_iterable", builtinIsIterable)
-	addBuiltinFunction("is_time", builtinIsTime)
 	addBuiltinFunction("is_error", builtinIsError)
 	addBuiltinFunction("is_ptr", builtinIsPtr)
 	addBuiltinFunction("is_undefined", builtinIsUndefined)
@@ -242,15 +240,6 @@ func builtinIsImmutableMap(ctx context.Context, args ...Object) (Object, error) 
 	return FalseValue, nil
 }
 
-func builtinIsTime(ctx context.Context, args ...Object) (Object, error) {
-	if len(args) != 1 {
-		return nil, ErrWrongNumArguments
-	}
-	if _, ok := args[0].(*Time); ok {
-		return TrueValue, nil
-	}
-	return FalseValue, nil
-}
 
 func builtinIsError(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 1 {
@@ -591,23 +580,6 @@ func builtinBytes(ctx context.Context, args ...Object) (Object, error) {
 	return UndefinedValue, nil
 }
 
-func builtinTime(ctx context.Context, args ...Object) (Object, error) {
-	argsLen := len(args)
-	if !(argsLen == 1 || argsLen == 2) {
-		return nil, ErrWrongNumArguments
-	}
-	if _, ok := args[0].(*Time); ok {
-		return args[0], nil
-	}
-	v, ok := ToTime(args[0])
-	if ok {
-		return &Time{Value: v}, nil
-	}
-	if argsLen == 2 {
-		return args[1], nil
-	}
-	return UndefinedValue, nil
-}
 
 // append(arr, items...)
 func builtinAppend(ctx context.Context, args ...Object) (Object, error) {

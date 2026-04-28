@@ -585,7 +585,7 @@ func newSpawner(coord *coordClient, parentBytecode []byte) func(context.Context,
 		}
 
 		// 2b) snapshot the parent VM's current globals and ship them so the
-		// child can resolve OpGetGlobal references (e.g. `fmt`, `times`
+		// child can resolve OpGetGlobal references (e.g. `fmt`, `time`
 		// imports set during top-level execution). Without this the child's
 		// globals slice is empty and the routine body crashes on the first
 		// module access.
@@ -907,7 +907,7 @@ func runOneVMRoutine(port js.Value, data js.Value, cancelOut *context.CancelFunc
 	globals := make([]vm.Object, cfg.GlobalsSize)
 	// If the parent shipped its globals snapshot, decode them into the
 	// child VM's globals slice (after rebinding modules / builtins). This
-	// makes OpGetGlobal references (e.g. imported `fmt` / `times`) resolve
+	// makes OpGetGlobal references (e.g. imported `fmt` / `time`) resolve
 	// correctly inside `go fn()` bodies on the DedicatedWorker path.
 	if g := data.Get("globals"); g.InstanceOf(jsArray) {
 		mods := rumo.Modules()
@@ -982,4 +982,3 @@ func replyVMRoutine(port, id js.Value, val vm.Object, err error) {
 	msg.Set("result", out)
 	port.Call("postMessage", msg)
 }
-

@@ -754,7 +754,7 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'first'`)
 	expectError(t, `delete(undefined, 1)`, nil,
 		`invalid type for argument 'first'`)
-	expectError(t, `delete(time(1257894000), 1)`, nil,
+	expectError(t, `delete(char(0), 1)`, nil,
 		`invalid type for argument 'first'`)
 	expectError(t, `delete(immutable({}), "key")`, nil,
 		`invalid type for argument 'first'`)
@@ -773,7 +773,7 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'second'`)
 	expectError(t, `delete({}, char(35))`, nil,
 		`invalid type for argument 'second'`)
-	expectError(t, `delete({}, time(1257894000))`, nil,
+	expectError(t, `delete({}, char(0))`, nil,
 		`invalid type for argument 'second'`)
 	expectError(t, `delete({}, immutable({}))`, nil,
 		`invalid type for argument 'second'`)
@@ -801,7 +801,7 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'first'`)
 	expectError(t, `splice(undefined)`, nil,
 		`invalid type for argument 'first'`)
-	expectError(t, `splice(time(1257894000))`, nil,
+	expectError(t, `splice(char(0))`, nil,
 		`invalid type for argument 'first'`)
 	expectError(t, `splice(immutable({}))`, nil,
 		`invalid type for argument 'first'`)
@@ -822,7 +822,7 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'second'`)
 	expectError(t, `splice([], undefined)`, nil,
 		`invalid type for argument 'second'`)
-	expectError(t, `splice([], time(0))`, nil,
+	expectError(t, `splice([], char(0))`, nil,
 		`invalid type for argument 'second'`)
 	expectError(t, `splice([], [])`, nil,
 		`invalid type for argument 'second'`)
@@ -846,7 +846,7 @@ func TestBuiltinFunction(t *testing.T) {
 		`invalid type for argument 'third'`)
 	expectError(t, `splice([], 0, undefined)`, nil,
 		`invalid type for argument 'third'`)
-	expectError(t, `splice([], 0, time(0))`, nil,
+	expectError(t, `splice([], 0, char(0))`, nil,
 		`invalid type for argument 'third'`)
 	expectError(t, `splice([], 0, [])`, nil,
 		`invalid type for argument 'third'`)

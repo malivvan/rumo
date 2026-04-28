@@ -3,7 +3,6 @@ package vm
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/malivvan/rumo/vm/codec"
 	"github.com/malivvan/rumo/vm/parser"
@@ -19,7 +18,7 @@ const (
 	_float64          byte = 6  // float64 / C double
 	_float32          byte = 16 // float32 / C float
 	_string           byte = 7
-	_time             byte = 8
+	_time             byte = 8 // reserved (formerly *Time); do not reuse to preserve bytecode compatibility
 	_array            byte = 9
 	_map              byte = 10
 	_immutableArray   byte = 11
@@ -65,7 +64,6 @@ var _typeMap = map[byte]func() Object{
 	_float:            func() Object { return &Float64{} },
 	_float32:          func() Object { return &Float32{} },
 	_string:           func() Object { return &String{} },
-	_time:             func() Object { return &Time{} },
 	_array:            func() Object { return &Array{} },
 	_map:              func() Object { return &Map{Value: make(map[string]Object)} },
 	_immutableArray:   func() Object { return &ImmutableArray{} },
@@ -143,8 +141,6 @@ func TypeOfObject(o Object) byte {
 		return _float32
 	case *String:
 		return _string
-	case *Time:
-		return _time
 	case *Array:
 		return _array
 	case *Map:
@@ -213,8 +209,6 @@ func SizeOfObject(o Object) int {
 		return codec.SizeByte() + codec.SizeFloat32()
 	case _string:
 		return codec.SizeByte() + codec.SizeString(o.(*String).Value)
-	case _time:
-		return codec.SizeByte() + codec.SizeInt64() + codec.SizeString(o.(*Time).Value.Location().String())
 	case _array:
 		arr := o.(*Array)
 		arr.mu.RLock()
@@ -348,10 +342,6 @@ func MarshalObject(n int, b []byte, o Object) int {
 	case _string:
 		n = codec.MarshalByte(n, b, _string)
 		n = codec.MarshalString(n, b, o.(*String).Value)
-	case _time:
-		n = codec.MarshalByte(n, b, _time)
-		n = codec.MarshalInt64(n, b, o.(*Time).Value.UnixNano())
-		n = codec.MarshalString(n, b, o.(*Time).Value.Location().String())
 	case _array:
 		arr := o.(*Array)
 		arr.mu.RLock()
@@ -557,27 +547,6 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 		if err != nil {
 			return nn, nil, err
 		}
-		return n, o, nil
-	case _time:
-		var v int64
-		n, v, err = codec.UnmarshalInt64(n, b)
-		if err != nil {
-			return nn, nil, err
-		}
-		var zoneName string
-		n, zoneName, err = codec.UnmarshalString(n, b)
-		if err != nil {
-			return nn, nil, err
-		}
-		// Restore the original timezone. Fall back to UTC if the zone is
-		// not available on this system (e.g. cross-platform bytecode).
-		loc := time.UTC
-		if zoneName != "" && zoneName != "UTC" {
-			if loaded, err := time.LoadLocation(zoneName); err == nil {
-				loc = loaded
-			}
-		}
-		o.(*Time).Value = time.Unix(0, v).In(loc)
 		return n, o, nil
 	case _array:
 		n, o.(*Array).Value, err = codec.UnmarshalSlice[Object](n, b, UnmarshalObject)

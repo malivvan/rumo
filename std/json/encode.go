@@ -278,12 +278,6 @@ func Encode(o vm.Object) ([]byte, error) {
 		// string encoding bug is fixed with newly introduced function
 		// encodeString(). See: https://github.com/malivvan/rumo/issues/268
 		b = encodeString(b, o.Value)
-	case *vm.Time:
-		y, err := o.Value.MarshalJSON()
-		if err != nil {
-			return nil, err
-		}
-		b = append(b, y...)
 	case *vm.Undefined:
 		b = append(b, "null"...)
 	default:

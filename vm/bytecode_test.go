@@ -3,7 +3,6 @@ package vm_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/parser"
@@ -94,7 +93,6 @@ func TestBytecode(t *testing.T) {
 						},
 					},
 					"string":    &vm.String{Value: "foo bar"},
-					"time":      &vm.Time{Value: time.Now()},
 					"undefined": vm.UndefinedValue,
 				},
 			},

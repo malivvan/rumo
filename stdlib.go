@@ -11,7 +11,7 @@ import (
 	"github.com/malivvan/rumo/std/os"
 	"github.com/malivvan/rumo/std/rand"
 	"github.com/malivvan/rumo/std/text"
-	"github.com/malivvan/rumo/std/times"
+	"github.com/malivvan/rumo/std/time"
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
 )
@@ -26,7 +26,7 @@ var BuiltinModules = map[string]*module.BuiltinModule{
 	"os":   os.Module,
 	"rand":   rand.Module,
 	"text":   text.Module,
-	"times":   times.Module,
+	"time":   time.Module,
 }
 
 // SourceModules are source type standard library modules.

@@ -3,7 +3,6 @@ package vm_test
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/parser"
@@ -105,7 +104,6 @@ func TestNumObjects(t *testing.T) {
 		}},
 	}}, 7)
 	testCountObjects(t, &vm.String{Value: "foo bar"}, 1)
-	testCountObjects(t, &vm.Time{Value: time.Now()}, 1)
 	testCountObjects(t, vm.UndefinedValue, 1)
 }
 
