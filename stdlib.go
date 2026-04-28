@@ -10,6 +10,7 @@ import (
 	"github.com/malivvan/rumo/std/math"
 	"github.com/malivvan/rumo/std/os"
 	"github.com/malivvan/rumo/std/rand"
+	"github.com/malivvan/rumo/std/sys"
 	"github.com/malivvan/rumo/std/text"
 	"github.com/malivvan/rumo/std/time"
 	"github.com/malivvan/rumo/vm"
@@ -25,6 +26,7 @@ var BuiltinModules = map[string]*module.BuiltinModule{
 	"math":   math.Module,
 	"os":   os.Module,
 	"rand":   rand.Module,
+	"sys":   sys.Module,
 	"text":   text.Module,
 	"time":   time.Module,
 }

@@ -8,6 +8,17 @@ title: Standard Library - time
 time := import("time")
 ```
 
+## Constants
+
+- `second`
+- `minute`
+- `hour`
+- `day`
+- `week`
+- `millisecond`
+- `microsecond`
+- `nanosecond`
+
 ## Functions
 
 - `Time(x) => time`: constructs a time instance from x (time-compatible value)

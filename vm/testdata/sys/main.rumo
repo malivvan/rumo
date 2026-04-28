@@ -1,0 +1,10 @@
+
+
+fmt := import("fmt")
+sys := import("sys")
+
+
+fmt.printf("%v\n", sys)
+fmt.printf("%d\n", sys.num_goroutine())
+fmt.printf("%s\n", sys.os())
+fmt.printf("%s\n", sys.arch())
