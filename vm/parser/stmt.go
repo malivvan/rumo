@@ -464,3 +464,70 @@ func (s *CaseClause) String() string {
 	}
 	return head + " " + strings.Join(stmts, "; ")
 }
+
+// SelectStmt represents a select statement (Go-style).
+//
+//	select { case ... ; case ... ; default ... }
+//
+// Body.Stmts contains *CommClause nodes only.
+type SelectStmt struct {
+	SelectPos Pos
+	Body      *BlockStmt // contains *CommClause statements
+}
+
+func (s *SelectStmt) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *SelectStmt) Pos() Pos { return s.SelectPos }
+
+// End returns the position of first character immediately after the node.
+func (s *SelectStmt) End() Pos { return s.Body.End() }
+
+func (s *SelectStmt) String() string {
+	return "select " + s.Body.String()
+}
+
+// CommClause represents a `case` or `default` clause inside a select
+// statement.  When Comm is nil, the clause is the `default` clause; otherwise
+// Comm is one of:
+//
+//   - *ExprStmt    wrapping `ch.recv()` or `ch.send(v)`
+//   - *AssignStmt  whose RHS is `ch.recv()` and whose LHS is one or two
+//     identifiers (`v := ch.recv()` or `v, ok := ch.recv()`)
+type CommClause struct {
+	CasePos Pos
+	Comm    Stmt // nil ⇒ default
+	Colon   Pos
+	Body    []Stmt
+}
+
+func (s *CommClause) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *CommClause) Pos() Pos { return s.CasePos }
+
+// End returns the position of first character immediately after the node.
+func (s *CommClause) End() Pos {
+	if n := len(s.Body); n > 0 {
+		return s.Body[n-1].End()
+	}
+	return s.Colon + 1
+}
+
+func (s *CommClause) String() string {
+	var head string
+	if s.Comm == nil {
+		head = "default:"
+	} else {
+		head = "case " + s.Comm.String() + ":"
+	}
+	var stmts []string
+	for _, b := range s.Body {
+		stmts = append(stmts, b.String())
+	}
+	if len(stmts) == 0 {
+		return head
+	}
+	return head + " " + strings.Join(stmts, "; ")
+}
+

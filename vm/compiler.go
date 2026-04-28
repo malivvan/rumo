@@ -320,6 +320,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 		return c.compileForInStmt(node)
 	case *parser.SwitchStmt:
 		return c.compileSwitchStmt(node)
+	case *parser.SelectStmt:
+		return c.compileSelectStmt(node)
 	case *parser.BranchStmt:
 		if node.Token == token.Break {
 			curLoop := c.currentLoop()
@@ -1653,6 +1655,263 @@ func (c *Compiler) compileSwitchStmt(node *parser.SwitchStmt) error {
 	}
 
 	c.leaveSwitch()
+	c.leaveLoop()
+	return nil
+}
+
+// selectCommInfo holds the validated, compiler-friendly representation of a
+// single non-default `case` clause in a select statement.
+type selectCommInfo struct {
+	cc       *parser.CommClause
+	op       int           // 0 = recv, 1 = send
+	chanExpr parser.Expr   // expression evaluating to the *Chan
+	valExpr  parser.Expr   // for send: value expression
+	lhs      []parser.Expr // for recv-with-assignment: 1 (`v`) or 2 (`v, ok`) idents
+}
+
+// parseSelectComm decodes the Comm statement of a CommClause into structured
+// information.  Returns an error if the case is malformed.
+func (c *Compiler) parseSelectComm(cc *parser.CommClause) (*selectCommInfo, error) {
+	extractCall := func(e parser.Expr) (*parser.CallExpr, *parser.SelectorExpr, bool) {
+		ce, ok := e.(*parser.CallExpr)
+		if !ok {
+			return nil, nil, false
+		}
+		sel, ok := ce.Func.(*parser.SelectorExpr)
+		if !ok {
+			return nil, nil, false
+		}
+		return ce, sel, true
+	}
+	selName := func(s *parser.SelectorExpr) string {
+		if sl, ok := s.Sel.(*parser.StringLit); ok {
+			return sl.Value
+		}
+		return ""
+	}
+
+	switch s := cc.Comm.(type) {
+	case *parser.ExprStmt:
+		ce, sel, ok := extractCall(s.Expr)
+		if !ok {
+			return nil, c.errorf(cc, "select case must be a channel send/recv expression")
+		}
+		switch selName(sel) {
+		case "recv":
+			if len(ce.Args) != 0 {
+				return nil, c.errorf(cc, "select case: recv takes no arguments")
+			}
+			return &selectCommInfo{cc: cc, op: 0, chanExpr: sel.Expr}, nil
+		case "send":
+			if len(ce.Args) != 1 {
+				return nil, c.errorf(cc, "select case: send takes exactly one argument")
+			}
+			return &selectCommInfo{cc: cc, op: 1, chanExpr: sel.Expr, valExpr: ce.Args[0]}, nil
+		}
+		return nil, c.errorf(cc, "select case: expected channel send/recv method call")
+	case *parser.AssignStmt:
+		if s.Token != token.Define && s.Token != token.Assign {
+			return nil, c.errorf(cc, "select case: only '=' or ':=' allowed")
+		}
+		if len(s.RHS) != 1 {
+			return nil, c.errorf(cc, "select case: assignment RHS must be a single recv expression")
+		}
+		ce, sel, ok := extractCall(s.RHS[0])
+		if !ok || selName(sel) != "recv" {
+			return nil, c.errorf(cc, "select case: assignment RHS must be a channel recv expression")
+		}
+		if len(ce.Args) != 0 {
+			return nil, c.errorf(cc, "select case: recv takes no arguments")
+		}
+		if len(s.LHS) < 1 || len(s.LHS) > 2 {
+			return nil, c.errorf(cc, "select case: assignment must have 1 or 2 LHS identifiers")
+		}
+		for _, l := range s.LHS {
+			if _, ok := l.(*parser.Ident); !ok {
+				return nil, c.errorf(cc, "select case: assignment LHS must be identifiers")
+			}
+		}
+		return &selectCommInfo{cc: cc, op: 0, chanExpr: sel.Expr, lhs: s.LHS}, nil
+	}
+	return nil, c.errorf(cc, "select case: invalid comm statement")
+}
+
+// compileSelectStmt compiles a Go-style select statement.  It defers the
+// blocking choice of a ready case to the hidden builtin `__select`, which
+// uses reflect.Select on the underlying Go channels.
+func (c *Compiler) compileSelectStmt(node *parser.SelectStmt) error {
+	// Separate cases and (at most one) default.
+	var cases []*parser.CommClause
+	var defaultClause *parser.CommClause
+	for _, st := range node.Body.Stmts {
+		cc, ok := st.(*parser.CommClause)
+		if !ok {
+			return c.errorf(st, "non-case statement in select body")
+		}
+		if cc.Comm == nil {
+			if defaultClause != nil {
+				return c.errorf(cc, "multiple default clauses in select")
+			}
+			defaultClause = cc
+		} else {
+			cases = append(cases, cc)
+		}
+	}
+
+	// Validate every case up front so we can compile its parts later.
+	infos := make([]*selectCommInfo, 0, len(cases))
+	for _, cc := range cases {
+		inf, err := c.parseSelectComm(cc)
+		if err != nil {
+			return err
+		}
+		infos = append(infos, inf)
+	}
+
+	// Outer scope for the (hidden) result variable.  Per-case scopes are
+	// opened separately so case-local bindings (`v`, `ok`) don't leak.
+	c.symbolTable = c.symbolTable.Fork(true)
+	defer func() {
+		c.symbolTable = c.symbolTable.Parent(false)
+	}()
+
+	// Reuse the loop break stack so `break` exits the select.
+	br := c.enterLoop()
+
+	// Resolve hidden runtime helper.
+	selSym, _, ok := c.symbolTable.Resolve("__select", false)
+	if !ok {
+		c.leaveLoop()
+		return c.errorf(node, "internal: __select builtin not found")
+	}
+
+	// Emit the call: __select(cases_array, hasDefault)
+	c.emit(node, parser.OpGetBuiltin, selSym.Index)
+	for _, inf := range infos {
+		// op constant
+		c.emit(node, parser.OpConstant,
+			c.addConstant(&Int{Value: int64(inf.op)}))
+		// channel expression
+		if err := c.Compile(inf.chanExpr); err != nil {
+			c.leaveLoop()
+			return err
+		}
+		// value (sends only)
+		if inf.op == 1 {
+			if err := c.Compile(inf.valExpr); err != nil {
+				c.leaveLoop()
+				return err
+			}
+		} else {
+			c.emit(node, parser.OpNull)
+		}
+		c.emit(node, parser.OpArray, 3)
+	}
+	c.emit(node, parser.OpArray, len(infos))
+	if defaultClause != nil {
+		c.emit(node, parser.OpTrue)
+	} else {
+		c.emit(node, parser.OpFalse)
+	}
+	c.emit(node, parser.OpCall, 2, 0)
+
+	// Store the [chosenIdx, recvValue, recvOk] result array in a hidden local.
+	resSym := c.symbolTable.Define(":selres")
+	switch resSym.Scope {
+	case ScopeGlobal:
+		c.emit(node, parser.OpSetGlobal, resSym.Index)
+	default:
+		c.emit(node, parser.OpDefineLocal, resSym.Index)
+		resSym.LocalAssigned = true
+	}
+
+	loadResult := func() {
+		switch resSym.Scope {
+		case ScopeGlobal:
+			c.emit(node, parser.OpGetGlobal, resSym.Index)
+		default:
+			c.emit(node, parser.OpGetLocal, resSym.Index)
+		}
+	}
+
+	// Dispatch: compare result[0] against each case index and jump into
+	// the matching body.  defaultClause's index is len(infos).
+	var endJumps []int
+	totalArms := len(infos)
+	if defaultClause != nil {
+		totalArms++
+	}
+	for i := 0; i < totalArms; i++ {
+		// load chosen index
+		loadResult()
+		c.emit(node, parser.OpConstant,
+			c.addConstant(&Int{Value: 0}))
+		c.emit(node, parser.OpIndex)
+		c.emit(node, parser.OpConstant,
+			c.addConstant(&Int{Value: int64(i)}))
+		c.emit(node, parser.OpEqual)
+		nextJ := c.emit(node, parser.OpJumpFalsy, 0)
+
+		// per-case scope
+		c.symbolTable = c.symbolTable.Fork(true)
+
+		var bodyStmts []parser.Stmt
+		if i < len(infos) {
+			inf := infos[i]
+			bodyStmts = inf.cc.Body
+			// recv-with-assignment bindings
+			if inf.op == 0 && len(inf.lhs) > 0 {
+				for idx, l := range inf.lhs {
+					ident := l.(*parser.Ident)
+					if ident.Name == "_" {
+						continue
+					}
+					sym := c.symbolTable.Define(ident.Name)
+					loadResult()
+					c.emit(node, parser.OpConstant,
+						c.addConstant(&Int{Value: int64(idx + 1)}))
+					c.emit(node, parser.OpIndex)
+					switch sym.Scope {
+					case ScopeGlobal:
+						c.emit(node, parser.OpSetGlobal, sym.Index)
+					default:
+						c.emit(node, parser.OpDefineLocal, sym.Index)
+						sym.LocalAssigned = true
+					}
+				}
+			}
+		} else {
+			bodyStmts = defaultClause.Body
+		}
+
+		for _, st := range bodyStmts {
+			if err := c.Compile(st); err != nil {
+				c.symbolTable = c.symbolTable.Parent(false)
+				c.leaveLoop()
+				return err
+			}
+		}
+		c.symbolTable = c.symbolTable.Parent(false)
+
+		endJ := c.emit(node, parser.OpJump, 0)
+		endJumps = append(endJumps, endJ)
+
+		// Patch the per-arm "no match" jump to fall through to the next arm.
+		c.changeOperand(nextJ, len(c.currentInstructions()))
+	}
+
+	end := len(c.currentInstructions())
+	for _, j := range endJumps {
+		c.changeOperand(j, end)
+	}
+
+	if len(br.Continues) > 0 {
+		c.leaveLoop()
+		return c.errorf(node, "continue not allowed inside select")
+	}
+	for _, j := range br.Breaks {
+		c.changeOperand(j, end)
+	}
 	c.leaveLoop()
 	return nil
 }

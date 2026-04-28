@@ -103,6 +103,10 @@ func init() {
 	// deterministic table; routinevm.go must NOT have its own init().
 	addBuiltinFunction("cancel", builtinCancel)
 	addBuiltinFunction("chan", builtinChan)
+	// Hidden helper used by the compiler to lower `select` statements.  The
+	// leading underscore reserves it from idiomatic user identifiers; keep
+	// it at the end of the table so existing bytecode indices don't shift.
+	addBuiltinFunction("__select", builtinSelect)
 }
 
 // GetAllBuiltinFunctions returns all builtin function objects.

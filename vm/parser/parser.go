@@ -24,6 +24,7 @@ var stmtStart = map[token.Token]bool{
 	token.Native:   true,
 	token.Type:     true,
 	token.Switch:   true,
+	token.Select:   true,
 }
 
 // Error represents a parser error.
@@ -715,6 +716,8 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return p.parseForStmt()
 	case token.Switch:
 		return p.parseSwitchStmt()
+	case token.Select:
+		return p.parseSelectStmt()
 	case token.Break, token.Continue, token.Fallthrough:
 		return p.parseBranchStmt(p.token)
 	case token.Native:
@@ -937,6 +940,66 @@ func (p *Parser) parseCaseClause() *CaseClause {
 	return &CaseClause{
 		CasePos: casePos,
 		List:    list,
+		Colon:   colonPos,
+		Body:    body,
+	}
+}
+
+func (p *Parser) parseSelectStmt() Stmt {
+	if p.trace {
+		defer untracep(tracep(p, "SelectStmt"))
+	}
+
+	pos := p.expect(token.Select)
+	lbrace := p.expect(token.LBrace)
+	var clauses []Stmt
+	for p.token == token.Case || p.token == token.Default {
+		clauses = append(clauses, p.parseCommClause())
+	}
+	rbrace := p.expect(token.RBrace)
+	p.expectSemi()
+
+	return &SelectStmt{
+		SelectPos: pos,
+		Body: &BlockStmt{
+			LBrace: lbrace,
+			RBrace: rbrace,
+			Stmts:  clauses,
+		},
+	}
+}
+
+func (p *Parser) parseCommClause() *CommClause {
+	if p.trace {
+		defer untracep(tracep(p, "CommClause"))
+	}
+
+	casePos := p.pos
+	var comm Stmt
+	if p.token == token.Case {
+		p.next()
+		// Parse the comm: either an expression (ch.recv() / ch.send(v)) or
+		// an assignment whose RHS is ch.recv().  parseSimpleStmt handles all
+		// these forms; semicolons aren't expected before ':'.
+		prevLevel := p.exprLevel
+		p.exprLevel = -1
+		comm = p.parseSimpleStmt(false)
+		p.exprLevel = prevLevel
+	} else {
+		// default
+		p.expect(token.Default)
+	}
+	colonPos := p.expect(token.Colon)
+
+	var body []Stmt
+	for p.token != token.Case && p.token != token.Default &&
+		p.token != token.RBrace && p.token != token.EOF {
+		body = append(body, p.parseStmt())
+	}
+
+	return &CommClause{
+		CasePos: casePos,
+		Comm:    comm,
 		Colon:   colonPos,
 		Body:    body,
 	}

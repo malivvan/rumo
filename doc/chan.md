@@ -27,3 +27,5 @@ bufferedChan.close()
 
 On the time the VM that the chan is running in is cancelled, the sending
 or receiving call returns immediately.
+See also: [select](select.md) for waiting on multiple channel operations
+in a single statement.

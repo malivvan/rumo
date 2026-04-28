@@ -1,0 +1,55 @@
+fmt := import("fmt")
+c1 := chan(1)
+c2 := chan(1)
+c3 := chan(1)
+
+c1.send(42)
+
+for i := 0; i < 4; i++ {
+    select {
+        case v1 := c1.recv():
+             fmt.println("Received from c1:", v1)
+             c2.send(v1 * 2)
+             c3.send(v1 * 3)
+        case v2 := c2.recv():
+             fmt.println("Received from c2:", v2)
+        case v3 := c3.recv():
+             fmt.println("Received from c3:", v3)
+        default:
+             fmt.println("No channels ready")
+    }
+}
+for i := 0; i < 4; i++ {
+    select {
+        case c1.send(100):
+             fmt.println("Sent 100 to c1")
+        case c2.send(200):
+             fmt.println("Sent 200 to c2")
+        case c3.send(300):
+             fmt.println("Sent 300 to c3")
+        default:
+             fmt.println("No channels ready to send")
+    }
+}
+
+times := import("times")
+c4 := chan(1)
+go func() {
+    times.sleep(1 * times.second)
+    c4.send(500)
+}()
+
+for i := 0; i < 4; i++ {
+    select {
+        case v1 := c1.recv():
+             fmt.println("Received from c1:", v1)
+        case v2 := c2.recv():
+             fmt.println("Received from c2:", v2)
+        case v3 := c3.recv():
+             fmt.println("Received from c3:", v3)
+        case v4 := c4.recv():
+             fmt.println("Received from c4:", v4)
+    }
+}
+
+fmt.println("Done")

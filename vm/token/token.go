@@ -93,6 +93,7 @@ const (
 	Case
 	Default
 	Fallthrough
+	Select
 	_keywordEnd
 )
 
@@ -176,6 +177,7 @@ var tokens = [...]string{
 	Case:         "case",
 	Default:      "default",
 	Fallthrough:  "fallthrough",
+	Select:       "select",
 }
 
 func (tok Token) String() string {
