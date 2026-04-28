@@ -1,22 +1,22 @@
 ---
-title: go
+title: start
 ---
-## go
+## start
 
-The `go` keyword launches an independent concurrent routine from a function call expression.
+The `start` keyword launches an independent concurrent routine from a function call expression.
 
 If the function is a CompiledFunction, the current running VM will be cloned to create
 a new VM in which the CompiledFunction will be running.
 The function can also be any object that has Call() method, such as BuiltinFunction,
 in which case no cloned VM will be created.
-Returns a routine handle map with `wait`, `result`, and `cancel` methods.
+Returns a routine handle map with `wait`, `result`, and `stop` methods.
 
 The routine will not exit unless:
 1. All its descendant routines exit
-2. It calls `cancel()`
-3. Its handle's `cancel()` method is called on behalf of its parent VM
+2. It calls `stop()`
+3. Its handle's `stop()` method is called on behalf of its parent VM
 
-The latter 2 cases will trigger the cancellation of all descendant routines,
+The latter 2 cases will trigger the stop of all descendant routines,
 which will further result in #1 above.
 
 ```golang
@@ -25,8 +25,8 @@ v := 0
 f1 := func(a,b) { v = 10; return a+b }
 f2 := func(a,b,c) { v = 11; return a+b+c }
 
-rvm1 := go f1(1,2)
-rvm2 := go f2(1,2,5)
+rvm1 := start f1(1,2)
+rvm2 := start f2(1,2,5)
 
 fmt.println(rvm1.result()) // 3
 fmt.println(rvm2.result()) // 8
@@ -37,7 +37,7 @@ fmt.println(v) // 10 or 11
   returns true if the routine exited (successfully or not) within the
   timeout. It waits forever if the optional timeout is not specified,
   or timeout < 0.
-* `cancel()` triggers the termination process of the routine and all
+* `stop()` triggers the termination process of the routine and all
   its descendant VMs.
 * `result()` waits for the routine to complete, returns Error object if
   any runtime error occurred during the execution, otherwise returns the
@@ -72,8 +72,8 @@ server := func() {
 	}
 }
 
-rClient := go client(2)
-rServer := go server()
+rClient := start client(2)
+rServer := start server()
 
 if ok := rClient.wait(5); !ok {
 	rClient.stop()
@@ -131,27 +131,27 @@ server = func(name) {
 
 clients := func() {
 	for i :=0; i < 5; i++ {
-		go client(format("client %d: ", i), 1, 4)
+        start client(format("client %d: ", i), 1, 4)
 	}
 }
 
 servers := func() {
 	for i :=0; i < 2; i++ {
-		go server(format("server %d: ", i))
+        start server(format("server %d: ", i))
 	}
 }
 
 // After 4 seconds, all clients should have exited normally
-rclts := go clients()
+rclts := start clients()
 // If servers exit earlier than clients, then clients may be
 // blocked forever waiting for the reply chan, because servers
-// were cancelled with the req fetched from sharedReqChan before
+// were stopped with the req fetched from sharedReqChan before
 // sending back the reply.
-// In such case, do below to cancel() the clients manually
-//go func(){time.sleep(6*time.second); gclts.stop()}()
+// In such case, do below to stop() the clients manually
+// start func(){time.sleep(6*time.second); gclts.stop()}()
 
-// Servers are infinite loop, cancel() them after 5 seconds
-rsrvs := go servers()
+// Servers are infinite loop, stop() them after 5 seconds
+rsrvs := start servers()
 if ok := rsrvs.wait(5); !ok {
 	rsrvs.stop()
 }
@@ -160,8 +160,8 @@ if ok := rsrvs.wait(5); !ok {
 
 // If somehow the main VM is stuck, that is because there is
 // at least one child VM that has not exited as expected, we
-// can do cancel() to force exit.
-cancel()
+// can do stop() to force exit.
+stop()
 
 //output:
 //3
@@ -207,5 +207,5 @@ cancel()
 
 ```
 
-## cancel
+## stop
 Triggers the termination process of the current VM and all its descendant VMs.

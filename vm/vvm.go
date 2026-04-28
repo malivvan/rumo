@@ -101,7 +101,7 @@ type Config struct {
 	// routine.start primitive. When non-nil, the VM calls Spawner instead of
 	// launching a child VM via `go func() { vm.RunCompiled(...) }()`. The
 	// returned RoutineHandle is wrapped in the script-visible
-	// {result, wait, cancel} object.
+	// {result, wait, stop} object.
 	//
 	// Native builds leave Spawner nil so behaviour is unchanged. The js/wasm
 	// runtime installs a Spawner that posts a `runVM` message to a fresh
@@ -120,7 +120,7 @@ type Config struct {
 // RoutineHandle is the abstract interface satisfied by both the goroutine-
 // backed routineVM and the SharedWorker-backed remote routine. The result of
 // `go fn(...)` is wrapped in a script-level Map exposing {result, wait,
-// cancel}; those methods all delegate to the methods below.
+// stop}; those methods all delegate to the methods below.
 type RoutineHandle interface {
 	// Result blocks until the routine completes and returns its value or an
 	// Error wrapper. ctx is the caller's VM context (used by the host to

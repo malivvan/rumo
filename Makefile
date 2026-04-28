@@ -36,7 +36,7 @@ lint: ## Run linters
 .PHONY: test
 test: stdlib ## Run tests
 	@gotestsum --format $(TEST_FORMAT) --format-hide-empty-pkg --hide-summary skipped --raw-command -- go test -tags native -json -race -cover ./...
-	@go run ./cmd ./vm/testdata/cli/test.rumo > /dev/null 2>&1 || (echo "END TO END TEST FAILED" && exit 1)
+	@go run ./cmd vm/testdata/cli/test.rumo > /dev/null 2>&1 || (echo "END TO END TEST FAILED" && exit 1)
 
 .PHONY: fmt
 fmt: ## Format code

@@ -243,26 +243,26 @@ out = r.result()
 //
 // context.WithValue(v.ctx, ContextKey("vm"), v) stored the **parent** VM
 // pointer instead of the clone. This caused builtins in the child VM
-// (e.g. cancel(), go) to operate on the wrong VM — breaking cancel
-// propagation and child tracking. For example, calling cancel() from a
-// child routine would cancel the parent instead of the child, and
+// (e.g. stop(), go) to operate on the wrong VM — breaking stop
+// propagation and child tracking. For example, calling stop() from a
+// child routine would stop the parent instead of the child, and
 // go inside a child would register grandchildren on the parent
-// instead of the child, breaking the cancel chain.
+// instead of the child, breaking the stop chain.
 //
 // The fix changes ShallowClone to store the clone (vClone) in the
 // context instead of the parent (v).
 
-// TestIssue3_CancelFromChildCancelsChild verifies that calling cancel()
+// TestIssue3_CancelFromChildCancelsChild verifies that calling stop()
 // from within a child routine cancels that child, not the parent.
 // Before the fix, the child's context stored the parent VM, so
-// cancel() would cancel the parent — leaving the parent's output
+// stop() would stop the parent — leaving the parent's output
 // unset or causing it to terminate prematurely.
 func TestIssue3_CancelFromChildCancelsChild(t *testing.T) {
-	// The child calls cancel() which should only cancel itself.
+	// The child calls stop() which should only stop itself.
 	// The parent should continue and produce the expected output.
 	expectRun(t, `
 r := start func() {
-	cancel()
+	stop()
 	return "should not reach"
 }()
 r.wait()
@@ -272,13 +272,13 @@ out = "parent alive"
 
 // TestIssue3_CancelFromChildDoesNotCancelParent verifies that the parent
 // continues executing after a child self-cancels. Before the fix, the
-// child's cancel() targeted the parent VM, which would stop it.
+// child's stop() targeted the parent VM, which would stop it.
 func TestIssue3_CancelFromChildDoesNotCancelParent(t *testing.T) {
 	expectRun(t, `
 ch := chan()
 r := start func() {
 	ch.send("started")
-	cancel()
+	stop()
 }()
 ch.recv()
 r.wait()
@@ -294,14 +294,14 @@ out = 42
 func TestIssue3_NestedGoRegistersOnChild(t *testing.T) {
 	// Parent starts child, child starts grandchild.
 	// Cancelling the child should propagate to the grandchild.
-	// If cancel propagates correctly, grandchild's channel recv
+	// If stop propagates correctly, grandchild's channel recv
 	// will be interrupted and the grandchild will complete.
 	expectRun(t, `
 ch := chan()
 r := start func() {
 	gc := start func() {
 		for {
-			// infinite loop — only cancel can stop this
+			// infinite loop — only stop can stop this
 			x := 1 + 1
 		}
 	}()
@@ -313,7 +313,7 @@ out = r.result()
 `, Opts().Skip2ndPass(), "done")
 }
 
-// TestIssue3_ChildCancelPropagatesDownward verifies the full cancel
+// TestIssue3_ChildCancelPropagatesDownward verifies the full stop
 // chain: parent → child → grandchild. The parent cancels the child,
 // which should cascade to the grandchild. If propagation is broken,
 // the grandchild's infinite loop never terminates and child.wait(5)
@@ -348,22 +348,22 @@ out = r.result()
 `, Opts().Skip2ndPass(), 99)
 }
 
-// Issue #4: routineVM.cancel() races with goroutine completion
+// Issue #4: routineVM.stop() races with goroutine completion
 //
-// routineVM.cancel() reads gvm.VM to check for nil and then calls
+// routineVM.stop() reads gvm.VM to check for nil and then calls
 // gvm.Abort(), but the goroutine's deferred cleanup sets gvm.VM = nil
-// without any synchronisation. If cancel() is called while the goroutine
+// without any synchronisation. If stop() is called while the goroutine
 // is completing, the nil check passes but gvm.VM is nilled before
 // Abort() executes — causing a nil-pointer dereference crash.
 
 // TestIssue4_CancelRacesWithCompletion triggers the data race between
-// routineVM.cancel() reading gvm.VM and the goroutine's deferred cleanup
+// routineVM.stop() reading gvm.VM and the goroutine's deferred cleanup
 // nilling it. Under -race, this reliably detects the unsynchronised
 // read/write. Without -race, repeated iterations increase the chance
 // of hitting the nil-pointer dereference crash.
 func TestIssue4_CancelRacesWithCompletion(t *testing.T) {
 	// We run many iterations to maximise the chance of hitting the
-	// timing window where cancel() and goroutine cleanup overlap.
+	// timing window where stop() and goroutine cleanup overlap.
 	for i := 0; i < 100; i++ {
 		expectRun(t, `
 f := func() {
@@ -378,7 +378,7 @@ out = "ok"
 }
 
 // TestIssue4_CancelRacesWithCompletionParallel uses parallel goroutines
-// to call cancel() at the exact moment the routine finishes, exercising
+// to call stop() at the exact moment the routine finishes, exercising
 // the race window more aggressively.
 func TestIssue4_CancelRacesWithCompletionParallel(t *testing.T) {
 	for i := 0; i < 50; i++ {
@@ -397,12 +397,12 @@ out = "ok"
 	}
 }
 
-// TestIssue4_ConcurrentCancelCalls verifies that calling cancel()
+// TestIssue4_ConcurrentCancelCalls verifies that calling stop()
 // multiple times concurrently from different goroutines does not
 // panic or race.
 func TestIssue4_ConcurrentCancelCalls(t *testing.T) {
 	// This script launches a long-running routine and then
-	// immediately cancels it — the parent calls cancel() which
+	// immediately cancels it — the parent calls stop() which
 	// races with the routine's own natural completion.
 	for i := 0; i < 50; i++ {
 		expectRun(t, `
@@ -420,7 +420,7 @@ out = "ok"
 	}
 }
 
-// TestIssue4_CancelAfterCompletion verifies that calling cancel() after
+// TestIssue4_CancelAfterCompletion verifies that calling stop() after
 // the routine has already finished and gvm.VM has been nilled does not
 // crash.
 func TestIssue4_CancelAfterCompletion(t *testing.T) {
@@ -434,7 +434,7 @@ out = r.result()
 `, Opts().Skip2ndPass(), 42)
 }
 
-// TestIssue4_CancelAndResultRace exercises calling cancel() and result()
+// TestIssue4_CancelAndResultRace exercises calling stop() and result()
 // concurrently from different started routines to stress the synchronisation.
 func TestIssue4_CancelAndResultRace(t *testing.T) {
 	var wg sync.WaitGroup
@@ -602,7 +602,6 @@ out = [w1.result(), w2.result(), w3.result()]
 	}
 }
 
-
 // Issue #6: Channel close() panics are unrecoverable
 //
 // Double-close or send-on-closed-channel `panic`s the goroutine. The
@@ -753,24 +752,24 @@ r2.wait()
 // Issue #7: Non-compiled callables use parent context — not cancellable
 //
 // Non-compiled callables (e.g. BuiltinFunction) passed to go receive
-// the parent VM's context and have no independent cancel(). The routineVM
-// stores gvm.VM = nil for non-compiled callables, so gvm.cancel() — which
+// the parent VM's context and have no independent stop(). The routineVM
+// stores gvm.VM = nil for non-compiled callables, so gvm.stop() — which
 // checks gvm.VM != nil — is a complete no-op. There is no way to
-// independently cancel a non-compiled callable routine; it only stops when
+// independently stop a non-compiled callable routine; it only stops when
 // the parent's context is cancelled.
 //
-// The fix creates a derived context with its own cancel function for
-// non-compiled callables. gvm.cancel() calls this cancel when gvm.VM is
+// The fix creates a derived context with its own stop function for
+// non-compiled callables. gvm.stop() calls this stop when gvm.VM is
 // nil, allowing independent cancellation of non-compiled callable routines.
 
 // TestIssue7_NonCompiledCallableCancel verifies that cancelling a routine
 // started with a non-compiled callable (BuiltinFunction) actually cancels
-// the function's context. Before the fix, gvm.cancel() was a no-op for
+// the function's context. Before the fix, gvm.stop() was a no-op for
 // non-compiled callables because gvm.VM was nil.
 func TestIssue7_NonCompiledCallableCancel(t *testing.T) {
 	// A BuiltinFunction that blocks until its context is cancelled or
-	// a timeout fires. If cancel works, context is cancelled quickly and
-	// it returns "cancelled". If cancel is a no-op, the function waits
+	// a timeout fires. If stop works, context is cancelled quickly and
+	// it returns "cancelled". If stop is a no-op, the function waits
 	// for the full timeout and returns "timeout".
 	blockingFn := &vm.BuiltinFunction{
 		Name: "blocking_fn",
@@ -798,13 +797,13 @@ out = v
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		t.Fatal("TestIssue7_NonCompiledCallableCancel: timed out — cancel was a no-op for non-compiled callable")
+		t.Fatal("TestIssue7_NonCompiledCallableCancel: timed out — stop was a no-op for non-compiled callable")
 	}
 }
 
 // TestIssue7_NonCompiledCallableCancelIdempotent verifies that calling
-// cancel() multiple times on a non-compiled callable routine does not
-// panic. cancel() is idempotent, so repeated calls must be safe.
+// stop() multiple times on a non-compiled callable routine does not
+// panic. stop() is idempotent, so repeated calls must be safe.
 func TestIssue7_NonCompiledCallableCancelIdempotent(t *testing.T) {
 	blockingFn := &vm.BuiltinFunction{
 		Name: "blocking_fn",
@@ -839,7 +838,7 @@ out = v
 }
 
 // TestIssue7_NonCompiledCallableCancelAfterCompletion verifies that calling
-// cancel() on a non-compiled callable routine after it has already completed
+// stop() on a non-compiled callable routine after it has already completed
 // is harmless (does not panic or error).
 func TestIssue7_NonCompiledCallableCancelAfterCompletion(t *testing.T) {
 	simpleFn := &vm.BuiltinFunction{
@@ -877,11 +876,11 @@ out = r.result()
 }
 
 // TestIssue7_NonCompiledCallableChannelCancel verifies that a non-compiled
-// callable blocked on a channel operation is unblocked when cancel is called,
+// callable blocked on a channel operation is unblocked when stop is called,
 // because the context cancellation triggers the channel's ctx.Done() path.
 func TestIssue7_NonCompiledCallableChannelCancel(t *testing.T) {
 	// A BuiltinFunction that tries to receive from a channel (which will
-	// block forever). Cancel should cancel its context, causing the recv
+	// block forever). Cancel should stop its context, causing the recv
 	// to return ErrVMAborted.
 	recvFn := &vm.BuiltinFunction{
 		Name: "recv_fn",

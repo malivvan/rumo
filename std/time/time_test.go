@@ -102,7 +102,7 @@ func sleepFn(t *testing.T) func(ctx context.Context, d time.Duration) error {
 
 // TestSleepCancellationSubSecond verifies that a sub-second sleep (which used
 // to block unconditionally) returns ErrVMAborted when the context is already
-// cancelled before the call.
+// stopped before the call.
 func TestSleepCancellationSubSecond(t *testing.T) {
 	sleep := sleepFn(t)
 

@@ -99,7 +99,7 @@ func init() {
 	// --- concurrency (implemented in routinevm.go) ---
 	// These are registered here so their indices are part of the same
 	// deterministic table; routinevm.go must NOT have its own init().
-	addBuiltinFunction("cancel", builtinCancel)
+	addBuiltinFunction("stop", builtinStop)
 	addBuiltinFunction("chan", builtinChan)
 	// Hidden helper used by the compiler to lower `select` statements.  The
 	// leading underscore reserves it from idiomatic user identifiers; keep
@@ -239,7 +239,6 @@ func builtinIsImmutableMap(ctx context.Context, args ...Object) (Object, error) 
 	}
 	return FalseValue, nil
 }
-
 
 func builtinIsError(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 1 {
@@ -385,7 +384,6 @@ func builtinArgs(ctx context.Context, callArgs ...Object) (Object, error) {
 	}
 	return &Array{Value: result}, nil
 }
-
 
 func builtinFormat(ctx context.Context, args ...Object) (Object, error) {
 	numArgs := len(args)
@@ -579,7 +577,6 @@ func builtinBytes(ctx context.Context, args ...Object) (Object, error) {
 	}
 	return UndefinedValue, nil
 }
-
 
 // append(arr, items...)
 func builtinAppend(ctx context.Context, args ...Object) (Object, error) {

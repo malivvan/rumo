@@ -169,11 +169,11 @@ func TestArraySizeOfObjectRace(t *testing.T) {
 
 // ── 3.4 vmChildCtl.cancelFns grows without bound ─────────────────────────
 //
-// addChild appends every non-nil cancel function to a flat slice; delChild
+// addChild appends every non-nil stop function to a flat slice; delChild
 // calls the functions for prompt resource release but never removes the
 // entries. After N add/del pairs the slice still holds N dead entries.
 // Abort() then iterates all N entries on every invocation — O(N) wasted
-// work — and the memory is never reclaimed. The fix tracks cancel functions
+// work — and the memory is never reclaimed. The fix tracks stop functions
 // in a map keyed by a monotonic sequence token; delChild removes the entry,
 // keeping the collection bounded.
 
@@ -197,7 +197,7 @@ func TestCancelFnsDoNotGrowAfterDelChild(t *testing.T) {
 	}
 }
 
-// Abort() must not invoke any cancel function already removed by delChild.
+// Abort() must not invoke any stop function already removed by delChild.
 func TestAbortDoesNotCallRemovedCancelFns(t *testing.T) {
 	v := makeTestVM()
 	var callCount int64
@@ -214,7 +214,7 @@ func TestAbortDoesNotCallRemovedCancelFns(t *testing.T) {
 	v.Abort()
 
 	if n := atomic.LoadInt64(&callCount); n != 0 {
-		t.Fatalf("Abort() called a cancel function %d extra time(s) after delChild removed it", n)
+		t.Fatalf("Abort() called a stop function %d extra time(s) after delChild removed it", n)
 	}
 }
 

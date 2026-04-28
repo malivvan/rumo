@@ -17,9 +17,9 @@ import (
 // Non-compiled routines (e.g. BuiltinFunction passed to start()) call
 // addChild(nil), which increments the WaitGroup but stores nothing in
 // vmMap. When Abort() iterates vmMap to kill children, these routines
-// are invisible. Although context cascade from v.cancel() currently
+// are invisible. Although context cascade from v.stop() currently
 // masks this when callCtx derives from the parent, the routines are
-// not explicitly tracked and Abort() cannot cancel them independently
+// not explicitly tracked and Abort() cannot stop them independently
 // of the context tree.
 //
 // These tests use an independent context (context.Background()) for the
@@ -41,8 +41,8 @@ func TestAbortDoesNotCancelNonCompiledRoutine(t *testing.T) {
 
 	// Create an independent context for a non-compiled routine.
 	// This is NOT derived from the parent VM's context, so context
-	// cascade from v.cancel() will NOT reach it. Only explicit
-	// cancel tracking in Abort() can cancel it.
+	// cascade from v.stop() will NOT reach it. Only explicit
+	// stop tracking in Abort() can stop it.
 	routineCtx, routineCancel := context.WithCancel(context.Background())
 	defer routineCancel() // safety cleanup
 
@@ -50,7 +50,7 @@ func TestAbortDoesNotCancelNonCompiledRoutine(t *testing.T) {
 	routineDone := make(chan struct{})
 
 	// Register the non-compiled child with the parent, passing the
-	// routine's cancel function so Abort() can explicitly cancel it.
+	// routine's stop function so Abort() can explicitly stop it.
 	tok, err := v.addChild(nil, routineCancel)
 	if err != nil {
 		t.Fatal(err)
@@ -65,8 +65,8 @@ func TestAbortDoesNotCancelNonCompiledRoutine(t *testing.T) {
 		atomic.StoreInt64(&cancelled, 1)
 	}()
 
-	// Abort the parent VM. This should explicitly cancel the
-	// non-compiled routine via the tracked cancel function.
+	// Abort the parent VM. This should explicitly stop the
+	// non-compiled routine via the tracked stop function.
 	v.Abort()
 
 	select {
@@ -75,8 +75,8 @@ func TestAbortDoesNotCancelNonCompiledRoutine(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		routineCancel() // unblock the goroutine for cleanup
 		<-routineDone
-		t.Fatal("Issue #8: Abort() did not cancel non-compiled routine — " +
-			"it is unkillable because its cancel function is not tracked in vmChildCtl")
+		t.Fatal("Issue #8: Abort() did not stop non-compiled routine — " +
+			"it is unkillable because its stop function is not tracked in vmChildCtl")
 	}
 
 	if atomic.LoadInt64(&cancelled) != 1 {
@@ -133,9 +133,9 @@ func TestAbortCancelsMultipleNonCompiledRoutines(t *testing.T) {
 	}
 }
 
-// TestDelChildCleansUpCancelFn verifies that delChild calls the cancel
+// TestDelChildCleansUpCancelFn verifies that delChild calls the stop
 // function to release context resources promptly, and that a subsequent Abort()
-// (which re-calls idempotent cancel) does not panic.
+// (which re-calls idempotent stop) does not panic.
 func TestDelChildCleansUpCancelFn(t *testing.T) {
 	v := makeTestVM()
 
@@ -150,7 +150,7 @@ func TestDelChildCleansUpCancelFn(t *testing.T) {
 	v.delChild(nil, tok)
 
 	// Abort after delChild must not panic even though routineCancel was
-	// already called — cancel functions are idempotent.
+	// already called — stop functions are idempotent.
 	v.Abort()
 }
 
@@ -165,7 +165,7 @@ func TestMixedCompiledAndNonCompiledAbort(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Simulate a non-compiled child with a tracked cancel function.
+	// Simulate a non-compiled child with a tracked stop function.
 	routineCtx, routineCancel := context.WithCancel(context.Background())
 	defer routineCancel()
 
@@ -189,7 +189,7 @@ func TestMixedCompiledAndNonCompiledAbort(t *testing.T) {
 		t.Fatal("Issue #8: compiled child was not aborted")
 	}
 
-	// The non-compiled child should be cancelled via its cancel function.
+	// The non-compiled child should be cancelled via its stop function.
 	select {
 	case <-doneCh:
 	case <-time.After(3 * time.Second):
@@ -206,7 +206,7 @@ func TestMixedCompiledAndNonCompiledAbort(t *testing.T) {
 }
 
 // TestAddChildAfterAbortReturnsError verifies that addChild with a
-// cancel function correctly returns ErrVMAborted when the parent is aborting.
+// stop function correctly returns ErrVMAborted when the parent is aborting.
 func TestAddChildAfterAbortReturnsError(t *testing.T) {
 	v := makeTestVM()
 	v.Abort()
@@ -227,15 +227,15 @@ func TestAddChildAfterAbortReturnsError(t *testing.T) {
 //     if atomic.LoadInt64(&v.aborting) != 0 { return }
 //     v.childCtl.Lock()
 //     atomic.StoreInt64(&v.aborting, 1)
-//     v.cancel()
+//     v.stop()
 //     ...
 //     v.childCtl.Unlock()
 //
 // Two concurrent Abort() callers can both observe aborting==0 at the atomic
 // check and both proceed toward the lock. The first goroutine acquires the
-// lock, stores aborting=1, calls cancel(), iterates children, then unlocks.
+// lock, stores aborting=1, calls stop(), iterates children, then unlocks.
 // The second goroutine has already passed the check with aborting==0, so it
-// acquires the lock next and repeats the entire body — calling cancel() and
+// acquires the lock next and repeats the entire body — calling stop() and
 // every child Abort() a second time.
 //
 // The fix replaces the load+check+store sequence with an atomic.CompareAndSwap,
@@ -297,7 +297,7 @@ func TestAbortConcurrentTOCTOU(t *testing.T) {
 }
 
 // TestAbortIdempotentSingleCaller verifies that calling Abort() multiple times
-// from a single goroutine does not call the tracked cancel function more than once.
+// from a single goroutine does not call the tracked stop function more than once.
 func TestAbortIdempotentSingleCaller(t *testing.T) {
 	var callCount int64
 	cancelFn := func() {
@@ -320,7 +320,7 @@ func TestAbortIdempotentSingleCaller(t *testing.T) {
 }
 
 // TestAbortConcurrentManyGoroutines stress-tests that many concurrent Abort()
-// calls produce exactly one invocation of each tracked cancel function.
+// calls produce exactly one invocation of each tracked stop function.
 func TestAbortConcurrentManyGoroutines(t *testing.T) {
 	const N = 50
 

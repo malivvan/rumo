@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// NOTE: builtinCancel and builtinChan are registered in builtins.go init()
+// NOTE: builtinStop and builtinChan are registered in builtins.go init()
 // to keep ALL builtin indices in one deterministic table (issue 6.6).
 
 type ret struct {
@@ -20,7 +20,7 @@ type ret struct {
 type routineVM struct {
 	mu       sync.Mutex
 	*VM                          // if not nil, run CompiledFunction in VM
-	cancelFn context.CancelFunc  // cancel for non-compiled callables
+	cancelFn context.CancelFunc  // stop for non-compiled callables
 	retPtr   atomic.Pointer[ret] // written once before doneChan is closed
 	doneChan chan struct{}
 	done     int64
@@ -34,12 +34,12 @@ type routineVM struct {
 // The fn can also be any object that has Call() method, such as BuiltinFunction,
 // in which case no cloned VM will be created.
 //
-// Returns a routineVM object that has wait, result, cancel methods.
+// Returns a routineVM object that has wait, result, stop methods.
 //
 // The routineVM will not exit unless:
 //  1. All its descendant routineVMs exit
-//  2. It calls cancel()
-//  3. Its routineVM object cancel() is called on behalf of its parent VM
+//  2. It calls stop()
+//  3. Its routineVM object stop() is called on behalf of its parent VM
 //
 // The latter 2 cases will trigger aborting procedure of all the descendant routineVMs,
 // which will further result in #1 above.
@@ -60,7 +60,7 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 
 	// If a Spawner is installed (e.g. by the js/wasm runtime), delegate the
 	// routine launch to it. The handle's methods are exposed to the script as
-	// the same {result, wait, cancel} surface as the goroutine path so that
+	// the same {result, wait, stop} surface as the goroutine path so that
 	// scripts run unchanged on either backend.
 	if cfg := vm.config; cfg != nil && cfg.Spawner != nil {
 		handle, err := cfg.Spawner(ctx, fn, args[1:])
@@ -85,9 +85,9 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 		cfn = isolateClosureFree(cfn)
 	} else {
 		callers = vm.callers()
-		// Create an independent derived context so that gvm.cancel() can
-		// cancel non-compiled callables. Without this, the callable
-		// receives the parent's context and cancel() is a no-op. (Issue #7)
+		// Create an independent derived context so that gvm.stop() can
+		// stop non-compiled callables. Without this, the callable
+		// receives the parent's context and stop() is a no-op. (Issue #7)
 		callCtx, gvm.cancelFn = context.WithCancel(ctx)
 	}
 
@@ -131,13 +131,13 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 	obj := map[string]Object{
 		"result": &BuiltinFunction{Value: gvm.getRet},
 		"wait":   &BuiltinFunction{Value: gvm.waitTimeout},
-		"stop":   &BuiltinFunction{Value: gvm.cancel},
+		"stop":   &BuiltinFunction{Value: gvm.stop},
 	}
 	return &Map{Value: obj}, nil
 }
 
 // Triggers the termination process of the current VM and all its descendant VMs.
-func builtinCancel(ctx context.Context, args ...Object) (Object, error) {
+func builtinStop(ctx context.Context, args ...Object) (Object, error) {
 	vm := ctx.Value(ContextKey("vm")).(*VM)
 	if len(args) != 0 {
 		return nil, ErrWrongNumArguments
@@ -192,7 +192,7 @@ func (gvm *routineVM) waitTimeout(ctx context.Context, args ...Object) (Object, 
 }
 
 // Triggers the termination process of the routineVM and all its descendant VMs.
-func (gvm *routineVM) cancel(ctx context.Context, args ...Object) (Object, error) {
+func (gvm *routineVM) stop(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 0 {
 		return nil, ErrWrongNumArguments
 	}
@@ -391,7 +391,7 @@ func builtinChan(ctx context.Context, args ...Object) (Object, error) {
 
 // wrapRoutineHandle adapts a RoutineHandle (typically the SharedWorker-backed
 // implementation in cmd/main_js.go) into the script-visible {result, wait,
-// cancel} object returned by `go fn(...)`.
+// stop} object returned by `go fn(...)`.
 func wrapRoutineHandle(h RoutineHandle) Object {
 	result := func(ctx context.Context, args ...Object) (Object, error) {
 		if len(args) != 0 {

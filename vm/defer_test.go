@@ -321,18 +321,18 @@ func makeDeferTestBuiltins() (*vm.BuiltinFunction, *vm.BuiltinFunction, func() [
 	return blockFn, recordFn, read
 }
 
-// runDeferCancelScript runs a rumo script that registers defers in a routine,
+// runDeferStopScript runs a rumo script that registers defers in a routine,
 // synchronises with the main VM via a startCh channel, then cancels the
 // routine. Returns the recorded events.
-func runDeferCancelScript(t *testing.T, body string) []string {
+func runDeferStopScript(t *testing.T, body string) []string {
 	t.Helper()
 	blockFn, recordFn, read := makeDeferTestBuiltins()
 
 	// The script pattern: the routine registers its defers, sends on
 	// startCh to signal readiness, then calls block() which waits for
-	// cancellation. The main VM receives on startCh, cancels the
+	// routine to stop. The main VM receives on startCh, stops the
 	// routine, and waits for it to finish. This avoids the race where
-	// cancel fires before defers are registered.
+	// stop fires before defers are registered.
 	script := `
 startCh := chan()
 r := start func() {
@@ -359,10 +359,10 @@ out = "ok"
 	return read()
 }
 
-// TestDefer_OnCancel_Simple verifies that a deferred function runs when
-// the routine is cancelled while its body is blocked.
-func TestDefer_OnCancel_Simple(t *testing.T) {
-	events := runDeferCancelScript(t, `
+// TestDeferOnStopSimple verifies that a deferred function runs when
+// the routine is stopped while its body is blocked.
+func TestDeferOnStopSimple(t *testing.T) {
+	events := runDeferStopScript(t, `
 	defer record("deferred")
 	startCh.send(true)
 	block()
@@ -374,7 +374,7 @@ func TestDefer_OnCancel_Simple(t *testing.T) {
 			foundDeferred = true
 		}
 		if e == "after-block" {
-			t.Fatalf("body continued after block returned from cancel, got %v", events)
+			t.Fatalf("body continued after block returned from stop, got %v", events)
 		}
 	}
 	if !foundDeferred {
@@ -382,10 +382,10 @@ func TestDefer_OnCancel_Simple(t *testing.T) {
 	}
 }
 
-// TestDefer_OnCancel_LIFO verifies that multiple defers in a cancelled
+// TestDeferOnStopLIFO verifies that multiple defers in a stopped
 // routine still execute in LIFO order.
-func TestDefer_OnCancel_LIFO(t *testing.T) {
-	events := runDeferCancelScript(t, `
+func TestDeferOnStopLIFO(t *testing.T) {
+	events := runDeferStopScript(t, `
 	defer record("d1")
 	defer record("d2")
 	defer record("d3")
@@ -403,10 +403,10 @@ func TestDefer_OnCancel_LIFO(t *testing.T) {
 	}
 }
 
-// TestDefer_OnCancel_NestedFrames verifies that defers across multiple
-// nested frames all run when the deepest frame is cancelled.
-func TestDefer_OnCancel_NestedFrames(t *testing.T) {
-	events := runDeferCancelScript(t, `
+// TestDeferOnStopNestedFrames verifies that defers across multiple
+// nested frames all run when the deepest frame is stopped.
+func TestDeferOnStopNestedFrames(t *testing.T) {
+	events := runDeferStopScript(t, `
 	inner := func(sig) {
 		defer record("inner-defer")
 		sig.send(true)
@@ -426,12 +426,12 @@ func TestDefer_OnCancel_NestedFrames(t *testing.T) {
 	}
 }
 
-// TestDefer_OnCancel_CompiledDefer verifies that defers running compiled
-// functions (bytecode, not just builtins) execute correctly during cancel.
-func TestDefer_OnCancel_CompiledDefer(t *testing.T) {
+// TestDeferOnStopCompiledDefer verifies that defers running compiled
+// functions (bytecode, not just builtins) execute correctly during stop.
+func TestDeferOnStopCompiledDefer(t *testing.T) {
 	// The deferred function body contains multiple statements to force
 	// the compiled-function deferred-call path (not a single builtin).
-	events := runDeferCancelScript(t, `
+	events := runDeferStopScript(t, `
 	defer func() {
 		msg := "compiled-defer"
 		record(msg)
@@ -444,10 +444,10 @@ func TestDefer_OnCancel_CompiledDefer(t *testing.T) {
 	}
 }
 
-// TestDefer_OnCancel_DeferWithDeferredDefer verifies a defer inside a
+// TestDeferOnStopDeferWithDeferredDefer verifies a defer inside a
 // deferred function also runs when the routine is cancelled.
-func TestDefer_OnCancel_DeferWithDeferredDefer(t *testing.T) {
-	events := runDeferCancelScript(t, `
+func TestDeferOnStopDeferWithDeferredDefer(t *testing.T) {
+	events := runDeferStopScript(t, `
 	defer func() {
 		defer record("nested-defer")
 		record("outer-defer-body")
@@ -466,9 +466,9 @@ func TestDefer_OnCancel_DeferWithDeferredDefer(t *testing.T) {
 	}
 }
 
-// TestDefer_OnAbortBuiltin verifies that defers run when the cancel()
+// TestDeferOnStopBuiltin verifies that defers run when the stop()
 // builtin is called from within the routine itself (self-cancellation).
-func TestDefer_OnAbortBuiltin(t *testing.T) {
+func TestDeferOnStopBuiltin(t *testing.T) {
 	_, recordFn, read := makeDeferTestBuiltins()
 
 	done := make(chan struct{})
@@ -477,8 +477,8 @@ func TestDefer_OnAbortBuiltin(t *testing.T) {
 		expectRun(t, `
 r := start func() {
 	defer record("deferred")
-	record("before-cancel")
-	cancel()
+	record("before-stop")
+	stop()
 	record("unreachable")
 }()
 r.wait()
@@ -489,7 +489,7 @@ out = "ok"
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("TestDefer_OnAbortBuiltin: timed out")
+		t.Fatal("TestDeferOnStopBuiltin: timed out")
 	}
 
 	events := read()
@@ -499,18 +499,18 @@ out = "ok"
 		if e == "deferred" {
 			foundDeferred = true
 		}
-		if e == "before-cancel" {
+		if e == "before-stop" {
 			foundBefore = true
 		}
 		if e == "unreachable" {
-			t.Fatalf("cancel() should have prevented 'unreachable', got %v", events)
+			t.Fatalf("stop() should have prevented 'unreachable', got %v", events)
 		}
 	}
 	if !foundBefore {
-		t.Fatalf("expected 'before-cancel' to have run, got %v", events)
+		t.Fatalf("expected 'before-stop' to have run, got %v", events)
 	}
 	if !foundDeferred {
-		t.Fatalf("defer was not executed when cancel() fired, got %v", events)
+		t.Fatalf("defer was not executed when stop() fired, got %v", events)
 	}
 }
 
