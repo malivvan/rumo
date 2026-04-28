@@ -131,7 +131,7 @@ func TestSelectBlockingViaRoutine(t *testing.T) {
 	// select should block until the value arrives.
 	expectRun(t, `
 	c := chan(0)
-	g := go func() {
+	g := start func() {
 		c.send(123)
 	}()
 	out = 0

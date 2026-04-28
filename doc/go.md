@@ -76,9 +76,9 @@ rClient := go client(2)
 rServer := go server()
 
 if ok := rClient.wait(5); !ok {
-	rClient.cancel()
+	rClient.stop()
 }
-rServer.cancel()
+rServer.stop()
 
 //output:
 //hello
@@ -148,12 +148,12 @@ rclts := go clients()
 // were cancelled with the req fetched from sharedReqChan before
 // sending back the reply.
 // In such case, do below to cancel() the clients manually
-//go func(){times.sleep(6*times.second); gclts.cancel()}()
+//go func(){times.sleep(6*times.second); gclts.stop()}()
 
 // Servers are infinite loop, cancel() them after 5 seconds
 rsrvs := go servers()
 if ok := rsrvs.wait(5); !ok {
-	rsrvs.cancel()
+	rsrvs.stop()
 }
 
 // Main VM waits here until all the child routines finish

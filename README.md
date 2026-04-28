@@ -151,9 +151,9 @@ rClient := go client(2)
 rServer := go server()
 
 if ok := rClient.wait(5); !ok {
-	rClient.cancel()
+	rClient.stop()
 }
-rServer.cancel()
+rServer.stop()
 
 //output:
 //hello

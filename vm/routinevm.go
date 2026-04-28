@@ -19,8 +19,8 @@ type ret struct {
 
 type routineVM struct {
 	mu       sync.Mutex
-	*VM                         // if not nil, run CompiledFunction in VM
-	cancelFn context.CancelFunc // cancel for non-compiled callables
+	*VM                          // if not nil, run CompiledFunction in VM
+	cancelFn context.CancelFunc  // cancel for non-compiled callables
 	retPtr   atomic.Pointer[ret] // written once before doneChan is closed
 	doneChan chan struct{}
 	done     int64
@@ -131,7 +131,7 @@ func builtinStart(ctx context.Context, args ...Object) (Object, error) {
 	obj := map[string]Object{
 		"result": &BuiltinFunction{Value: gvm.getRet},
 		"wait":   &BuiltinFunction{Value: gvm.waitTimeout},
-		"cancel": &BuiltinFunction{Value: gvm.cancel},
+		"stop":   &BuiltinFunction{Value: gvm.cancel},
 	}
 	return &Map{Value: obj}, nil
 }
@@ -418,7 +418,7 @@ func wrapRoutineHandle(h RoutineHandle) Object {
 		}
 		return FalseValue, nil
 	}
-	cancel := func(ctx context.Context, args ...Object) (Object, error) {
+	stop := func(ctx context.Context, args ...Object) (Object, error) {
 		if len(args) != 0 {
 			return nil, ErrWrongNumArguments
 		}
@@ -428,7 +428,7 @@ func wrapRoutineHandle(h RoutineHandle) Object {
 	return &Map{Value: map[string]Object{
 		"result": &BuiltinFunction{Value: result},
 		"wait":   &BuiltinFunction{Value: wait},
-		"cancel": &BuiltinFunction{Value: cancel},
+		"stop":   &BuiltinFunction{Value: stop},
 	}}
 }
 

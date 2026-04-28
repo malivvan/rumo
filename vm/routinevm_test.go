@@ -34,8 +34,8 @@ inc := func() {
 	}
 	return counter
 }
-r1 := go inc()
-r2 := go inc()
+r1 := start inc()
+r2 := start inc()
 v1 := r1.result()
 v2 := r2.result()
 out = [counter, v1, v2]
@@ -51,7 +51,7 @@ f := func() {
 	x = 42
 	return x
 }
-r := go f()
+r := start f()
 v := r.result()
 out = [x, v]
 `, Opts().Skip2ndPass(), ARR{10, 42})
@@ -70,10 +70,10 @@ inc := func() {
 	}
 	return counter
 }
-r1 := go inc()
+r1 := start inc()
 r1.wait()
 counter = 500
-r2 := go inc()
+r2 := start inc()
 v1 := r1.result()
 v2 := r2.result()
 out = [counter, v1, v2]
@@ -91,7 +91,7 @@ f := func() {
 	y = y + 2
 	return [x, y]
 }
-r := go f()
+r := start f()
 v := r.result()
 out = [x, y, v]
 `, Opts().Skip2ndPass(), ARR{10, 20, ARR{11, 22}})
@@ -106,7 +106,7 @@ ch := chan()
 f := func() {
 	ch.send(msg)
 }
-r := go f()
+r := start f()
 msg = "changed"
 out = ch.recv()
 r.wait()
@@ -141,8 +141,8 @@ out = func() {
 		}
 		return counter
 	}
-	r1 := go inc()
-	r2 := go inc()
+	r1 := start inc()
+	r2 := start inc()
 	v1 := r1.result()
 	v2 := r2.result()
 	return [counter, v1, v2]
@@ -159,7 +159,7 @@ out = func() {
 		x = 42
 		return x
 	}
-	r := go f()
+	r := start f()
 	v := r.result()
 	return [x, v]
 }()`, Opts().Skip2ndPass(), ARR{10, 42})
@@ -179,10 +179,10 @@ out = func() {
 		}
 		return counter
 	}
-	r1 := go inc()
+	r1 := start inc()
 	r1.wait()
 	counter = 500
-	r2 := go inc()
+	r2 := start inc()
 	v1 := r1.result()
 	v2 := r2.result()
 	return [counter, v1, v2]
@@ -200,7 +200,7 @@ out = func() {
 	a := 1
 	inc := func() { a += 1 }
 	get := func() { return a }
-	r := go func() {
+	r := start func() {
 		inc()
 		inc()
 		inc()
@@ -223,7 +223,7 @@ out = func() {
 		y = y + 2
 		return [x, y]
 	}
-	r := go f()
+	r := start f()
 	v := r.result()
 	return [x, y, v]
 }()`, Opts().Skip2ndPass(), ARR{10, 20, ARR{11, 22}})
@@ -234,7 +234,7 @@ out = func() {
 func TestIssue2_ClosureNoFreeVars(t *testing.T) {
 	expectRun(t, `
 f := func() { return 42 }
-r := go f()
+r := start f()
 out = r.result()
 `, Opts().Skip2ndPass(), 42)
 }
@@ -261,7 +261,7 @@ func TestIssue3_CancelFromChildCancelsChild(t *testing.T) {
 	// The child calls cancel() which should only cancel itself.
 	// The parent should continue and produce the expected output.
 	expectRun(t, `
-r := go func() {
+r := start func() {
 	cancel()
 	return "should not reach"
 }()
@@ -276,7 +276,7 @@ out = "parent alive"
 func TestIssue3_CancelFromChildDoesNotCancelParent(t *testing.T) {
 	expectRun(t, `
 ch := chan()
-r := go func() {
+r := start func() {
 	ch.send("started")
 	cancel()
 }()
@@ -298,14 +298,14 @@ func TestIssue3_NestedGoRegistersOnChild(t *testing.T) {
 	// will be interrupted and the grandchild will complete.
 	expectRun(t, `
 ch := chan()
-r := go func() {
-	gc := go func() {
+r := start func() {
+	gc := start func() {
 		for {
 			// infinite loop — only cancel can stop this
 			x := 1 + 1
 		}
 	}()
-	gc.cancel()
+	gc.stop()
 	gc.wait()
 	return "done"
 }()
@@ -320,15 +320,15 @@ out = r.result()
 // would time out (return false).
 func TestIssue3_ChildCancelPropagatesDownward(t *testing.T) {
 	expectRun(t, `
-child := go func() {
-	gc := go func() {
+child := start func() {
+	gc := start func() {
 		for {
 			x := 1 + 1
 		}
 	}()
 	gc.wait()
 }()
-child.cancel()
+child.stop()
 out = child.wait(5)
 `, Opts().Skip2ndPass(), true)
 }
@@ -338,8 +338,8 @@ out = child.wait(5)
 // child list. The parent should be able to finish independently.
 func TestIssue3_GoInsideChildDoesNotAffectParent(t *testing.T) {
 	expectRun(t, `
-r := go func() {
-	gc := go func() {
+r := start func() {
+	gc := start func() {
 		return 99
 	}()
 	return gc.result()
@@ -369,8 +369,8 @@ func TestIssue4_CancelRacesWithCompletion(t *testing.T) {
 f := func() {
 	return 1
 }
-r := go f()
-r.cancel()
+r := start f()
+r.stop()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
@@ -388,9 +388,9 @@ f := func() {
 	ch.recv()
 	return 1
 }
-r := go f()
+r := start f()
 ch.send(1)
-r.cancel()
+r.stop()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
@@ -406,14 +406,14 @@ func TestIssue4_ConcurrentCancelCalls(t *testing.T) {
 	// races with the routine's own natural completion.
 	for i := 0; i < 50; i++ {
 		expectRun(t, `
-r := go func() {
+r := start func() {
 	for i := 0; i < 10; i++ {
 		x := i
 	}
 	return "done"
 }()
-r.cancel()
-r.cancel()
+r.stop()
+r.stop()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
@@ -425,11 +425,11 @@ out = "ok"
 // crash.
 func TestIssue4_CancelAfterCompletion(t *testing.T) {
 	expectRun(t, `
-r := go func() {
+r := start func() {
 	return 42
 }()
 r.wait()
-r.cancel()
+r.stop()
 out = r.result()
 `, Opts().Skip2ndPass(), 42)
 }
@@ -443,10 +443,10 @@ func TestIssue4_CancelAndResultRace(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			expectRun(t, `
-r := go func() {
+r := start func() {
 	return 1
 }()
-r.cancel()
+r.stop()
 r.wait()
 out = "ok"
 `, Opts().Skip2ndPass(), "ok")
@@ -477,14 +477,14 @@ func TestIssue5_ConcurrentWaitDeadlock(t *testing.T) {
 		defer close(done)
 		expectRun(t, `
 ch := chan()
-r := go func() {
+r := start func() {
 	ch.recv()
 	return 42
 }()
-w1 := go func() {
+w1 := start func() {
 	return r.wait(10)
 }()
-w2 := go func() {
+w2 := start func() {
 	return r.wait(10)
 }()
 ch.send(true)
@@ -510,15 +510,15 @@ func TestIssue5_ConcurrentResultDeadlock(t *testing.T) {
 		expectRun(t, `
 ch := chan()
 sync := chan()
-r := go func() {
+r := start func() {
 	ch.recv()
 	return 42
 }()
-r1 := go func() {
+r1 := start func() {
 	sync.send(true)
 	return r.result()
 }()
-r2 := go func() {
+r2 := start func() {
 	sync.send(true)
 	return r.result()
 }()
@@ -540,7 +540,7 @@ out = [r1.result(), r2.result()]
 // has already consumed the value still returns true (not blocked forever).
 func TestIssue5_WaitAfterResult(t *testing.T) {
 	expectRun(t, `
-r := go func() {
+r := start func() {
 	return 42
 }()
 v := r.result()
@@ -552,7 +552,7 @@ out = [v, r.wait()]
 // from the same routine works correctly (idempotent).
 func TestIssue5_MultipleWaitCalls(t *testing.T) {
 	expectRun(t, `
-r := go func() {
+r := start func() {
 	return 42
 }()
 w1 := r.wait()
@@ -566,7 +566,7 @@ out = [w1, w2, w3]
 // times returns the same value without deadlocking.
 func TestIssue5_MultipleResultCalls(t *testing.T) {
 	expectRun(t, `
-r := go func() {
+r := start func() {
 	return 42
 }()
 v1 := r.result()
@@ -584,12 +584,12 @@ func TestIssue5_ConcurrentWaitStress(t *testing.T) {
 		defer close(done)
 		for i := 0; i < 50; i++ {
 			expectRun(t, `
-r := go func() {
+r := start func() {
 	return 1
 }()
-w1 := go func() { return r.wait(10) }()
-w2 := go func() { return r.wait(10) }()
-w3 := go func() { return r.result() }()
+w1 := start func() { return r.wait(10) }()
+w2 := start func() { return r.wait(10) }()
+w3 := start func() { return r.result() }()
 out = [w1.result(), w2.result(), w3.result()]
 `, Opts().Skip2ndPass(), ARR{true, true, 1})
 		}
@@ -645,7 +645,7 @@ ch.send(42)
 func TestIssue6_DoubleCloseInRoutine(t *testing.T) {
 	expectError(t, `
 ch := chan()
-r := go func() {
+r := start func() {
 	ch.close()
 	ch.close()
 }()
@@ -660,7 +660,7 @@ func TestIssue6_SendOnClosedInRoutine(t *testing.T) {
 	expectError(t, `
 ch := chan()
 ch.close()
-r := go func() {
+r := start func() {
 	ch.send(42)
 }()
 r.wait()
@@ -675,7 +675,7 @@ func TestIssue6_DoubleCloseResultIsError(t *testing.T) {
 	// ("channel already closed") and not an unrecovered Go panic.
 	expectError(t, `
 ch := chan()
-r := go func() {
+r := start func() {
 	ch.close()
 	ch.close()
 	return "ok"
@@ -690,7 +690,7 @@ func TestIssue6_SendOnClosedResultIsError(t *testing.T) {
 	expectError(t, `
 ch := chan()
 ch.close()
-r := go func() {
+r := start func() {
 	ch.send(1)
 	return "ok"
 }()
@@ -738,10 +738,10 @@ func TestIssue6_ConcurrentCloseStress(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		expectError(t, `
 ch := chan()
-r1 := go func() {
+r1 := start func() {
 	ch.close()
 }()
-r2 := go func() {
+r2 := start func() {
 	ch.close()
 }()
 r1.wait()
@@ -788,8 +788,8 @@ func TestIssue7_NonCompiledCallableCancel(t *testing.T) {
 	go func() {
 		defer close(done)
 		expectRun(t, `
-r := go blocking_fn()
-r.cancel()
+r := start blocking_fn()
+r.stop()
 v := r.result()
 out = v
 `, Opts().Skip2ndPass().Symbol("blocking_fn", blockingFn), "cancelled")
@@ -822,10 +822,10 @@ func TestIssue7_NonCompiledCallableCancelIdempotent(t *testing.T) {
 	go func() {
 		defer close(done)
 		expectRun(t, `
-r := go blocking_fn()
-r.cancel()
-r.cancel()
-r.cancel()
+r := start blocking_fn()
+r.stop()
+r.stop()
+r.stop()
 v := r.result()
 out = v
 `, Opts().Skip2ndPass().Symbol("blocking_fn", blockingFn), "cancelled")
@@ -850,9 +850,9 @@ func TestIssue7_NonCompiledCallableCancelAfterCompletion(t *testing.T) {
 	}
 
 	expectRun(t, `
-r := go simple_fn()
+r := start simple_fn()
 r.wait()
-r.cancel()
+r.stop()
 out = r.result()
 `, Opts().Skip2ndPass().Symbol("simple_fn", simpleFn), 42)
 }
@@ -871,7 +871,7 @@ func TestIssue7_NonCompiledCallableNormalReturn(t *testing.T) {
 	}
 
 	expectRun(t, `
-r := go add_fn(10, 32)
+r := start add_fn(10, 32)
 out = r.result()
 `, Opts().Skip2ndPass().Symbol("add_fn", addFn), 42)
 }
@@ -900,8 +900,8 @@ func TestIssue7_NonCompiledCallableChannelCancel(t *testing.T) {
 	go func() {
 		defer close(done)
 		expectRun(t, `
-r := go recv_fn()
-r.cancel()
+r := start recv_fn()
+r.stop()
 v := r.result()
 out = v
 `, Opts().Skip2ndPass().Symbol("recv_fn", recvFn), "cancelled")
@@ -940,10 +940,10 @@ func() {
 	c := 3
 	d := 4
 	worker := func() { return a + b + c + d }
-	r1 := go worker()
-	r2 := go worker()
-	r3 := go worker()
-	r4 := go worker()
+	r1 := start worker()
+	r2 := start worker()
+	r3 := start worker()
+	r4 := start worker()
 	r1.wait()
 	r2.wait()
 	r3.wait()

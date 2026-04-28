@@ -351,7 +351,7 @@ func (e *GoExpr) End() Pos {
 }
 
 func (e *GoExpr) String() string {
-	return "go " + e.Call.String()
+	return "start " + e.Call.String()
 }
 
 // ImportExpr represents an import expression

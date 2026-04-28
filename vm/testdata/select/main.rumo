@@ -34,7 +34,7 @@ for i := 0; i < 4; i++ {
 
 times := import("times")
 c4 := chan(1)
-go func() {
+start func() {
     times.sleep(1 * times.second)
     c4.send(500)
 }()

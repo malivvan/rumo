@@ -168,7 +168,7 @@ var tokens = [...]string{
 	In:           "in",
 	Undefined:    "undefined",
 	Import:       "import",
-	Go:           "go",
+	Go:           "start",
 	Defer:        "defer",
 	Native:       "native",
 	Type:         "type",

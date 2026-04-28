@@ -15,17 +15,17 @@ writeRoutine := func(num) {
     }
 }
 
-r1 := go writeRoutine(1)()
-r2 := go writeRoutine(2)()
-r3 := go writeRoutine(3)()
+r1 := start writeRoutine(1)()
+r2 := start writeRoutine(2)()
+r3 := start writeRoutine(3)()
 times.sleep(1 * times.second)
 fmt.println("Cancelling routine 1")
-r1.cancel()
+r1.stop()
 
 
 times.sleep(2 * times.second)
 fmt.println("Cancelling routine 2")
-r2.cancel()
+r2.stop()
 
 fmt.println("Waiting for routine 3 to finish")
 r3.wait()

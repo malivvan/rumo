@@ -260,7 +260,7 @@ f := func() {
 	defer func() { ch.send("deferred") }()
 	return 42
 }
-r := go f()
+r := start f()
 v := r.result()
 msg := ch.recv()
 out = [v, msg]
@@ -335,11 +335,11 @@ func runDeferCancelScript(t *testing.T, body string) []string {
 	// cancel fires before defers are registered.
 	script := `
 startCh := chan()
-r := go func() {
+r := start func() {
 ` + body + `
 }()
 startCh.recv()
-r.cancel()
+r.stop()
 r.wait()
 out = "ok"
 `
@@ -475,7 +475,7 @@ func TestDefer_OnAbortBuiltin(t *testing.T) {
 	go func() {
 		defer close(done)
 		expectRun(t, `
-r := go func() {
+r := start func() {
 	defer record("deferred")
 	record("before-cancel")
 	cancel()
