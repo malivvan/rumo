@@ -6,7 +6,7 @@
 // across DedicatedWorkers instead of using Go goroutines:
 //
 //   - vm.Config.Spawner: every `go fn()` allocates a fresh
-//     `rumo-vm-<name>` DedicatedWorker, ships (fn, args, parent bytecode)
+//     `vm-<id>-<n>` DedicatedWorker, ships (fn, args, parent bytecode)
 //     to it, and returns a RoutineHandle whose Result/Wait/Cancel route
 //     through that worker's MessagePort.
 //   - vm.Config.ChanFactory: every `chan(n)` registers a queue with the

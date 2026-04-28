@@ -12,9 +12,9 @@
 //	                            ├── monitor / routine registry
 //	                            └── chan registry
 //
-//	page tab    ──new Worker─▶ rumo-vm-<id>   (DedicatedWorker, one per VM run)
+//	page tab    ──new Worker─▶ vm-<id>        (DedicatedWorker, one per VM run)
 //	                            │
-//	                            └─ on `go fn()` ─▶ rumo-vm-<childId>
+//	                            └─ on `go fn()` ─▶ vm-<id>-<n>
 //	                                                (DedicatedWorker child)
 //
 // The coordinator is a SharedWorker because its state is shared across
@@ -167,6 +167,7 @@ type routine struct {
 	bytesOut   atomic.Int64
 	state      atomic.Int32 // routineRunning / routineDone / routineError / routineCancel
 	errStr     atomic.Pointer[string]
+	childSeq   atomic.Int64 // per-parent child counter for hierarchical worker names
 }
 
 // Write makes the routine an io.Writer for VM stdout.
@@ -290,28 +291,6 @@ func (r *routineRegistry) get(id int64) *routine {
 func (r *routineRegistry) del(id int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.delLocked(id)
-}
-
-// delLocked removes the routine and re-parents any surviving children to the
-// removed routine's own parent. This keeps the routine tree on the page-side
-// monitor connected when an intermediate `go` routine finishes (and gets
-// auto-pruned 2s later) while its own `go` child is still running. Without
-// reparenting, the grandchild's parentId would dangle and renderRoutines
-// would promote it to a top-level root, visually breaking the tree.
-//
-// Caller must hold r.mu.
-func (r *routineRegistry) delLocked(id int64) {
-	rt, ok := r.items[id]
-	if !ok {
-		return
-	}
-	grandparent := rt.parentID
-	for _, child := range r.items {
-		if child.parentID == id {
-			child.parentID = grandparent
-		}
-	}
 	delete(r.items, id)
 }
 
@@ -335,20 +314,11 @@ func (r *routineRegistry) prune() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	n := 0
-	// Collect ids first so we can iterate ids in stable order and use the
-	// reparenting delLocked helper without mutating during range.
-	ids := make([]int64, 0, len(r.items))
 	for id, rt := range r.items {
 		if rt.state.Load() != routineRunning {
-			ids = append(ids, id)
+			delete(r.items, id)
+			n++
 		}
-	}
-	for _, id := range ids {
-		if _, ok := r.items[id]; !ok {
-			continue
-		}
-		r.delLocked(id)
-		n++
 	}
 	return n
 }
@@ -1011,15 +981,13 @@ func inDedicatedWorker() bool {
 	return name.String() == "DedicatedWorkerGlobalScope"
 }
 
-// workerSelfName returns the SharedWorker `self.name` the current instance
-// was created with, or "" if this WASM instance isn't running in a
-// SharedWorker scope. Only the coordinator uses this (its name is
-// "rumo-coordinator").
+// workerSelfName returns the worker scope's `self.name` for the current
+// instance, regardless of whether this WASM is running in a SharedWorker
+// (the coordinator, named "rumo-coordinator") or a DedicatedWorker (every
+// vm-host, named e.g. "vm-abc" or "vm-abc-1"). Returns "" when not running
+// in any worker scope (e.g. a Window for tests).
 func workerSelfName() string {
 	self := js.Global()
-	if !inSharedWorker() {
-		return ""
-	}
 	if n := self.Get("name"); n.Type() == js.TypeString {
 		return n.String()
 	}
@@ -1467,15 +1435,50 @@ func handlePortMessage(port js.Value, data js.Value) {
 	case "routine.allocate":
 		// Called by a vm-host's Spawner to obtain a fresh routineId + worker
 		// name for a new `go fn()` DedicatedWorker. Also creates the monitor row.
-		rt := allocRoutine("go", "")
-		wn := fmt.Sprintf("rumo-vm-%d", rt.id)
-		rt.workerName = wn
-		if v := data.Get("parentId"); v.Type() == js.TypeNumber {
-			rt.parentID = int64(v.Int())
+		//
+		// The child inherits its parent's monitor "name" (the script path) so
+		// every routine in the monitor — including descendants spawned via
+		// `go fn()` — is labelled with the script that produced it.
+		//
+		// The child's worker name is built by appending "-<n>" to the
+		// parent's worker name, where <n> is a per-parent sequence number.
+		// The resulting hierarchical chain (e.g. "vm-abc-1-2") makes the
+		// parent/child relationship visible in the worker name itself, which
+		// is why the monitor renders routines as a flat list rather than a
+		// tree.
+		parentWorker := ""
+		if v := data.Get("parent"); v.Type() == js.TypeString {
+			parentWorker = v.String()
 		}
+		var parentID int64
+		if v := data.Get("parentId"); v.Type() == js.TypeNumber {
+			parentID = int64(v.Int())
+		}
+		childName := ""
+		var childSeq int64
+		if parentID != 0 {
+			if pr := routines.get(parentID); pr != nil {
+				childName = pr.name
+				childSeq = pr.childSeq.Add(1)
+			}
+		}
+		rt := allocRoutine("go", childName)
+		var wn string
+		if parentWorker != "" {
+			if childSeq == 0 {
+				// parent routine row was already pruned; fall back to using
+				// the routine id so the name stays unique.
+				childSeq = rt.id
+			}
+			wn = fmt.Sprintf("%s-%d", parentWorker, childSeq)
+		} else {
+			wn = fmt.Sprintf("vm-%d", rt.id)
+		}
+		rt.workerName = wn
+		rt.parentID = parentID
 		// Emit only after parentID + workerName are populated so that any
-		// subscriber (e.g. the page's live monitor) renders the tree edge
-		// on the first event instead of on the next poll.
+		// subscriber (e.g. the page's live monitor) sees a fully populated
+		// row on the first event instead of on the next poll.
 		monitor.emitSpawned(rt)
 		out := jsObject.New()
 		out.Set("routineId", rt.id)
@@ -1782,7 +1785,7 @@ func jsValueStringArray(v js.Value) []string {
 //     without a worker)
 //
 // Each `rumo.run` / `rumo.runCompiled` / `rumo.spawn` call from the page
-// creates its own dedicated `rumo-vm-<id>` DedicatedWorker and reports
+// creates its own dedicated `vm-<id>` DedicatedWorker and reports
 // lifecycle to the coordinator's monitor — so every running VM appears as
 // a distinct worker in the browser's DevTools and as a row in the live
 // monitor table.

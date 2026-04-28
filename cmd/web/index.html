@@ -344,49 +344,24 @@ fmt.println("done.")
                 body.innerHTML = '<tr class="empty"><td colspan="8" class="empty">(none)</td></tr>';
                 return;
             }
-            // Build a tree by parentId. Routines whose parent isn't in the
-            // current snapshot (e.g. already pruned) are promoted to roots so
-            // they remain visible.
-            const byId = new Map();
-            for (const r of list) byId.set(r.id, { r, children: [] });
-            const roots = [];
-            for (const node of byId.values()) {
-                const pid = node.r.parentId || 0;
-                if (pid && byId.has(pid)) {
-                    byId.get(pid).children.push(node);
-                } else {
-                    roots.push(node);
-                }
-            }
-            const sortFn = (a, b) => a.r.id - b.r.id;
-            roots.sort(sortFn);
-            for (const n of byId.values()) n.children.sort(sortFn);
-
-            const rows = [];
-            const walk = (node, depth, prefix, isLast) => {
-                const r = node.r;
+            // Render a flat list sorted by id. The hierarchical worker name
+            // (e.g. "vm-abc/go-12/go-17") already encodes the parent/child
+            // relationship, so a tree view would be redundant.
+            const sorted = list.slice().sort((a, b) => a.id - b.id);
+            const rows = sorted.map((r) => {
                 const dur = r.endedAtMs ? r.durationMs + "ms" : fmtAge(r.durationMs);
                 const worker = r.workerName ? escapeHTML(r.workerName) : "<span class=\"small\">—</span>";
-                // tree-glyph prefix, classic └─ / ├─ style
-                let glyph = "";
-                if (depth > 0) {
-                    glyph = prefix + (isLast ? "└─ " : "├─ ");
-                }
-                const nameCell = `<span class="small" style="color:#888">${escapeHTML(glyph)}</span>${escapeHTML(r.name)}`;
-                rows.push(`<tr class="r-${r.state}">
+                return `<tr class="r-${r.state}">
                     <td>${r.id}</td>
                     <td>${escapeHTML(r.kind)}</td>
-                    <td>${nameCell}</td>
+                    <td>${escapeHTML(r.name)}</td>
                     <td class="small">${worker}</td>
                     <td>${r.state}</td>
                     <td>${dur}</td>
                     <td>${fmtBytes(r.bytesOut)}</td>
                     <td class="err">${r.error ? escapeHTML(r.error) : ""}</td>
-                </tr>`);
-                const childPrefix = depth === 0 ? "" : prefix + (isLast ? "   " : "│  ");
-                node.children.forEach((c, i) => walk(c, depth + 1, childPrefix, i === node.children.length - 1));
-            };
-            roots.forEach((n, i) => walk(n, 0, "", i === roots.length - 1));
+                </tr>`;
+            });
             body.innerHTML = rows.join("");
         }
 

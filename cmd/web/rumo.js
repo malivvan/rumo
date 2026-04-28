@@ -1,5 +1,5 @@
 // rumo.js — page-side wrapper. Each top-level VM runs in its own dedicated
-// Worker (a DedicatedWorker named "rumo-vm-<id>") so that every active
+// Worker (a DedicatedWorker named "vm-<id>") so that every active
 // rumo VM appears as a separate worker in DevTools and as a distinct row
 // in the live monitor. A "rumo-coordinator" SharedWorker holds the
 // in-memory filesystem, the routine registry, and the lifecycle bus —
@@ -22,15 +22,15 @@
 //     │
 //     ├──► rumo-coordinator     (1 SharedWorker, owns FS + monitor registry)
 //     │
-//     ├──► rumo-vm-A            (1 DedicatedWorker per VM run; streams output)
-//     │     └──► rumo-vm-A-go-1 (child DedicatedWorker per `go fn()`)
-//     ├──► rumo-vm-B
-//     └──► rumo-vm-C
+//     ├──► vm-A                 (1 DedicatedWorker per VM run; streams output)
+//     │     └──► vm-A-1         (child DedicatedWorker per `go fn()`)
+//     ├──► vm-B
+//     └──► vm-C
 //
 // Lifecycle for every VM created via rumo.run / runCompiled / spawn:
 //   1. ask coordinator for a fresh routine id (`routine.register`)
 //   2. fetch the FS snapshot (`fs.snapshot`)
-//   3. create `new Worker(workerURL, { name: "rumo-vm-<id>" })`
+//   3. create `new Worker(workerURL, { name: "vm-<id>" })`
 //   4. forward output chunks to onOutput AND to the coordinator
 //      (`routine.update`) so monitor byte counts stay live
 //   5. on done → `routine.done` → coordinator promotes the row to the
@@ -160,7 +160,7 @@
         async _runInWorker(kind, body, opts) {
             opts = opts || {};
             // 1) register routine in coordinator (assigns id)
-            const workerName = "rumo-vm-" + Math.random().toString(36).slice(2, 10);
+            const workerName = "vm-" + Math.random().toString(36).slice(2, 10);
             const routineId = await this._coord.call("routine.register", {
                 kind,
                 name: opts.path || opts.name || (kind + ".rumo"),
