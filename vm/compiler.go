@@ -40,6 +40,19 @@ type loop struct {
 	Breaks    []int
 }
 
+// switchCtx tracks state needed while compiling a switch statement so that
+// nested `fallthrough` and `break` statements can patch the correct jump
+// targets.
+type switchCtx struct {
+	// Fallthroughs is the list of jump-instruction positions emitted by
+	// fallthrough statements inside the *current* case clause. The switch
+	// compiler patches them to point at the next clause's body start.
+	Fallthroughs []int
+	// InLastClause is true while compiling the body of the final clause; a
+	// fallthrough statement is then a compile error (Go semantics).
+	InLastClause bool
+}
+
 // CompilerError represents a compiler error.
 type CompilerError struct {
 	FileSet *parser.SourceFileSet
@@ -70,6 +83,7 @@ type Compiler struct {
 	allowFileImport bool
 	loops           []*loop
 	loopIndex       int
+	switches        []*switchCtx
 	trace           io.Writer
 	indent          int
 	warnings        []*CompilerWarning
@@ -304,6 +318,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 		return c.compileForStmt(node)
 	case *parser.ForInStmt:
 		return c.compileForInStmt(node)
+	case *parser.SwitchStmt:
+		return c.compileSwitchStmt(node)
 	case *parser.BranchStmt:
 		if node.Token == token.Break {
 			curLoop := c.currentLoop()
@@ -319,6 +335,16 @@ func (c *Compiler) Compile(node parser.Node) error {
 			}
 			pos := c.emit(node, parser.OpJump, 0)
 			curLoop.Continues = append(curLoop.Continues, pos)
+		} else if node.Token == token.Fallthrough {
+			sw := c.currentSwitch()
+			if sw == nil {
+				return c.errorf(node, "fallthrough not allowed outside switch")
+			}
+			if sw.InLastClause {
+				return c.errorf(node, "cannot fallthrough final case in switch")
+			}
+			pos := c.emit(node, parser.OpJump, 0)
+			sw.Fallthroughs = append(sw.Fallthroughs, pos)
 		} else {
 			panic(fmt.Errorf("invalid branch statement: %s",
 				node.Token.String()))
@@ -1387,6 +1413,251 @@ func (c *Compiler) currentLoop() *loop {
 	}
 	return nil
 }
+
+func (c *Compiler) enterSwitch() *switchCtx {
+	sw := &switchCtx{}
+	c.switches = append(c.switches, sw)
+	return sw
+}
+
+func (c *Compiler) leaveSwitch() {
+	c.switches = c.switches[:len(c.switches)-1]
+}
+
+func (c *Compiler) currentSwitch() *switchCtx {
+	if n := len(c.switches); n > 0 {
+		return c.switches[n-1]
+	}
+	return nil
+}
+
+// compileSwitchStmt compiles a switch statement using only existing opcodes
+// (OpEqual, OpJumpFalsy, OpJump). Each case is auto-break (no implicit
+// fallthrough); explicit `fallthrough` jumps to the next clause's body, and
+// `break` exits the switch (handled via the loop break stack).
+func (c *Compiler) compileSwitchStmt(node *parser.SwitchStmt) error {
+	// Outer scope for Init.
+	c.symbolTable = c.symbolTable.Fork(true)
+	defer func() {
+		c.symbolTable = c.symbolTable.Parent(false)
+	}()
+
+	if node.Init != nil {
+		if err := c.Compile(node.Init); err != nil {
+			return err
+		}
+	}
+
+	hasTag := node.Tag != nil
+
+	// Separate clauses into cases and an optional default.
+	clauses := node.Body.Stmts
+	var defaultClause *parser.CaseClause
+	defaultIdx := -1
+	for i, st := range clauses {
+		cc, ok := st.(*parser.CaseClause)
+		if !ok {
+			return c.errorf(st, "non-case statement in switch body")
+		}
+		if cc.List == nil {
+			if defaultClause != nil {
+				return c.errorf(cc, "multiple default clauses in switch")
+			}
+			defaultClause = cc
+			defaultIdx = i
+		}
+	}
+
+	// Use the existing loop stack so `break` inside switch works without any
+	// VM/compiler changes. We reject `continue` collected on this frame.
+	br := c.enterLoop()
+	sw := c.enterSwitch()
+
+	// Build an ordered list of non-default cases (preserving textual order)
+	// plus the default at the end.
+	type caseInfo struct {
+		clause       *parser.CaseClause
+		matchJumps   []int // OpJumpFalsy slots that jump to next case match
+		bodyStart    int
+		fallthroughs []int // jump slots emitted via `fallthrough` in this body
+	}
+	var cases []*caseInfo
+	for i, st := range clauses {
+		if i == defaultIdx {
+			continue
+		}
+		cases = append(cases, &caseInfo{clause: st.(*parser.CaseClause)})
+	}
+
+	// caseEndJumps collects unconditional jumps to the switch end emitted
+	// after each (non-fallthrough) case body finishes.
+	var caseEndJumps []int
+
+	// Compile case-match preambles + bodies sequentially. The match preamble
+	// for case i ends with an OpJumpFalsy whose target is patched to the
+	// match-start of case i+1 (or default-start, or switch end).
+	for idx, ci := range cases {
+		// Patch previous case's "no match" jumps to point here.
+		if idx > 0 {
+			prev := cases[idx-1]
+			here := len(c.currentInstructions())
+			for _, jp := range prev.matchJumps {
+				c.changeOperand(jp, here)
+			}
+		}
+
+		// Match preamble: emit comparisons.
+		// Each comparison pushes a bool. We use OpJumpFalsy (which pops the
+		// value on both paths) to skip to the next comparison on a miss, and
+		// an unconditional OpJump to the body on a hit. The final
+		// comparison's OpJumpFalsy targets the next case's match start
+		// (recorded in matchJumps).
+		nExprs := len(ci.clause.List)
+		var trueJumps []int // unconditional jumps to body when match succeeds
+		for k, expr := range ci.clause.List {
+			if hasTag {
+				if err := c.Compile(node.Tag); err != nil {
+					c.leaveSwitch()
+					c.leaveLoop()
+					return err
+				}
+				if err := c.Compile(expr); err != nil {
+					c.leaveSwitch()
+					c.leaveLoop()
+					return err
+				}
+				c.emit(expr, parser.OpEqual)
+			} else {
+				if err := c.Compile(expr); err != nil {
+					c.leaveSwitch()
+					c.leaveLoop()
+					return err
+				}
+			}
+			if k < nExprs-1 {
+				// On miss, skip to next comparison; on hit, jump to body.
+				nextCmpJ := c.emit(expr, parser.OpJumpFalsy, 0)
+				bodyJ := c.emit(expr, parser.OpJump, 0)
+				trueJumps = append(trueJumps, bodyJ)
+				// Patch the OpJumpFalsy to land on the next iteration (i.e.
+				// after the OpJump we just emitted).
+				c.changeOperand(nextCmpJ, len(c.currentInstructions()))
+			}
+		}
+		// Final comparison: if false, jump to next case match start.
+		mj := c.emit(ci.clause, parser.OpJumpFalsy, 0)
+		ci.matchJumps = append(ci.matchJumps, mj)
+
+		// Patch all "match-true" short-circuit jumps to land here (body start).
+		bodyStart := len(c.currentInstructions())
+		ci.bodyStart = bodyStart
+		for _, jp := range trueJumps {
+			c.changeOperand(jp, bodyStart)
+		}
+
+		// Compile body in a fresh lexical scope.
+		c.symbolTable = c.symbolTable.Fork(true)
+		sw.InLastClause = (idx == len(cases)-1) && defaultClause == nil
+		// Save and reset per-clause fallthroughs so they only collect from
+		// statements compiled in *this* clause's body.
+		sw.Fallthroughs = nil
+		for _, st := range ci.clause.Body {
+			if err := c.Compile(st); err != nil {
+				c.symbolTable = c.symbolTable.Parent(false)
+				c.leaveSwitch()
+				c.leaveLoop()
+				return err
+			}
+		}
+		ci.fallthroughs = sw.Fallthroughs
+		sw.Fallthroughs = nil
+		c.symbolTable = c.symbolTable.Parent(false)
+
+		// After body: emit jump-to-end (unless last stmt was fallthrough,
+		// indicated by ci.fallthroughs being non-empty AND being the very
+		// last instruction; we conservatively always emit a jump-to-end and
+		// also patch fallthroughs separately to next clause body start).
+		endJ := c.emit(ci.clause, parser.OpJump, 0)
+		caseEndJumps = append(caseEndJumps, endJ)
+	}
+
+	// After all non-default cases, patch the *last* case's matchJumps so
+	// that on no-match we either fall to the default body or to switch end.
+	noMatchPos := len(c.currentInstructions())
+	if len(cases) > 0 {
+		last := cases[len(cases)-1]
+		for _, jp := range last.matchJumps {
+			c.changeOperand(jp, noMatchPos)
+		}
+	}
+
+	// Default clause body, if any.
+	var defaultBodyStart int = -1
+	if defaultClause != nil {
+		defaultBodyStart = len(c.currentInstructions())
+		c.symbolTable = c.symbolTable.Fork(true)
+		sw.InLastClause = true
+		sw.Fallthroughs = nil
+		for _, st := range defaultClause.Body {
+			if err := c.Compile(st); err != nil {
+				c.symbolTable = c.symbolTable.Parent(false)
+				c.leaveSwitch()
+				c.leaveLoop()
+				return err
+			}
+		}
+		// fallthrough from default is illegal; sw.Fallthroughs should be
+		// empty (validated when the statement is encountered).
+		c.symbolTable = c.symbolTable.Parent(false)
+	}
+
+	// Switch end position.
+	switchEnd := len(c.currentInstructions())
+
+	// Patch end-of-body jumps to switchEnd.
+	for _, jp := range caseEndJumps {
+		c.changeOperand(jp, switchEnd)
+	}
+
+	// Patch break statements to switchEnd.
+	if len(br.Continues) > 0 {
+		c.leaveSwitch()
+		c.leaveLoop()
+		return c.errorf(node, "continue not allowed inside switch")
+	}
+	for _, jp := range br.Breaks {
+		c.changeOperand(jp, switchEnd)
+	}
+
+	// Patch fallthrough jumps: each fallthrough goes to the next clause's
+	// body start (or default body start when emitted from the last
+	// non-default case).
+	for idx, ci := range cases {
+		if len(ci.fallthroughs) == 0 {
+			continue
+		}
+		var target int
+		if idx+1 < len(cases) {
+			target = cases[idx+1].bodyStart
+		} else if defaultBodyStart >= 0 {
+			target = defaultBodyStart
+		} else {
+			// Should have been caught at compile time (InLastClause).
+			c.leaveSwitch()
+			c.leaveLoop()
+			return c.errorf(ci.clause, "cannot fallthrough final case in switch")
+		}
+		for _, jp := range ci.fallthroughs {
+			c.changeOperand(jp, target)
+		}
+	}
+
+	c.leaveSwitch()
+	c.leaveLoop()
+	return nil
+}
+
+
 
 func (c *Compiler) currentInstructions() []byte {
 	return c.scopes[c.scopeIndex].Instructions

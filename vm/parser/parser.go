@@ -23,6 +23,7 @@ var stmtStart = map[token.Token]bool{
 	token.Export:   true,
 	token.Native:   true,
 	token.Type:     true,
+	token.Switch:   true,
 }
 
 // Error represents a parser error.
@@ -712,7 +713,9 @@ func (p *Parser) parseStmt() (stmt Stmt) {
 		return p.parseIfStmt()
 	case token.For:
 		return p.parseForStmt()
-	case token.Break, token.Continue:
+	case token.Switch:
+		return p.parseSwitchStmt()
+	case token.Break, token.Continue, token.Fallthrough:
 		return p.parseBranchStmt(p.token)
 	case token.Native:
 		return p.parseNativeStmt()
@@ -852,6 +855,90 @@ func (p *Parser) parseIfStmt() Stmt {
 		Cond:  cond,
 		Body:  body,
 		Else:  elseStmt,
+	}
+}
+
+func (p *Parser) parseSwitchStmt() Stmt {
+	if p.trace {
+		defer untracep(tracep(p, "SwitchStmt"))
+	}
+
+	pos := p.expect(token.Switch)
+
+	var init Stmt
+	var tag Expr
+
+	if p.token != token.LBrace {
+		prevLevel := p.exprLevel
+		p.exprLevel = -1
+
+		var s1 Stmt
+		if p.token != token.Semicolon {
+			s1 = p.parseSimpleStmt(false)
+		}
+		if p.token == token.Semicolon {
+			// init; tag
+			p.next()
+			init = s1
+			if p.token != token.LBrace {
+				s2 := p.parseSimpleStmt(false)
+				tag = p.makeExpr(s2, "switch tag expression")
+			}
+		} else {
+			// tag only
+			tag = p.makeExpr(s1, "switch tag expression")
+		}
+
+		p.exprLevel = prevLevel
+	}
+
+	lbrace := p.expect(token.LBrace)
+	var clauses []Stmt
+	for p.token == token.Case || p.token == token.Default {
+		clauses = append(clauses, p.parseCaseClause())
+	}
+	rbrace := p.expect(token.RBrace)
+	p.expectSemi()
+
+	return &SwitchStmt{
+		SwitchPos: pos,
+		Init:      init,
+		Tag:       tag,
+		Body: &BlockStmt{
+			LBrace: lbrace,
+			RBrace: rbrace,
+			Stmts:  clauses,
+		},
+	}
+}
+
+func (p *Parser) parseCaseClause() *CaseClause {
+	if p.trace {
+		defer untracep(tracep(p, "CaseClause"))
+	}
+
+	casePos := p.pos
+	var list []Expr
+	if p.token == token.Case {
+		p.next()
+		list = p.parseExprList()
+	} else {
+		// default
+		p.expect(token.Default)
+	}
+	colonPos := p.expect(token.Colon)
+
+	var body []Stmt
+	for p.token != token.Case && p.token != token.Default &&
+		p.token != token.RBrace && p.token != token.EOF {
+		body = append(body, p.parseStmt())
+	}
+
+	return &CaseClause{
+		CasePos: casePos,
+		List:    list,
+		Colon:   colonPos,
+		Body:    body,
 	}
 }
 

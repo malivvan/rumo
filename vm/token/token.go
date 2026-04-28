@@ -89,6 +89,10 @@ const (
 	Native
 	Type
 	Struct
+	Switch
+	Case
+	Default
+	Fallthrough
 	_keywordEnd
 )
 
@@ -168,6 +172,10 @@ var tokens = [...]string{
 	Native:       "native",
 	Type:         "type",
 	Struct:       "struct",
+	Switch:       "switch",
+	Case:         "case",
+	Default:      "default",
+	Fallthrough:  "fallthrough",
 }
 
 func (tok Token) String() string {

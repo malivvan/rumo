@@ -1,0 +1,31 @@
+fmt := import("fmt")
+
+switch "hello" {
+    case "hello":
+        fmt.println("Matched hello")
+    case "world":
+        fmt.println("Matched world")
+    default:
+        fmt.println("No match")
+}
+
+switch 42 {
+    case 1:
+        fmt.println("Matched 1")
+    case 42:
+        fmt.println("Matched 42")
+        fallthrough
+    case 100:
+        fmt.println("Matched 100")
+    default:
+        fmt.println("No match")
+}
+
+switch 1 {
+    case 2:
+        fmt.println("1 matches 2")
+    case 3:
+        fmt.println("1 matches 3")
+    default:
+        fmt.println("1 matches default")
+}

@@ -387,3 +387,80 @@ func (s *ReturnStmt) String() string {
 	}
 	return "return"
 }
+
+// SwitchStmt represents a switch statement.
+//
+//	switch [init;] [tag] { case ... ; case ... ; default ... }
+//
+// When Tag is nil, each case expression is evaluated as a boolean condition
+// (Go-style "switch true"). Body.Stmts contains *CaseClause nodes only.
+type SwitchStmt struct {
+	SwitchPos Pos
+	Init      Stmt       // optional
+	Tag       Expr       // optional; nil ⇒ boolean cases
+	Body      *BlockStmt // contains *CaseClause statements
+}
+
+func (s *SwitchStmt) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *SwitchStmt) Pos() Pos { return s.SwitchPos }
+
+// End returns the position of first character immediately after the node.
+func (s *SwitchStmt) End() Pos { return s.Body.End() }
+
+func (s *SwitchStmt) String() string {
+	var parts []string
+	parts = append(parts, "switch")
+	if s.Init != nil {
+		parts = append(parts, s.Init.String()+";")
+	}
+	if s.Tag != nil {
+		parts = append(parts, s.Tag.String())
+	}
+	parts = append(parts, s.Body.String())
+	return strings.Join(parts, " ")
+}
+
+// CaseClause represents a case or default clause in a switch statement.
+// List is nil for the default clause.
+type CaseClause struct {
+	CasePos Pos
+	List    []Expr // nil ⇒ default
+	Colon   Pos
+	Body    []Stmt
+}
+
+func (s *CaseClause) stmtNode() {}
+
+// Pos returns the position of first character belonging to the node.
+func (s *CaseClause) Pos() Pos { return s.CasePos }
+
+// End returns the position of first character immediately after the node.
+func (s *CaseClause) End() Pos {
+	if n := len(s.Body); n > 0 {
+		return s.Body[n-1].End()
+	}
+	return s.Colon + 1
+}
+
+func (s *CaseClause) String() string {
+	var head string
+	if s.List == nil {
+		head = "default:"
+	} else {
+		var exprs []string
+		for _, e := range s.List {
+			exprs = append(exprs, e.String())
+		}
+		head = "case " + strings.Join(exprs, ", ") + ":"
+	}
+	var stmts []string
+	for _, b := range s.Body {
+		stmts = append(stmts, b.String())
+	}
+	if len(stmts) == 0 {
+		return head
+	}
+	return head + " " + strings.Join(stmts, "; ")
+}
