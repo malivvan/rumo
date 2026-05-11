@@ -200,10 +200,31 @@ func (rl *readLine) ReadLine() (line string, err error) {
 	return line, nil
 }
 
-var newReadline = func(prompt string, stdin io.Reader, stdout, stderr io.Writer) func(completer *Completer) (ReadLine, error) {
+// ReadlineFactory is the signature of a function that creates a ReadLine for
+// the given prompt, streams and completer. Callers can replace the default
+// line-reader with a richer implementation (e.g. one backed by a readline
+// library) by calling SetReadlineFactory.
+type ReadlineFactory func(prompt string, stdin io.Reader, stdout, stderr io.Writer) func(completer *Completer) (ReadLine, error)
+
+var newReadline ReadlineFactory = func(prompt string, stdin io.Reader, stdout, stderr io.Writer) func(completer *Completer) (ReadLine, error) {
 	return func(completer *Completer) (ReadLine, error) {
 		return &readLine{stdin: stdin, stdout: stdout, stderr: stderr, prompt: prompt}, nil
 	}
+}
+
+// SetReadlineFactory replaces the readline implementation used by RunREPL.
+// Call this before RunREPL to provide a richer line-editor (history, tab
+// completion, etc.).  Pass nil to restore the built-in fallback.
+func SetReadlineFactory(f ReadlineFactory) {
+	if f == nil {
+		newReadline = func(prompt string, stdin io.Reader, stdout, stderr io.Writer) func(completer *Completer) (ReadLine, error) {
+			return func(completer *Completer) (ReadLine, error) {
+				return &readLine{stdin: stdin, stdout: stdout, stderr: stderr, prompt: prompt}, nil
+			}
+		}
+		return
+	}
+	newReadline = f
 }
 
 // RunREPL starts REPL. If modules is non-nil, each named module is imported
