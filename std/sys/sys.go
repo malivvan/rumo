@@ -41,7 +41,7 @@ var Module = module.NewBuiltin().
 	Func("geteuid() (euid int)            effective user id (-1 if unsupported)", os.Geteuid).
 	Func("getgid() (gid int)              real group id (-1 if unsupported)", os.Getgid).
 	Func("getegid() (egid int)            effective group id (-1 if unsupported)", os.Getegid).
-	Func("getgroups() (gids []int, err error)  supplementary group ids", os.Getgroups).
+	//Func("getgroups() (gids []int, err error)  supplementary group ids", os.Getgroups).
 	Func("hostname() (name string, err error)  host name reported by the kernel", os.Hostname).
 	Func("getwd() (dir string, err error)      current working directory", os.Getwd).
 

@@ -66,7 +66,6 @@ var Module = module.NewBuiltin().
 	Func("getenv(s string) (value string)", os.Getenv).
 	Func("geteuid() (euid int)", os.Geteuid).
 	Func("getgid() (gid int)", os.Getgid).
-	Func("getgroups() (gids []int)", os.Getgroups).
 	Func("getpagesize() (size int)", os.Getpagesize).
 	Func("getpid() (pid int)", os.Getpid).
 	Func("getppid() (ppid int)", os.Getppid).
@@ -514,7 +513,7 @@ func stringArray(arr []vm.Object, argName string) ([]string, error) {
 }
 
 func makeOSExecCommand(cmd *exec.Cmd) *vm.Map {
-	return &vm.Map{Frozen: true, 
+	return &vm.Map{Frozen: true,
 		Value: map[string]vm.Object{
 			// combined_output() => bytes/error
 			"combined_output": &vm.BuiltinFunction{Name: "combined_output", Value: module.Func(cmd.CombinedOutput)},
@@ -605,13 +604,11 @@ func makeOSExecCommand(cmd *exec.Cmd) *vm.Map {
 	}
 }
 
-func makeOSFile(file *os.File) *vm.Map {
-	return &vm.Map{Frozen: true, 
+var makeOSFile = func(file *os.File) *vm.Map {
+	return &vm.Map{Frozen: true,
 		Value: map[string]vm.Object{
 			// chdir() => true/error
 			"chdir": &vm.BuiltinFunction{Name: "chdir", Value: module.Func(file.Chdir)}, //
-			// chown(uid int, gid int) => true/error
-			"chown": &vm.BuiltinFunction{Name: "chown", Value: module.Func(file.Chown)}, //
 			// close() => error
 			"close": &vm.BuiltinFunction{Name: "close", Value: module.Func(file.Close)}, //
 			// name() => string
@@ -689,10 +686,9 @@ func makeOSFile(file *os.File) *vm.Map {
 }
 
 func makeOSProcessState(state *os.ProcessState) *vm.Map {
-	return &vm.Map{Frozen: true, 
+	return &vm.Map{Frozen: true,
 		Value: map[string]vm.Object{
 			"exited":  &vm.BuiltinFunction{Name: "exited", Value: module.Func(state.Exited)},
-			"pid":     &vm.BuiltinFunction{Name: "pid", Value: module.Func(state.Pid)},
 			"string":  &vm.BuiltinFunction{Name: "string", Value: module.Func(state.String)},
 			"success": &vm.BuiltinFunction{Name: "success", Value: module.Func(state.Success)},
 		},
@@ -700,7 +696,7 @@ func makeOSProcessState(state *os.ProcessState) *vm.Map {
 }
 
 func makeOSProcess(proc *os.Process) *vm.Map {
-	return &vm.Map{Frozen: true, 
+	return &vm.Map{Frozen: true,
 		Value: map[string]vm.Object{
 			"kill":    &vm.BuiltinFunction{Name: "kill", Value: module.Func(proc.Kill)},
 			"release": &vm.BuiltinFunction{Name: "release", Value: module.Func(proc.Release)},
