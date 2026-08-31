@@ -193,4 +193,3 @@ func (c *Compiler) compileNative(node *parser.NativeStmt) error {
 	}
 	return nil
 }
-

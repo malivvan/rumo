@@ -30,9 +30,9 @@ func (export *Export) String() string {
 //   - <output> is in the format "<argName> <type1|type2|...>".
 //   - <comment> is any additional information about the function.
 func ParseExport(s string) *Export {
-	if matches := funcInfoRe.FindStringSubmatch(s); matches != nil && len(matches) > 0 {
+	if matches := funcInfoRe.FindStringSubmatch(s); len(matches) > 0 {
 		return &Export{Name: matches[1], Inputs: parseParams(matches[2]), Output: parseParam(matches[4]), Comment: matches[5]}
-	} else if matches := constInfoRe.FindStringSubmatch(s); matches != nil && len(matches) > 0 {
+	} else if matches := constInfoRe.FindStringSubmatch(s); len(matches) > 0 {
 		switch matches[2] {
 		case "int":
 			return &Export{Name: matches[1], Comment: matches[3]}
@@ -51,7 +51,7 @@ func ParseExport(s string) *Export {
 		default:
 			panic(fmt.Errorf("unexpected type: %s", matches[2]))
 		}
-	} else if matches := bareNameRe.FindStringSubmatch(s); matches != nil && len(matches) > 0 {
+	} else if matches := bareNameRe.FindStringSubmatch(s); len(matches) > 0 {
 		return &Export{Name: matches[1], Comment: strings.TrimSpace(matches[2])}
 	}
 	panic(fmt.Errorf("unexpected export format: %s", s))
