@@ -126,14 +126,14 @@ func TestModule(t *testing.T) {
 	require.Module(t, "json").Call("encode", MAP{"foo": require.IMAP{"string": "bar"}}).Expect([]byte("{\"foo\":{\"string\":\"bar\"}}"))
 	require.Module(t, "json").Call("encode", MAP{"foo": MAP{"map1": MAP{"string": "bar"}}}).Expect([]byte("{\"foo\":{\"map1\":{\"string\":\"bar\"}}}"))
 	require.Module(t, "json").Call("encode", ARR{ARR{"bar", 1}, ARR{"bar", 1}}).Expect([]byte("[[\"bar\",1],[\"bar\",1]]"))
-	require.Module(t, "json").Call("decode", `5`).Expect(5.0)
+	require.Module(t, "json").Call("decode", `5`).Expect(5)
 	require.Module(t, "json").Call("decode", `"foo"`).Expect("foo")
-	require.Module(t, "json").Call("decode", `[1,2,3,"bar"]`).Expect(ARR{1.0, 2.0, 3.0, "bar"})
-	require.Module(t, "json").Call("decode", `{"foo":5}`).Expect(MAP{"foo": 5.0})
+	require.Module(t, "json").Call("decode", `[1,2,3,"bar"]`).Expect(ARR{1, 2, 3, "bar"})
+	require.Module(t, "json").Call("decode", `{"foo":5}`).Expect(MAP{"foo": 5})
 	require.Module(t, "json").Call("decode", `{"foo":2.5}`).Expect(MAP{"foo": 2.5})
 	require.Module(t, "json").Call("decode", `{"foo":true}`).Expect(MAP{"foo": true})
 	require.Module(t, "json").Call("decode", `{"foo":"bar"}`).Expect(MAP{"foo": "bar"})
-	require.Module(t, "json").Call("decode", `{"foo":[1,2,3,"bar"]}`).Expect(MAP{"foo": ARR{1.0, 2.0, 3.0, "bar"}})
+	require.Module(t, "json").Call("decode", `{"foo":[1,2,3,"bar"]}`).Expect(MAP{"foo": ARR{1, 2, 3, "bar"}})
 	require.Module(t, "json").Call("indent", []byte("{\"foo\":[\"bar\",1,1.8,56,true]}"), "", "  ").Expect([]byte(`{
   "foo": [
     "bar",

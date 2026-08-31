@@ -6,6 +6,7 @@ title: native
 ## Table of Contents
 
 - [Overview](#overview)
+- [Security: the allow-list](#security-the-allow-list)
 - [Syntax](#syntax)
 - [Type System](#type-system)
 - [Examples](#examples)
@@ -25,8 +26,30 @@ title: native
 
 Rumo can dynamically load shared C libraries at runtime and call exported
 symbols directly, with no Go `cgo` involvement. The feature is built on
-[`vm/purego`](https://github.com/malivvan/rumo/tree/master/vm/purego) and is
+[`purego`](https://github.com/ebitengine/purego) and is
 exposed through a dedicated **`native`** statement.
+
+## Security: the allow-list
+
+Loading arbitrary shared libraries from a script is dangerous, so the
+native feature is **deny-by-default**: every `dlopen` must be explicitly
+approved by the host application before the script runs.
+
+```go
+vm.AllowNativePath("/usr/lib/x86_64-linux-gnu/libm.so.6")
+```
+
+- An empty allow-list (the default) blocks every native load.
+- Both registration and load requests are canonicalised the same way
+  (absolute path + symlink resolution), so registering
+  `/usr/lib/./libm.so.6` also approves a script that spells the path
+  differently but resolves to the same file. Bare names like `libm.so.6`
+  are resolved through the dynamic-linker search path before matching.
+- `vm.ClearNativeAllowList()` resets the list (mainly for tests).
+- The allow-list governs *which libraries* may be loaded; it does not
+  restrict what the script does with the loaded symbols. Only allow
+  libraries you would be comfortable exposing to the script's full
+  permission set.
 
 A `native` statement:
 
@@ -237,7 +260,10 @@ symbols:
 
 `close()` is idempotent; calling it a second time is a no-op. After
 closing, do not invoke any previously-bound function on the library — the
-symbol pointers become invalid.
+symbol pointers become invalid. If a script never calls `close()`, rumo
+still releases the `dlopen` handle automatically when the compiled program
+becomes unreachable (via a finalizer), so long-running embedders do not
+leak one handle per compiled program.
 
 ```rumo
 native libm = "libm.so.6" {

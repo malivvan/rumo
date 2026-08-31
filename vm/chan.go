@@ -2,32 +2,26 @@ package vm
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 )
 
 // Chan is the script-visible channel object. It exposes the same surface as
 // the legacy `*Map{send,recv,close}` shape (so existing scripts work without
-// changes) but routes through a pluggable Core, which can be either:
+// changes) but is a dedicated reference type so `select` and future
+// operations can recognise channels reliably.
 //
-//   - LocalChanCore: backed by a Go channel (the native default).
-//   - RemoteChanCore: backed by a ChanTransport, used by the js/wasm runtime
-//     so that channels created in one SharedWorker can be used by send/recv
-//     calls running in a different SharedWorker.
-//
-// Each Chan has a globally unique int64 id within the running process. The
-// id is what travels over the wire when a Chan is marshalled into a routine
-// spawn payload. The receiving side resolves the id either to its own local
-// core (if it owns the channel) or to a RemoteChanCore that posts back to
-// the owner via a ChanTransport.
+// Every Chan is backed by a LocalChanCore, which wraps the objchan
+// implementation from routinevm.go so all close-state and abort semantics
+// keep working unchanged. Channels are single-process objects: they are
+// backed by a Go channel and never travel across process/worker boundaries.
 type Chan struct {
 	ObjectImpl
 	id   int64
 	core ChanCore
 }
 
-// ChanCore is the abstract backing for a Chan. Native and remote chans both
-// implement this. ctx is the caller's VM context — used to abort the call if
+// ChanCore is the abstract backing for a Chan. LocalChanCore is the only
+// implementation; ctx is the caller's VM context — used to abort the call if
 // the VM is being torn down.
 type ChanCore interface {
 	Send(ctx context.Context, val Object) error
@@ -36,21 +30,12 @@ type ChanCore interface {
 	ID() int64
 }
 
-// nextChanID hands out unique chan ids. Chan ids are addressable across the
-// transport layer; the coordinator's chan registry uses the same id space.
+// nextChanID hands out unique chan ids within the running process.
 var nextChanID atomic.Int64
 
 func newChanID() int64 { return nextChanID.Add(1) }
 
-// NewChanID mints a fresh globally-unique chan id without allocating a Chan.
-// Used by transports that own queues out-of-band (e.g. the js/wasm
-// SharedArrayBuffer-backed chan in the coordinator) but still need an id
-// in the same address space as locally-created chans.
-func NewChanID() int64 { return newChanID() }
-
-// NewLocalChan creates a buffered chan backed by a local Go channel. Used by
-// the native runtime and by the coordinator SharedWorker (which owns chan
-// queues and serves send/recv calls from remote vm-host workers).
+// NewLocalChan creates a buffered chan backed by a local Go channel.
 func NewLocalChan(buf int) *Chan {
 	id := newChanID()
 	return &Chan{
@@ -62,14 +47,7 @@ func NewLocalChan(buf int) *Chan {
 	}
 }
 
-// NewRemoteChan returns a Chan whose send/recv/close calls route through the
-// supplied transport. Useful for vm-host SharedWorkers that need to interact
-// with channels owned by the coordinator.
-func NewRemoteChan(id int64, tr ChanTransport) *Chan {
-	return &Chan{id: id, core: &RemoteChanCore{id: id, tr: tr}}
-}
-
-// ID returns the chan's globally-unique id. Used by the wire codec.
+// ID returns the chan's unique id.
 func (c *Chan) ID() int64 { return c.id }
 
 // Core returns the underlying core. Mostly useful for tests.
@@ -94,8 +72,8 @@ func (c *Chan) Equals(other Object) bool {
 }
 
 // IndexGet exposes the script-visible methods. Returns BuiltinFunction values
-// that close over the Chan's core, so `c.send(v)` and `c.recv()` work the
-// same on local and remote chans.
+// that close over the Chan's core, so `c.send(v)` and `c.recv()` work as
+// before.
 func (c *Chan) IndexGet(index Object) (Object, error) {
 	name, ok := index.(*String)
 	if !ok {
@@ -143,7 +121,7 @@ func (c *Chan) scriptClose(ctx context.Context, args ...Object) (Object, error) 
 	return nil, c.core.Close()
 }
 
-// LocalChanCore is the native, in-process backing for a Chan. It re-uses the
+// LocalChanCore is the in-process backing for a Chan. It re-uses the
 // pre-existing objchan struct so that all the existing close-state and abort
 // semantics keep working unchanged.
 type LocalChanCore struct {
@@ -165,70 +143,4 @@ func (l *LocalChanCore) Recv(ctx context.Context) (Object, error) {
 func (l *LocalChanCore) Close() error {
 	_, err := l.oc.closeChan(context.Background())
 	return err
-}
-
-// ChanTransport is the abstract wire used by RemoteChanCore. It carries
-// chan ops between SharedWorkers (in js/wasm) or between processes (any
-// future RPC backend). Implementations must serialise the value via the live
-// codec and may block until the remote side acks.
-type ChanTransport interface {
-	// SendOp blocks until the owner accepts the value or returns an error.
-	SendOp(ctx context.Context, chanID int64, val Object) error
-	// RecvOp blocks until the owner returns a value or an error.
-	RecvOp(ctx context.Context, chanID int64) (Object, error)
-	// CloseOp closes the chan on the owner side.
-	CloseOp(ctx context.Context, chanID int64) error
-}
-
-// RemoteChanCore proxies ops to a ChanTransport. The id identifies the
-// channel in the owner's registry.
-type RemoteChanCore struct {
-	id int64
-	tr ChanTransport
-}
-
-func (r *RemoteChanCore) ID() int64 { return r.id }
-
-func (r *RemoteChanCore) Send(ctx context.Context, val Object) error {
-	return r.tr.SendOp(ctx, r.id, val)
-}
-
-func (r *RemoteChanCore) Recv(ctx context.Context) (Object, error) {
-	return r.tr.RecvOp(ctx, r.id)
-}
-
-func (r *RemoteChanCore) Close() error {
-	return r.tr.CloseOp(context.Background(), r.id)
-}
-
-// ChanRegistry tracks every locally-owned chan by id so that incoming
-// transport messages can resolve the target. Both the coordinator (which
-// hosts every queue) and any VM that creates a chan locally use this.
-type ChanRegistry struct {
-	mu     sync.RWMutex
-	chans  map[int64]*Chan
-}
-
-// NewChanRegistry returns an empty registry.
-func NewChanRegistry() *ChanRegistry { return &ChanRegistry{chans: map[int64]*Chan{}} }
-
-// Register inserts a chan into the registry, keyed by its id.
-func (r *ChanRegistry) Register(c *Chan) {
-	r.mu.Lock()
-	r.chans[c.ID()] = c
-	r.mu.Unlock()
-}
-
-// Lookup returns the chan associated with id (or nil).
-func (r *ChanRegistry) Lookup(id int64) *Chan {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.chans[id]
-}
-
-// Forget removes id from the registry. Called by Close paths.
-func (r *ChanRegistry) Forget(id int64) {
-	r.mu.Lock()
-	delete(r.chans, id)
-	r.mu.Unlock()
 }

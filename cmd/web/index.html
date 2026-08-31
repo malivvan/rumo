@@ -133,23 +133,18 @@
         <button id="spawn">spawn (routine)</button>
         <button id="cancel" disabled>cancel routine</button>
         <button id="clear">clear output</button>
-        <select id="demo" style="margin-left:0.5rem; font-size:0.85rem; padding:0.35rem;">
-            <option value="">— load demo —</option>
-            <option value="ping-pong">ping/pong (chan + go)</option>
-            <option value="fmt-routine">fmt_with_routine (3 child SharedWorkers)</option>
-        </select>
     </div>
 
     <div class="row">
         <div class="panel">
             <h2>source <span class="small" id="srcInfo"></span></h2>
             <textarea id="src" spellcheck="false">fmt := import("fmt")
-time := import("time")
+times := import("times")
 
 ping := chan(4)
 pong := chan(4)
 
-start func() {
+go func() {
     for i := 0; i < 5; i++ {
         msg := ping.recv()
         fmt.println("worker got:", msg)
@@ -160,7 +155,7 @@ start func() {
 for i := 0; i < 5; i++ {
     ping.send(i)
     fmt.println("main got:", pong.recv())
-    time.sleep(time.millisecond * 50)
+    times.sleep(times.millisecond * 50)
 }
 fmt.println("done.")
 </textarea>
@@ -260,38 +255,6 @@ fmt.println("done.")
 
         $("clear").onclick = () => { out.textContent = ""; };
 
-        // ─── demo loader ────────────────────────────────────────────────────
-        const PING_PONG_DEMO = $("src").value;
-        const DEMO_URLS = {
-            "fmt-routine": "./demos/fmt_with_routine.rumo",
-        };
-        const DEMO_INLINE = {
-            "ping-pong": PING_PONG_DEMO,
-        };
-        $("demo").onchange = async (e) => {
-            const key = e.target.value;
-            e.target.value = "";
-            if (!key) return;
-            try {
-                let src = DEMO_INLINE[key];
-                if (src === undefined) {
-                    const url = DEMO_URLS[key];
-                    if (!url) { append("\n[demo] unknown: " + key + "\n"); return; }
-                    const r = await fetch(url, { cache: "no-store" });
-                    if (!r.ok) throw new Error(r.status + " " + r.statusText);
-                    src = await r.text();
-                }
-                $("src").value = src;
-                srcInfo.textContent = "(loaded demo: " + key + ")";
-                lastBytecode = null;
-                $("runc").disabled = true;
-                out.textContent = "";
-                $("run").click();
-            } catch (err) {
-                append("\n[demo load error] " + err.message + "\n");
-            }
-        };
-
         $("fsAdd").onclick = async () => {
             const name = $("fsName").value.trim();
             if (!name) {
@@ -344,11 +307,7 @@ fmt.println("done.")
                 body.innerHTML = '<tr class="empty"><td colspan="8" class="empty">(none)</td></tr>';
                 return;
             }
-            // Render a flat list sorted by id. The hierarchical worker name
-            // (e.g. "vm-abc/go-12/go-17") already encodes the parent/child
-            // relationship, so a tree view would be redundant.
-            const sorted = list.slice().sort((a, b) => a.id - b.id);
-            const rows = sorted.map((r) => {
+            body.innerHTML = list.map(r => {
                 const dur = r.endedAtMs ? r.durationMs + "ms" : fmtAge(r.durationMs);
                 const worker = r.workerName ? escapeHTML(r.workerName) : "<span class=\"small\">—</span>";
                 return `<tr class="r-${r.state}">
@@ -361,8 +320,7 @@ fmt.println("done.")
                     <td>${fmtBytes(r.bytesOut)}</td>
                     <td class="err">${r.error ? escapeHTML(r.error) : ""}</td>
                 </tr>`;
-            });
-            body.innerHTML = rows.join("");
+            }).join("");
         }
 
         $("rPrune").onclick = async () => {

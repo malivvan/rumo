@@ -94,46 +94,9 @@ type Config struct {
 	MaxFormatWidth int
 
 	// Permissions restricts which privileged os-module operations are allowed.
-	// The zero value of Permissions allows all operations.
+	// The zero value of Permissions denies all operations (deny-by-default);
+	// grant capabilities explicitly or use UnrestrictedPermissions().
 	Permissions Permissions
-
-	// Spawner overrides the in-process goroutine used by the `go fn(...)` /
-	// routine.start primitive. When non-nil, the VM calls Spawner instead of
-	// launching a child VM via `go func() { vm.RunCompiled(...) }()`. The
-	// returned RoutineHandle is wrapped in the script-visible
-	// {result, wait, stop} object.
-	//
-	// Native builds leave Spawner nil so behaviour is unchanged. The js/wasm
-	// runtime installs a Spawner that posts a `runVM` message to a fresh
-	// SharedWorker per call, realising the "every `go` is its own worker"
-	// model.
-	Spawner func(ctx context.Context, fn Object, args []Object) (RoutineHandle, error)
-
-	// ChanFactory overrides the backing implementation returned by the `chan`
-	// builtin. When nil, builtinChan returns the local Go-channel-backed
-	// implementation. The js/wasm runtime installs a factory that returns a
-	// channel proxy whose send/recv route through the coordinator
-	// SharedWorker, so values can travel across worker boundaries.
-	ChanFactory func(buf int) (Object, error)
-}
-
-// RoutineHandle is the abstract interface satisfied by both the goroutine-
-// backed routineVM and the SharedWorker-backed remote routine. The result of
-// `go fn(...)` is wrapped in a script-level Map exposing {result, wait,
-// stop}; those methods all delegate to the methods below.
-type RoutineHandle interface {
-	// Result blocks until the routine completes and returns its value or an
-	// Error wrapper. ctx is the caller's VM context (used by the host to
-	// abort if the parent VM is being torn down).
-	Result(ctx context.Context) (Object, error)
-
-	// Wait blocks until the routine completes or `seconds` elapses (negative
-	// means wait forever). Returns true if completed in time.
-	Wait(ctx context.Context, seconds int64) bool
-
-	// Cancel signals the routine to abort. It must be safe to call multiple
-	// times and from any goroutine.
-	Cancel()
 }
 
 // defaultCfg holds the canonical default limits as a value type.
@@ -183,7 +146,7 @@ var DefaultConfig = &defaultCfg
 // functions directly with context.Background()), DefaultConfig is returned
 // as a fallback so existing behaviour is preserved.
 func ConfigFromContext(ctx context.Context) *Config {
-	if v, _ := ctx.Value(ContextKey("vm")).(*VM); v != nil {
+	if v, ok := VMFromContext(ctx); ok {
 		return v.config
 	}
 	return DefaultConfig
@@ -443,6 +406,8 @@ func ToPtr(o Object) (v unsafe.Pointer, ok bool) {
 
 // ToBool will try to convert object o to bool value.
 func ToBool(o Object) (v bool, ok bool) {
+	// ok is always true: every Object has a well-defined truthiness
+	// (IsFalsy). Callers must not use ok as a conversion-failure signal.
 	ok = true
 	v = !o.IsFalsy()
 	return
@@ -476,10 +441,10 @@ func ToByteSlice(o Object) (v []byte, ok bool) {
 
 // ToInterface attempts to convert an object o to an interface{} value
 func ToInterface(o Object) (res interface{}) {
-	return toInterfaceWithMemo(o, make(map[uintptr]interface{}))
+	return toInterfaceWithMemo(o, make(map[Object]interface{}))
 }
 
-func toInterfaceWithMemo(o Object, memo map[uintptr]interface{}) (res interface{}) {
+func toInterfaceWithMemo(o Object, memo map[Object]interface{}) (res interface{}) {
 	switch o := o.(type) {
 	case *Int:
 		res = o.Value
@@ -514,7 +479,7 @@ func toInterfaceWithMemo(o Object, memo map[uintptr]interface{}) (res interface{
 	case *Ptr:
 		res = o.Value
 	case *Array:
-		key := uintptr(unsafe.Pointer(o))
+		key := Object(o)
 		if existing, ok := memo[key]; ok {
 			return existing
 		}
@@ -525,7 +490,7 @@ func toInterfaceWithMemo(o Object, memo map[uintptr]interface{}) (res interface{
 		}
 		res = sl
 	case *Map:
-		key := uintptr(unsafe.Pointer(o))
+		key := Object(o)
 		if existing, ok := memo[key]; ok {
 			return existing
 		}

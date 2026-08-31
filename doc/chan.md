@@ -19,13 +19,13 @@ bufferedChan.send([66, chan(1)]) // channel in channel
 // Receive will block if the channel is empty.
 obj := bufferedChan.recv()
 
-// Send to a closed channel causes panic.
+// Send to a closed channel returns an error.
 // Receive from a closed channel returns undefined value.
 unbufferedChan.close()
 bufferedChan.close()
 ```
 
-On the time the VM that the chan is running in is cancelled, the sending
-or receiving call returns immediately.
+When the VM that the channel is running in is cancelled, the sending or
+receiving call returns immediately.
 See also: [select](select.md) for waiting on multiple channel operations
 in a single statement.

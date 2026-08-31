@@ -134,8 +134,8 @@ var Module = module.NewBuiltin().
 // context, falling back to unrestricted when no VM is present (direct calls
 // from tests etc.).
 func permsFromCtx(ctx context.Context) vm.Permissions {
-	v, ok := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
-	if !ok || v == nil {
+	v, ok := vm.VMFromContext(ctx)
+	if !ok {
 		return vm.UnrestrictedPermissions()
 	}
 	return v.Permissions()

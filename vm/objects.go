@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/malivvan/rumo/vm/parser"
 	"github.com/malivvan/rumo/vm/token"
@@ -250,11 +249,11 @@ func (o *Array) TypeName() string {
 }
 
 func (o *Array) String() string {
-	return o.stringWithVisited(make(map[uintptr]bool))
+	return o.stringWithVisited(make(map[Object]bool))
 }
 
-func (o *Array) stringWithVisited(vis map[uintptr]bool) string {
-	key := uintptr(unsafe.Pointer(o))
+func (o *Array) stringWithVisited(vis map[Object]bool) string {
+	key := Object(o)
 	if vis[key] {
 		return "[...]"
 	}
@@ -295,11 +294,11 @@ func (o *Array) BinaryOp(op token.Token, rhs Object) (Object, error) {
 
 // Copy returns a copy of the type.
 func (o *Array) Copy() Object {
-	return o.copyWithMemo(make(map[uintptr]Object))
+	return o.copyWithMemo(make(map[Object]Object))
 }
 
-func (o *Array) copyWithMemo(memo map[uintptr]Object) Object {
-	key := uintptr(unsafe.Pointer(o))
+func (o *Array) copyWithMemo(memo map[Object]Object) Object {
+	key := Object(o)
 	if existing, ok := memo[key]; ok {
 		return existing
 	}
@@ -326,21 +325,17 @@ func (o *Array) IsFalsy() bool {
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *Array) Equals(x Object) bool {
-	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
+	return o.equalsWithVisited(x, make(map[[2]Object]bool))
 }
 
-func (o *Array) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
-	oPtr := uintptr(unsafe.Pointer(o))
+func (o *Array) equalsWithVisited(xObj Object, vis map[[2]Object]bool) bool {
+	oPtr := Object(o)
 	xArr, ok := xObj.(*Array)
 	if !ok {
 		return false
 	}
-	xPtr := uintptr(unsafe.Pointer(xArr))
-	lo, hi := oPtr, xPtr
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	pairKey := [2]uintptr{lo, hi}
+	xPtr := Object(xArr)
+	pairKey := [2]Object{oPtr, xPtr}
 	if vis[pairKey] {
 		return true // assume equal on cycle
 	}
@@ -482,6 +477,13 @@ func (o *BuiltinFunction) Copy() Object {
 // Equals returns true if the value of the type is equal to the value of
 // another object. Two BuiltinFunction instances are equal when they share
 // the same non-empty name, which uniquely identifies a builtin in the registry.
+// Equals compares builtin functions by name. This is deliberate: builtins
+// are marshalled by name (a deserialised builtin is re-bound to the
+// same-named entry in the builtin table), so equality must survive a
+// bytecode round-trip. Consequence: the builtin name space is global —
+// a host-injected BuiltinFunction{Name: "len"} compares equal to the
+// stdlib len. Hosts must therefore use unique names for their own
+// callables and never reuse the name of an existing builtin.
 func (o *BuiltinFunction) Equals(x Object) bool {
 	t, ok := x.(*BuiltinFunction)
 	if !ok {
@@ -1352,11 +1354,11 @@ func (o *Map) TypeName() string {
 }
 
 func (o *Map) String() string {
-	return o.stringWithVisited(make(map[uintptr]bool))
+	return o.stringWithVisited(make(map[Object]bool))
 }
 
-func (o *Map) stringWithVisited(vis map[uintptr]bool) string {
-	key := uintptr(unsafe.Pointer(o))
+func (o *Map) stringWithVisited(vis map[Object]bool) string {
+	key := Object(o)
 	if vis[key] {
 		return "{...}"
 	}
@@ -1377,11 +1379,11 @@ func (o *Map) stringWithVisited(vis map[uintptr]bool) string {
 
 // Copy returns a copy of the type.
 func (o *Map) Copy() Object {
-	return o.copyWithMemo(make(map[uintptr]Object))
+	return o.copyWithMemo(make(map[Object]Object))
 }
 
-func (o *Map) copyWithMemo(memo map[uintptr]Object) Object {
-	key := uintptr(unsafe.Pointer(o))
+func (o *Map) copyWithMemo(memo map[Object]Object) Object {
+	key := Object(o)
 	if existing, ok := memo[key]; ok {
 		return existing
 	}
@@ -1409,21 +1411,17 @@ func (o *Map) IsFalsy() bool {
 // Equals returns true if the value of the type is equal to the value of
 // another object.
 func (o *Map) Equals(x Object) bool {
-	return o.equalsWithVisited(x, make(map[[2]uintptr]bool))
+	return o.equalsWithVisited(x, make(map[[2]Object]bool))
 }
 
-func (o *Map) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
-	oPtr := uintptr(unsafe.Pointer(o))
+func (o *Map) equalsWithVisited(xObj Object, vis map[[2]Object]bool) bool {
+	oPtr := Object(o)
 	xMap, ok := xObj.(*Map)
 	if !ok {
 		return false
 	}
-	xPtr := uintptr(unsafe.Pointer(xMap))
-	lo, hi := oPtr, xPtr
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	pairKey := [2]uintptr{lo, hi}
+	xPtr := Object(xMap)
+	pairKey := [2]Object{oPtr, xPtr}
 	if vis[pairKey] {
 		return true // assume equal on cycle
 	}
@@ -1758,7 +1756,7 @@ func (o *Undefined) Value() Object {
 
 // equalsElem calls the cycle-safe equalsWithVisited for container types;
 // for all other types it delegates to the normal Equals method.
-func equalsElem(a, b Object, vis map[[2]uintptr]bool) bool {
+func equalsElem(a, b Object, vis map[[2]Object]bool) bool {
 	switch a := a.(type) {
 	case *Array:
 		return a.equalsWithVisited(b, vis)
@@ -1772,7 +1770,7 @@ func equalsElem(a, b Object, vis map[[2]uintptr]bool) bool {
 
 // copyElem calls the cycle-safe copyWithMemo for container types;
 // for all other types it delegates to the normal Copy method.
-func copyElem(o Object, memo map[uintptr]Object) Object {
+func copyElem(o Object, memo map[Object]Object) Object {
 	switch o := o.(type) {
 	case *Array:
 		return o.copyWithMemo(memo)
@@ -1786,7 +1784,7 @@ func copyElem(o Object, memo map[uintptr]Object) Object {
 
 // elemString calls the cycle-safe stringWithVisited for container types;
 // for all other types it delegates to the normal String method.
-func elemString(o Object, vis map[uintptr]bool) string {
+func elemString(o Object, vis map[Object]bool) string {
 	switch o := o.(type) {
 	case *Array:
 		return o.stringWithVisited(vis)

@@ -36,9 +36,28 @@ func makeTestVM() *VM {
 	return NewVM(context.Background(), bytecode, make([]Object, DefaultConfig.GlobalsSize), nil)
 }
 
+// TestTruncatedBytecodeFailsCleanly ensures a hand-crafted instruction
+// stream that ends mid-instruction produces ErrTruncatedBytecode instead of
+// an out-of-range panic.
+func TestTruncatedBytecodeFailsCleanly(t *testing.T) {
+	fs := parser.NewFileSet()
+	fs.AddFile("test", -1, 1)
+	bytecode := &Bytecode{
+		MainFunction: &CompiledFunction{
+			// OpConstant with a missing 2-byte operand.
+			Instructions: []byte{byte(parser.OpConstant)},
+			SourceMap:    make(map[int]parser.Pos),
+		},
+		FileSet: fs,
+	}
+	v := NewVM(context.Background(), bytecode, make([]Object, DefaultConfig.GlobalsSize), nil)
+	if err := v.Run(); err == nil {
+		t.Fatal("expected error for truncated bytecode, got nil")
+	}
+}
+
 func TestAbortDoesNotCancelNonCompiledRoutine(t *testing.T) {
 	v := makeTestVM()
-
 	// Create an independent context for a non-compiled routine.
 	// This is NOT derived from the parent VM's context, so context
 	// cascade from v.stop() will NOT reach it. Only explicit

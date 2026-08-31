@@ -7,6 +7,7 @@
 package json
 
 import (
+	"bytes"
 	"strconv"
 	"unicode"
 	"unicode/utf16"
@@ -220,8 +221,17 @@ func (d *decodeState) literal() (vm.Object, error) {
 		if c != '-' && (c < '0' || c > '9') {
 			panic(phasePanicMsg)
 		}
-		n, _ := strconv.ParseFloat(string(item), 10)
-			return &vm.Float64{Value: n}, nil
+		s := string(item)
+		// Integer literals (no '.', 'e' or 'E') decode as *vm.Int when they
+		// fit, preserving precision beyond 2^53; everything else is a
+		// float64.
+		if !bytes.ContainsAny(item, ".eE") {
+			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+				return &vm.Int{Value: n}, nil
+			}
+		}
+		n, _ := strconv.ParseFloat(s, 64)
+		return &vm.Float64{Value: n}, nil
 	}
 }
 

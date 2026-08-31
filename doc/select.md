@@ -31,9 +31,9 @@ default:                   // optional: fires when no other case is ready
 - A `break` statement inside a case body exits the surrounding select.
 - `continue` and `fallthrough` are not allowed inside `select`.
 - Per-case bindings (`v`, `ok`) are scoped to that case body only.
-- Only locally-created channels (those returned by `chan(...)`) may
-  participate in a select.  Channels backed by remote transports raise a
-  runtime error.
+- Channels are in-process objects: only channels created by `chan(...)` can
+  participate in a select. Scripts cannot construct foreign channel
+  backings, so every script-created channel is selectable.
 
 ## Examples
 

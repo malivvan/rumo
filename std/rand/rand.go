@@ -1,3 +1,7 @@
+// Package rand exposes Go's math/rand pseudo-random generator. The output is
+// deterministic and fast, but it is NOT cryptographically secure: never use
+// it for session tokens, secrets, keys or anything security-sensitive. Use
+// the crand module (crypto/rand) for those purposes.
 package rand
 
 import (
@@ -9,12 +13,12 @@ import (
 )
 
 var Module = module.NewBuiltin().
-	Func("int() (v int)", rand.Int63).
-	Func("float() (v float)", rand.Float64).
-	Func("intn(n int) (v int)", rand.Int63n).
-	Func("exp_float() (v float)", rand.ExpFloat64).
-	Func("norm_float() (v float)", rand.NormFloat64).
-	Func("perm(n int) (v []int)", rand.Perm).
+	Func("int() (v int)						non-cryptographic random int in [0, 2^63); use crand for secrets", rand.Int63).
+	Func("float() (v float)					non-cryptographic random float in [0.0, 1.0)", rand.Float64).
+	Func("intn(n int) (v int)					non-cryptographic random int in [0, n); use crand for secrets", rand.Int63n).
+	Func("exp_float() (v float)				non-cryptographic exponentially distributed float", rand.ExpFloat64).
+	Func("norm_float() (v float)				non-cryptographic normally distributed float", rand.NormFloat64).
+	Func("perm(n int) (v []int)				non-cryptographic random permutation of [0, n)", rand.Perm).
 	Func("read(b bytes) (n int, err error)", func(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
 		if len(args) != 1 {
 			return nil, vm.ErrWrongNumArguments

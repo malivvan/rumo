@@ -79,6 +79,15 @@ var (
 	// IndexSet, append-in-place, delete) a value that has been frozen via the
 	// `freeze` builtin or constructed as a frozen module export.
 	ErrModifyFrozen = errors.New("cannot modify frozen object")
+
+	// ErrNoVM is returned when a builtin that requires a running VM (e.g.
+	// routine.start / routine.stop) is invoked from a context without one.
+	ErrNoVM = errors.New("no VM in context")
+
+	// ErrTruncatedBytecode is returned when the instruction stream ends in
+	// the middle of an instruction (hand-crafted or corrupted bytecode)
+	// instead of panicking with an out-of-range index.
+	ErrTruncatedBytecode = errors.New("truncated bytecode: instruction stream ends mid-instruction")
 )
 
 // ErrInvalidArgumentType represents an invalid argument value type error.

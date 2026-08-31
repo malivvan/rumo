@@ -1,33 +1,23 @@
 //go:build js && wasm
 
 // main_js.go is the js/wasm entrypoint. It exposes a JavaScript API that
-// mirrors the github.com/malivvan/rumo Go package.
+// mirrors the github.com/malivvan/rumo Go package and is intended to run
+// inside a SharedWorker so that all page contexts that connect to the worker
+// share a single rumo runtime, a single in-memory filesystem, and a single
+// routine registry.
 //
 // Architecture
 //
-//	page tab(s) ──connect──▶ rumo-coordinator (SharedWorker)
-//	                            │
-//	                            ├── shared in-mem FS
-//	                            ├── module registry
-//	                            ├── monitor / routine registry
-//	                            └── chan registry
+//	page tab(s)  ──connect──▶  SharedWorker  ──hosts──▶  WASM runtime (this binary)
+//	                              port                     │
+//	                                                       ├── shared in-mem FS
+//	                                                       ├── module registry
+//	                                                       └── routine registry
 //
-//	page tab    ──new Worker─▶ vm-<id>        (DedicatedWorker, one per VM run)
-//	                            │
-//	                            └─ on `go fn()` ─▶ vm-<id>-<n>
-//	                                                (DedicatedWorker child)
-//
-// The coordinator is a SharedWorker because its state is shared across
-// every page tab on the same origin. Each VM run, however, lives in its
-// own DedicatedWorker so that every running rumo VM appears as a separate
-// worker in DevTools and as a distinct row in the live monitor.
-// DedicatedWorker is also used for `go fn()` children because SharedWorker
-// scopes are forbidden from constructing further SharedWorkers
-// (https://crbug.com/1102827).
-//
-// The same API is also registered on the global object directly, so the
-// binary also works when loaded into the main thread or a plain Worker for
-// testing or single-context scripting (the "standalone" role).
+// The same API is also registered on the global object directly, so the binary
+// also works when loaded into the main thread or a dedicated Worker for
+// testing or single-context scripting. The SharedWorker `onconnect` hook adds
+// a MessagePort bridge that forwards `postMessage` calls to the same API.
 package main
 
 import (
@@ -36,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall/js"
@@ -50,10 +41,10 @@ import (
 // shared filesystem
 // ---------------------------------------------------------------------------
 
-// fsStore is the in-memory filesystem owned by the coordinator and shared
-// by every VM running on the page. Scripts launched through `rumo.run` see
-// this map merged with their entrypoint source so that imports resolve
-// against the same files the page placed via `rumo.fs.put`.
+// fsStore is the in-memory filesystem shared by every VM running in this
+// SharedWorker. Scripts launched through `rumo.run` see this map merged with
+// their entrypoint source so that imports resolve against the same files the
+// page placed via `rumo.fs.put`.
 type fsStore struct {
 	mu    sync.RWMutex
 	files map[string][]byte
@@ -149,8 +140,8 @@ type routine struct {
 	outMu  sync.Mutex
 	outBuf bytes.Buffer
 	// onChunk is invoked for every stdout chunk. Callers attach it through
-	// spawn options or, for coordinator port clients, the bridge plugs in
-	// a chunk forwarder that posts {type:"output"} messages over the port.
+	// spawn options or, for SharedWorker clients, the bridge plugs in a
+	// chunk forwarder that posts {type:"output"} messages over the port.
 	onChunk func(string)
 
 	doneCh chan struct{}
@@ -159,15 +150,13 @@ type routine struct {
 
 	// monitoring fields exposed via rumo.routines()
 	name       string
-	kind       string // "run" | "spawn" | "runCompiled" | "remote" | "go"
-	workerName string // DedicatedWorker name hosting this VM (empty for in-process routines)
-	parentID   int64  // 0 == top-level (no parent); otherwise the spawning routine's id
+	kind       string // "run" | "spawn" | "runCompiled" | "remote"
+	workerName string // SharedWorker name when the VM runs in a dedicated worker
 	startedAt  time.Time
 	endedAt    atomic.Int64 // unix nano; 0 while running
 	bytesOut   atomic.Int64
 	state      atomic.Int32 // routineRunning / routineDone / routineError / routineCancel
 	errStr     atomic.Pointer[string]
-	childSeq   atomic.Int64 // per-parent child counter for hierarchical worker names
 }
 
 // Write makes the routine an io.Writer for VM stdout.
@@ -231,7 +220,6 @@ func (r *routine) snapshot(now time.Time) js.Value {
 	obj.Set("name", r.name)
 	obj.Set("kind", r.kind)
 	obj.Set("workerName", r.workerName)
-	obj.Set("parentId", r.parentID)
 	obj.Set("state", r.stateString())
 	obj.Set("bytesOut", r.bytesOut.Load())
 	obj.Set("startedAtMs", r.startedAt.UnixMilli())
@@ -560,15 +548,6 @@ func compileSource(source []byte, path string) ([]byte, error) {
 // `kind` is one of "run", "runCompiled", or "spawn"; `name` is the script
 // path or label shown in the monitor.
 func newRoutine(kind, name string) *routine {
-	rt := allocRoutine(kind, name)
-	monitor.emitSpawned(rt)
-	return rt
-}
-
-// allocRoutine is the no-emit variant. Callers that need to set additional
-// fields (e.g. parentID, workerName) before observers see the routine should
-// allocate, mutate, then emit themselves via monitor.emitSpawned.
-func allocRoutine(kind, name string) *routine {
 	ctx, cancel := context.WithCancel(context.Background())
 	pr, pw := io.Pipe()
 	rt := &routine{
@@ -587,6 +566,7 @@ func allocRoutine(kind, name string) *routine {
 	}
 	rt.name = name
 	routines.add(rt)
+	monitor.emitSpawned(rt)
 	return rt
 }
 
@@ -918,7 +898,7 @@ func jsFsClear(this js.Value, args []js.Value) any {
 }
 
 // ---------------------------------------------------------------------------
-// API installer + worker bridges
+// API installer + SharedWorker bridge
 // ---------------------------------------------------------------------------
 
 func installAPI(target js.Value) {
@@ -950,7 +930,7 @@ func installAPI(target js.Value) {
 }
 
 // inSharedWorker reports whether the global scope of this WASM instance is a
-// SharedWorkerGlobalScope. Only the coordinator role runs in a SharedWorker.
+// SharedWorkerGlobalScope.
 func inSharedWorker() bool {
 	self := js.Global()
 	c := self.Get("constructor")
@@ -964,111 +944,94 @@ func inSharedWorker() bool {
 	return name.String() == "SharedWorkerGlobalScope"
 }
 
-// inDedicatedWorker reports whether the global scope of this WASM instance
-// is a DedicatedWorkerGlobalScope. Both top-level vm-hosts (one per
-// rumo.run / runCompiled / spawn call) and per-`go fn()` child workers
-// run in this mode.
-func inDedicatedWorker() bool {
-	self := js.Global()
-	c := self.Get("constructor")
-	if c.IsUndefined() {
-		return false
-	}
-	name := c.Get("name")
-	if name.Type() != js.TypeString {
-		return false
-	}
-	return name.String() == "DedicatedWorkerGlobalScope"
-}
-
-// workerSelfName returns the worker scope's `self.name` for the current
-// instance, regardless of whether this WASM is running in a SharedWorker
-// (the coordinator, named "rumo-coordinator") or a DedicatedWorker (every
-// vm-host, named e.g. "vm-abc" or "vm-abc-1"). Returns "" when not running
-// in any worker scope (e.g. a Window for tests).
+// workerSelfName returns the SharedWorker name (`self.name`) the current
+// instance was created with, or "" if not running in a SharedWorker.
 func workerSelfName() string {
 	self := js.Global()
+	if !inSharedWorker() {
+		return ""
+	}
 	if n := self.Get("name"); n.Type() == js.TypeString {
 		return n.String()
 	}
 	return ""
 }
 
-// installVMHostBridgeDedicated wires self.onmessage for a vm-host running
-// in a DedicatedWorker. Every VM run lives in its own such worker — both
-// top-level page-launched VMs and per-`go fn()` children. The bridge
-// speaks the same runVM / runVMCompiled / runVMRoutine / cancel protocol
-// using `self` itself as the message port: DedicatedWorkers receive via
-// self.onmessage and reply via self.postMessage(...) without per-connection
-// ports.
+// installVMHostBridge wires onconnect for a per-VM SharedWorker. Each such
+// worker hosts exactly one VM. The orchestrating page sends one `runVM` (or
+// `runCompiled`) message and listens for output/done events.
 //
-// Messages from page (or parent vm-host) → vm-host:
+// Messages from page → vm-host:
+//   { id, op:"runVM",          source, args, stdin, fs }
+//   { id, op:"runVMCompiled",  bytecode, args, stdin }
+//   { id, op:"cancel" }
 //
-//	{ id, op:"runVM",         source, args, stdin, fs, coordPort }
-//	{ id, op:"runVMCompiled", bytecode, args, stdin, coordPort }
-//	{ id, op:"runVMRoutine",  bytecode, fn, args, globals, coordPort }
-//	{ id, op:"cancel" }
-//
-// Replies (matched on id):
-//
-//	{ id, result: { output, bytes, error } }            // runVM / runVMCompiled
-//	{ id, result: { value, error } }                    // runVMRoutine
-//
-// Streamed output is forwarded as `{type:"output", chunk, bytes}` messages
-// while the VM is running.
-func installVMHostBridgeDedicated() {
-	if !inDedicatedWorker() {
+// Messages from vm-host → page:
+//   { type:"output", chunk }
+//   { type:"done",   error|null, output }
+func installVMHostBridge() {
+	if !inSharedWorker() {
 		return
 	}
 	self := js.Global()
-	var (
-		running atomic.Bool
-		cancel  context.CancelFunc
-		cancelM sync.Mutex
-	)
+	self.Set("onconnect", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) == 0 {
+			return nil
+		}
+		ports := args[0].Get("ports")
+		if ports.IsUndefined() || ports.Length() == 0 {
+			return nil
+		}
+		port := ports.Index(0)
 
-	self.Set("onmessage", js.FuncOf(func(_ js.Value, ma []js.Value) any {
-		if len(ma) == 0 {
-			return nil
-		}
-		data := ma[0].Get("data")
-		op := data.Get("op")
-		if op.Type() != js.TypeString {
-			return nil
-		}
-		switch op.String() {
-		case "runVM", "runVMCompiled":
-			if !running.CompareAndSwap(false, true) {
-				portError(self, data.Get("id"), "vm-host: already running")
+		// State for this single VM run.
+		var (
+			running atomic.Bool
+			cancel  context.CancelFunc
+			cancelM sync.Mutex
+		)
+
+		port.Set("onmessage", js.FuncOf(func(_ js.Value, ma []js.Value) any {
+			if len(ma) == 0 {
 				return nil
 			}
-			go runOneVM(self, data, op.String() == "runVMCompiled", &cancel, &cancelM)
-		case "runVMRoutine":
-			if !running.CompareAndSwap(false, true) {
-				portError(self, data.Get("id"), "vm-host: already running")
+			data := ma[0].Get("data")
+			op := data.Get("op")
+			if op.Type() != js.TypeString {
 				return nil
 			}
-			go runOneVMRoutine(self, data, &cancel, &cancelM)
-		case "cancel":
-			cancelM.Lock()
-			if cancel != nil {
-				cancel()
+			switch op.String() {
+			case "runVM", "runVMCompiled":
+				if !running.CompareAndSwap(false, true) {
+					portError(port, data.Get("id"), "vm-host: already running")
+					return nil
+				}
+				go runOneVM(port, data, op.String() == "runVMCompiled", &cancel, &cancelM)
+			case "cancel":
+				cancelM.Lock()
+				if cancel != nil {
+					cancel()
+				}
+				cancelM.Unlock()
 			}
-			cancelM.Unlock()
-		}
+			return nil
+		}))
+		port.Call("start")
+
+		// announce ready so the page resolves its connection promise
+		hello := jsObject.New()
+		hello.Set("type", "ready")
+		hello.Set("role", "vm-host")
+		hello.Set("workerName", workerSelfName())
+		hello.Set("version", rumo.Version())
+		port.Call("postMessage", hello)
 		return nil
 	}))
-
-	hello := jsObject.New()
-	hello.Set("type", "ready")
-	hello.Set("role", "vm-host")
-	hello.Set("version", rumo.Version())
-	self.Call("postMessage", hello)
 }
 
-// runOneVM executes a single VM in this DedicatedWorker. Output is streamed
-// back as `{type:"output",chunk}` messages and the final `{id,result}`
-// envelope carries the buffered output and error string (or null).
+// runOneVM executes a single VM in the per-VM SharedWorker. Output is streamed
+// back as `{type:"output",chunk}` messages; the final `{type:"done"}` message
+// includes the buffered output and error string (or null).
 func runOneVM(port js.Value, data js.Value, compiled bool, cancelOut *context.CancelFunc, cancelMu *sync.Mutex) {
 	id := data.Get("id")
 
@@ -1081,38 +1044,6 @@ func runOneVM(port js.Value, data js.Value, compiled bool, cancelOut *context.Ca
 			b := toBytes(fs.Get(path))
 			sharedFS.put(path, b)
 		}
-	}
-
-	// Establish coordinator client + record the page-facing port so that the
-	// Spawner can forward child output upstream and that chan ops can hop
-	// to the coordinator.
-	g_vmHostPort = port
-	if v := data.Get("workerURL"); v.Type() == js.TypeString {
-		myWorkerURL = v.String()
-	} else if myWorkerURL == "" {
-		myWorkerURL = "./worker.js"
-	}
-	// Preferred: the page (or parent vm-host) transferred a private
-	// MessagePort to us via the runVM message — use it. This is the only
-	// path that always works, since DedicatedWorker scopes can't always
-	// construct SharedWorkers directly in every browser.
-	if myCoord == nil {
-		if cp := data.Get("coordPort"); cp.Truthy() {
-			myCoord = newCoordFromPort(cp, myWorkerURL)
-		}
-	}
-	// Fallback: try opening a SharedWorker connection ourselves. This works
-	// from DedicatedWorker contexts in most browsers; if it fails, `go fn()`
-	// would be forced back to local goroutines (no monitor visibility).
-	if myCoord == nil {
-		if c, err := openCoordClient(myWorkerURL); err == nil {
-			myCoord = c
-		}
-	}
-	// remember our own routine id so the Spawner can record parent->child
-	// edges via routine.allocate (see newSpawner).
-	if v := data.Get("routineId"); v.Type() == js.TypeNumber {
-		myRoutineID = int64(v.Int())
 	}
 
 	scriptArgs := jsValueStringArray(data.Get("args"))
@@ -1140,9 +1071,9 @@ func runOneVM(port js.Value, data js.Value, compiled bool, cancelOut *context.Ca
 
 	var err error
 	if compiled {
-		err = runCompiledRemote(ctx, toBytes(data.Get("bytecode")), scriptArgs, r, w)
+		err = runCompiled(ctx, toBytes(data.Get("bytecode")), scriptArgs, r, w)
 	} else {
-		err = runSourceRemote(ctx, toBytes(data.Get("source")), path, scriptArgs, r, w)
+		err = runSource(ctx, toBytes(data.Get("source")), path, scriptArgs, r, w)
 	}
 
 	result := jsObject.New()
@@ -1162,39 +1093,18 @@ func runOneVM(port js.Value, data js.Value, compiled bool, cancelOut *context.Ca
 	port.Call("postMessage", msg)
 }
 
-// attachCoordPort installs the same handlePortMessage dispatcher on a
-// fresh MessagePort that some other peer (the page, or a parent vm-host)
-// transferred to us. Used by the `coord.attach` op so that vm-hosts can
-// reach the coordinator over a private channel without constructing a
-// SharedWorker themselves.
-func attachCoordPort(p js.Value) {
-	p.Set("onmessage", js.FuncOf(func(_ js.Value, ma []js.Value) any {
-		if len(ma) == 0 {
-			return nil
-		}
-		handlePortMessage(p, ma[0].Get("data"))
-		return nil
-	}))
-	if startFn := p.Get("start"); startFn.Type() == js.TypeFunction {
-		p.Call("start")
-	}
-}
-
-// installCoordinatorBridge registers `onconnect` for the rumo-coordinator
-// SharedWorker so each connecting page tab gets its own MessagePort
-// speaking the protocol below.
+// installSharedWorkerBridge registers `onconnect` so each connecting page tab
+// can drive the runtime through a MessagePort. Messages have the shape
 //
-// Page → coordinator messages have shape:
-//
-//	{ id: <number>, op: <string>, ...payload }
+//	{ id: <number>, op: <string>, args: [...] }
 //
 // Replies are
 //
-//	{ id, result }                      for sync results
-//	{ id, error: "..." }                for failures
+//	{ id, result }                     for sync results
+//	{ id, error: "..." }               for failures
 //	{ type:"output", routineId, chunk } streamed routine output
-//	{ id, done: true }                  for routine completion notifications
-func installCoordinatorBridge() {
+//	{ id, done: true }                 for routine completion notifications
+func installSharedWorkerBridge() {
 	if !inSharedWorker() {
 		return
 	}
@@ -1219,7 +1129,6 @@ func installCoordinatorBridge() {
 		// announce readiness so the page side can resolve its connect promise
 		hello := jsObject.New()
 		hello.Set("type", "ready")
-		hello.Set("role", "coordinator")
 		hello.Set("version", rumo.Version())
 		port.Call("postMessage", hello)
 		return nil
@@ -1349,17 +1258,6 @@ func handlePortMessage(port js.Value, data js.Value) {
 	case "monitor.subscribe":
 		monitor.addPort(port)
 		portReply(port, id, true)
-	case "coord.attach":
-		// A vm-host (DedicatedWorker) is asking us to listen on a
-		// transferable MessagePort it received from the page. Hook the
-		// same handlePortMessage dispatcher up so that routine.allocate
-		// / chan.* / etc. all work over this private channel — no reply
-		// expected.
-		cp := data.Get("port")
-		if cp.IsUndefined() || cp.IsNull() {
-			return
-		}
-		attachCoordPort(cp)
 	case "fs.put":
 		path := data.Get("path").String()
 		sharedFS.put(path, toBytes(data.Get("content")))
@@ -1385,8 +1283,8 @@ func handlePortMessage(port js.Value, data js.Value) {
 		portReply(port, id, true)
 	case "fs.snapshot":
 		// Returns a JS object {path: Uint8Array} of every file in the shared FS.
-		// Used by the page to bundle the FS into a per-VM DedicatedWorker
-		// before dispatching a runVM call.
+		// Used by the page to bundle the FS into a per-VM SharedWorker before
+		// dispatching a runVM call.
 		obj := jsObject.New()
 		for _, name := range sharedFS.list() {
 			if d, ok := sharedFS.get(name); ok {
@@ -1395,7 +1293,7 @@ func handlePortMessage(port js.Value, data js.Value) {
 		}
 		portReply(port, id, obj)
 	case "routine.register":
-		// Register a remote routine (one running in a different DedicatedWorker)
+		// Register a remote routine (one running in a different SharedWorker)
 		// in the monitor. The page reports per-VM lifecycle; the coordinator
 		// just tracks it.
 		rt := registerRemoteRoutine(data)
@@ -1432,185 +1330,14 @@ func handlePortMessage(port js.Value, data js.Value) {
 			routines.del(rt.id)
 		}()
 		portReply(port, id, true)
-	case "routine.allocate":
-		// Called by a vm-host's Spawner to obtain a fresh routineId + worker
-		// name for a new `go fn()` DedicatedWorker. Also creates the monitor row.
-		//
-		// The child inherits its parent's monitor "name" (the script path) so
-		// every routine in the monitor — including descendants spawned via
-		// `go fn()` — is labelled with the script that produced it.
-		//
-		// The child's worker name is built by appending "-<n>" to the
-		// parent's worker name, where <n> is a per-parent sequence number.
-		// The resulting hierarchical chain (e.g. "vm-abc-1-2") makes the
-		// parent/child relationship visible in the worker name itself, which
-		// is why the monitor renders routines as a flat list rather than a
-		// tree.
-		parentWorker := ""
-		if v := data.Get("parent"); v.Type() == js.TypeString {
-			parentWorker = v.String()
-		}
-		var parentID int64
-		if v := data.Get("parentId"); v.Type() == js.TypeNumber {
-			parentID = int64(v.Int())
-		}
-		childName := ""
-		var childSeq int64
-		if parentID != 0 {
-			if pr := routines.get(parentID); pr != nil {
-				childName = pr.name
-				childSeq = pr.childSeq.Add(1)
-			}
-		}
-		rt := allocRoutine("go", childName)
-		var wn string
-		if parentWorker != "" {
-			if childSeq == 0 {
-				// parent routine row was already pruned; fall back to using
-				// the routine id so the name stays unique.
-				childSeq = rt.id
-			}
-			wn = fmt.Sprintf("%s-%d", parentWorker, childSeq)
-		} else {
-			wn = fmt.Sprintf("vm-%d", rt.id)
-		}
-		rt.workerName = wn
-		rt.parentID = parentID
-		// Emit only after parentID + workerName are populated so that any
-		// subscriber (e.g. the page's live monitor) sees a fully populated
-		// row on the first event instead of on the next poll.
-		monitor.emitSpawned(rt)
-		out := jsObject.New()
-		out.Set("routineId", rt.id)
-		out.Set("workerName", wn)
-		portReply(port, id, out)
-	case "chan.create":
-		// vm-host asks the coordinator to allocate a backing queue. When
-		// SharedArrayBuffer is available and buf>0 we hand the worker a
-		// shared ring directly so subsequent send/recv calls bypass
-		// postMessage entirely. Otherwise we fall back to the original
-		// goroutine-backed LocalChan + RPC path.
-		buf := 0
-		if v := data.Get("buf"); v.Type() == js.TypeNumber {
-			buf = v.Int()
-		}
-		out := jsObject.New()
-		if sabSupported() && buf > 0 {
-			ring := newSABRing(buf, sabDefaultSlotBytes)
-			cid := vm.NewChanID()
-			coordSABs.put(cid, ring.sab)
-			out.Set("chanId", cid)
-			out.Set("sab", ring.sab)
-		} else {
-			c := vm.NewLocalChan(buf)
-			coordChans.Register(c)
-			out.Set("chanId", c.ID())
-			out.Set("sab", js.Null())
-		}
-		portReply(port, id, out)
-	case "chan.lookup":
-		// Workers that received a chan id by other means (marshalled
-		// value, go fn() arg) ask the coordinator to hand them the SAB
-		// so they can join the fast path. Replies with sab:null when the
-		// chan is RPC-only (no SAB allocated for it).
-		cid := int64(data.Get("chanId").Int())
-		out := jsObject.New()
-		if sab, ok := coordSABs.get(cid); ok {
-			out.Set("sab", sab)
-		} else {
-			out.Set("sab", js.Null())
-		}
-		portReply(port, id, out)
-	case "chan.send":
-		go coordChanSend(port, id, data)
-	case "chan.recv":
-		go coordChanRecv(port, id, data)
-	case "chan.close":
-		go coordChanClose(port, id, data)
 	default:
 		portError(port, id, fmt.Sprintf("unknown op: %s", op.String()))
 	}
 }
 
-// coordChans is the chan registry hosted by the coordinator. Every chan
-// created by any vm-host (via the chan.create op) is registered here so that
-// chan.send / chan.recv / chan.close can resolve the queue.
-var coordChans = vm.NewChanRegistry()
-
-func coordChanSend(port, id, data js.Value) {
-	cid := int64(data.Get("chanId").Int())
-	c := coordChans.Lookup(cid)
-	if c == nil {
-		portError(port, id, fmt.Sprintf("chan.send: unknown chanId %d", cid))
-		return
-	}
-	blob := toBytes(data.Get("val"))
-	val, err := vm.UnmarshalLive(blob)
-	if err != nil {
-		portError(port, id, "chan.send: "+err.Error())
-		return
-	}
-	// chans embedded in the value get re-bound to the coordinator's registry
-	// (which is the canonical owner) so receivers see them as local cores.
-	vm.ResolveChans(val, coordChans, nil)
-	if err := c.Core().Send(context.Background(), val); err != nil {
-		portError(port, id, "chan.send: "+err.Error())
-		return
-	}
-	portReply(port, id, true)
-}
-
-func coordChanRecv(port, id, data js.Value) {
-	cid := int64(data.Get("chanId").Int())
-	c := coordChans.Lookup(cid)
-	if c == nil {
-		portError(port, id, fmt.Sprintf("chan.recv: unknown chanId %d", cid))
-		return
-	}
-	val, err := c.Core().Recv(context.Background())
-	if err != nil {
-		portError(port, id, "chan.recv: "+err.Error())
-		return
-	}
-	if val == nil {
-		portReply(port, id, js.Null())
-		return
-	}
-	blob, err := vm.MarshalLive(val)
-	if err != nil {
-		portError(port, id, "chan.recv: "+err.Error())
-		return
-	}
-	portReply(port, id, bytesToJS(blob))
-}
-
-func coordChanClose(port, id, data js.Value) {
-	cid := int64(data.Get("chanId").Int())
-	// SAB-backed chans live only in the SAB store on the coordinator —
-	// the worker has already performed the in-memory close via the ring
-	// header. We just drop our reference so chan.lookup stops handing it
-	// out to fresh workers.
-	if _, ok := coordSABs.get(cid); ok {
-		coordSABs.del(cid)
-		portReply(port, id, true)
-		return
-	}
-	c := coordChans.Lookup(cid)
-	if c == nil {
-		portError(port, id, fmt.Sprintf("chan.close: unknown chanId %d", cid))
-		return
-	}
-	if err := c.Core().Close(); err != nil {
-		portError(port, id, "chan.close: "+err.Error())
-		return
-	}
-	coordChans.Forget(cid)
-	portReply(port, id, true)
-}
-
 // registerRemoteRoutine creates a routine entry whose execution lives in a
-// different DedicatedWorker. The coordinator only tracks state changes that
-// the orchestrating page reports via routine.update / routine.done messages.
+// different SharedWorker. The coordinator only tracks state changes that the
+// orchestrating page reports via routine.update / routine.done messages.
 func registerRemoteRoutine(data js.Value) *routine {
 	kind := "remote"
 	if v := data.Get("kind"); v.Type() == js.TypeString {
@@ -1620,15 +1347,10 @@ func registerRemoteRoutine(data js.Value) *routine {
 	if v := data.Get("name"); v.Type() == js.TypeString {
 		name = v.String()
 	}
-	rt := allocRoutine(kind, name)
+	rt := newRoutine(kind, name)
 	if v := data.Get("workerName"); v.Type() == js.TypeString {
 		rt.workerName = v.String()
 	}
-	if v := data.Get("parentId"); v.Type() == js.TypeNumber {
-		rt.parentID = int64(v.Int())
-	}
-	// emit after parentID/workerName so subscribers see the full edge
-	monitor.emitSpawned(rt)
 	return rt
 }
 
@@ -1741,10 +1463,9 @@ func (p *portStream) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// vmHostStream is the streaming writer used by per-VM DedicatedWorkers.
-// Unlike portStream it doesn't need a streamId since the page uses a fresh
-// worker per VM and treats every output message on that port as belonging
-// to it.
+// vmHostStream is the streaming writer used by per-VM SharedWorkers. Unlike
+// portStream it doesn't need a streamId since the page uses a fresh worker
+// per VM and treats every output message on that port as belonging to it.
 type vmHostStream struct{ port js.Value }
 
 func (v *vmHostStream) Write(b []byte) (int, error) {
@@ -1773,34 +1494,26 @@ func jsValueStringArray(v js.Value) []string {
 // main
 // ---------------------------------------------------------------------------
 
-// main dispatches one of two roles based on the worker scope:
+// main dispatches one of three roles based on the SharedWorker name:
 //
-//   - DedicatedWorkerGlobalScope → vm-host (runs exactly one VM and streams
-//     it; used both for top-level rumo.run/runCompiled/spawn calls and for
-//     per-`go fn()` children)
-//   - SharedWorkerGlobalScope    → coordinator (FS, monitor, registry, chans);
-//                                  the SharedWorker named "rumo-coordinator"
-//   - any other scope (Window / standalone) → installs the in-process API
-//     directly on the global object (used for tests / direct page loads
-//     without a worker)
+//   - "rumo-vm-*"          → vm-host (runs exactly one VM and streams it)
+//   - "rumo-coordinator"   → coordinator (FS, monitor, registry only)
+//   - <anything else>      → standalone (legacy all-in-one for tests / direct
+//                            page loads with no SharedWorker)
 //
 // Each `rumo.run` / `rumo.runCompiled` / `rumo.spawn` call from the page
-// creates its own dedicated `vm-<id>` DedicatedWorker and reports
-// lifecycle to the coordinator's monitor — so every running VM appears as
-// a distinct worker in the browser's DevTools and as a row in the live
-// monitor table.
+// creates its own dedicated `rumo-vm-<id>` SharedWorker and reports lifecycle
+// to the coordinator's monitor — so every running VM appears as a distinct
+// worker in the browser's DevTools and as a row in the live monitor table.
 func main() {
+	name := workerSelfName()
 	switch {
-	case inDedicatedWorker():
-		// Every VM run (top-level or `go fn()` child) lives in its own
-		// DedicatedWorker. Dispatch via self.onmessage; no onconnect.
-		installVMHostBridgeDedicated()
-	case inSharedWorker():
-		// Coordinator (named "rumo-coordinator").
-		installCoordinatorBridge()
+	case strings.HasPrefix(name, "rumo-vm-"):
+		installVMHostBridge()
 	default:
-		// Standalone: page loaded the wasm directly without any worker.
+		// coordinator (named "rumo-coordinator") OR standalone
 		installAPI(js.Global())
+		installSharedWorkerBridge()
 	}
 	// Keep the runtime alive — without this the Go program would exit and
 	// every registered js.Func would become invalid.

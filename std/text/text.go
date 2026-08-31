@@ -15,10 +15,10 @@ import (
 )
 
 var Module = module.NewBuiltin().
-	Func("re_match(pattern string, text string) (matched bool, err error)												returns whether the text matches the regular expression pattern", textREMatch).
-	Func("re_find(pattern string, text string, count int) (matches [[{text string, begin int, end int}]], err error)	returns the matches of the regular expression pattern in the text. If count is not provided, it returns the first match.", textREFind).
-	Func("re_replace(pattern string, text string, repl string) (result string, err error)								returns a copy of the text with all matches of the regular expression pattern replaced by the replacement string repl", textREReplace).
-	Func("re_split(pattern string, text string, count int) (result [string], err error)									returns a slice of strings split by the regular expression pattern. If count is not provided, it splits all occurrences.", textRESplit).
+	Func("re_match(pattern string, text string) (matched bool, err error)												returns whether the text matches the regular expression pattern. The pattern is recompiled on every call; use re_compile for repeated matches", textREMatch).
+	Func("re_find(pattern string, text string, count int) (matches [[{text string, begin int, end int}]], err error)	returns the matches of the regular expression pattern in the text. If count is not provided, it returns the first match. The pattern is recompiled on every call; use re_compile for repeated matches", textREFind).
+	Func("re_replace(pattern string, text string, repl string) (result string, err error)								returns a copy of the text with all matches of the regular expression pattern replaced by the replacement string repl. The pattern is recompiled on every call; use re_compile for repeated matches", textREReplace).
+	Func("re_split(pattern string, text string, count int) (result [string], err error)									returns a slice of strings split by the regular expression pattern. If count is not provided, it splits all occurrences. The pattern is recompiled on every call; use re_compile for repeated matches", textRESplit).
 	Func("re_compile(pattern string) (re Regexp, err error)																compiles the regular expression pattern and returns a Regexp object", textRECompile).
 	Func("compare(a string, b string) (ret int)																			returns an integer comparing two strings lexicographically", strings.Compare).
 	Func("contains(s string, substr string) (ret bool)																	returns true if substr is within s", strings.Contains).

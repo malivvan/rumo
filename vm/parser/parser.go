@@ -918,6 +918,11 @@ func (p *Parser) parseCaseClause() *CaseClause {
 	if p.token == token.Case {
 		p.next()
 		list = p.parseExprList()
+		if len(list) == 0 {
+			// `case:` with no expressions would pop a non-existent value
+			// in the switch compiler; reject it like Go does.
+			p.errorExpected(p.pos, "case expression")
+		}
 	} else {
 		// default
 		p.expect(token.Default)

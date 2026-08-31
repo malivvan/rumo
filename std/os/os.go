@@ -100,8 +100,8 @@ var Module = module.NewBuiltin().
 // permsFromCtx extracts the VM's Permissions from the execution context.
 // Returns zero-value Permissions (all allowed) when no VM is present.
 func permsFromCtx(ctx context.Context) vm.Permissions {
-	v, ok := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
-	if !ok || v == nil {
+	v, ok := vm.VMFromContext(ctx)
+	if !ok {
 		// No VM in context (e.g. direct builtin calls in tests). Return
 		// unrestricted so that non-VM callers are not accidentally blocked.
 		return vm.UnrestrictedPermissions()
@@ -294,9 +294,14 @@ func osOpenFile(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 }
 
 func osArgs(ctx context.Context, args ...vm.Object) (vm.Object, error) {
-	v := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
 	if len(args) != 0 {
 		return nil, fmt.Errorf("args() takes no arguments, got %d", len(args))
+	}
+	v, ok := vm.VMFromContext(ctx)
+	if !ok {
+		// No VM in context (e.g. direct calls from tests): report no args
+		// instead of panicking.
+		return &vm.Array{}, nil
 	}
 	arr := &vm.Array{}
 	for _, osArg := range v.Args {
@@ -345,7 +350,7 @@ func osExpandEnv(ctx context.Context, args ...vm.Object) (vm.Object, error) {
 	// Use the per-VM MaxStringLen. permsFromCtx already reaches into the VM;
 	// we do the same for Config to avoid reading DefaultConfig directly.
 	maxLen := vm.ConfigFromContext(ctx).MaxStringLen
-	if v, ok2 := ctx.Value(vm.ContextKey("vm")).(*vm.VM); ok2 && v != nil {
+	if v, ok2 := vm.VMFromContext(ctx); ok2 {
 		if cfg := v.Config(); cfg.MaxStringLen > 0 {
 			maxLen = cfg.MaxStringLen
 		}

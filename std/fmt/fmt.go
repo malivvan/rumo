@@ -3,6 +3,7 @@ package fmt
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/malivvan/rumo/vm"
 	"github.com/malivvan/rumo/vm/module"
@@ -14,18 +15,34 @@ var Module = module.NewBuiltin().
 	Func("println(...args)								prints the arguments with a newline to standard output", fmtPrintln).
 	Func("sprintf(format string, ...args) (s string)	returns the formatted string", fmtSprintf)
 
+// outWriter resolves the output target for the fmt builtins. Inside a VM it
+// is the VM's configured writer; outside (e.g. direct calls from a test
+// harness) it falls back to os.Stdout so the helpers never panic.
+func outWriter(ctx context.Context) (w interface{ Write(p []byte) (int, error) }, err error) {
+	if v, ok := vm.VMFromContext(ctx); ok {
+		return v.Out, nil
+	}
+	return os.Stdout, nil
+}
+
 func fmtPrint(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	v := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
+	w, err := outWriter(ctx)
+	if err != nil {
+		return nil, err
+	}
 	printArgs, err := getPrintArgs(args...)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprint(v.Out, printArgs...)
-	return nil, nil
+	_, err = fmt.Fprint(w, printArgs...)
+	return nil, err
 }
 
 func fmtPrintf(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	v := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
+	w, err := outWriter(ctx)
+	if err != nil {
+		return nil, err
+	}
 	numArgs := len(args)
 	if numArgs == 0 {
 		return nil, vm.ErrWrongNumArguments
@@ -40,8 +57,9 @@ func fmtPrintf(ctx context.Context, args ...vm.Object) (ret vm.Object, err error
 		}
 	}
 	if numArgs == 1 {
-		fmt.Fprint(v.Out, format)
-		return nil, nil
+		// Print the raw format text, not the quoted String representation.
+		_, err = w.Write([]byte(format.Value))
+		return nil, err
 	}
 
 	cfg := vmConfig(ctx)
@@ -49,19 +67,22 @@ func fmtPrintf(ctx context.Context, args ...vm.Object) (ret vm.Object, err error
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprint(v.Out, s)
-	return nil, nil
+	_, err = w.Write([]byte(s))
+	return nil, err
 }
 
 func fmtPrintln(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
-	v := ctx.Value(vm.ContextKey("vm")).(*vm.VM)
+	w, err := outWriter(ctx)
+	if err != nil {
+		return nil, err
+	}
 	printArgs, err := getPrintArgs(args...)
 	if err != nil {
 		return nil, err
 	}
 	printArgs = append(printArgs, "\n")
-	fmt.Fprint(v.Out, printArgs...)
-	return nil, nil
+	_, err = fmt.Fprint(w, printArgs...)
+	return nil, err
 }
 
 func fmtSprintf(ctx context.Context, args ...vm.Object) (ret vm.Object, err error) {
@@ -93,7 +114,7 @@ func fmtSprintf(ctx context.Context, args ...vm.Object) (ret vm.Object, err erro
 // vmConfig returns the *Config from the running VM stored in ctx, falling
 // back to DefaultConfig if no VM is present (e.g. in unit tests).
 func vmConfig(ctx context.Context) *vm.Config {
-	if v, _ := ctx.Value(vm.ContextKey("vm")).(*vm.VM); v != nil {
+	if v, ok := vm.VMFromContext(ctx); ok {
 		cfg := v.Config()
 		return &cfg
 	}

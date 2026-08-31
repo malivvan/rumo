@@ -171,6 +171,7 @@ func (c *Compiler) compileNative(node *parser.NativeStmt) error {
 
 	// Emit: push loader constant, call with zero args, bind result.
 	loader := &Native{Path: node.Path, Funcs: specs, Structs: structs}
+	trackNativeHandle(loader)
 	c.emit(node, parser.OpConstant, c.addConstant(loader))
 	c.emit(node, parser.OpCall, 0, 0)
 

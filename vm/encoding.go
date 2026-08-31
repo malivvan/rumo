@@ -43,7 +43,6 @@ const (
 	_rangeObject      byte = 105
 	_userType         byte = 106
 	_nativeLoader     byte = 107
-	_chan             byte = 108
 )
 
 var _typeMap = map[byte]func() Object{
@@ -73,7 +72,6 @@ var _typeMap = map[byte]func() Object{
 	_rangeObject:      func() Object { return &RangeObject{} },
 	_userType:         func() Object { return &UserType{} },
 	_nativeLoader:     func() Object { return &Native{} },
-	_chan:             func() Object { return &Chan{} },
 }
 
 // MakeObject creates a new object based on the given type code.
@@ -157,8 +155,6 @@ func TypeOfObject(o Object) byte {
 		return _userType
 	case *Native:
 		return _nativeLoader
-	case *Chan:
-		return _chan
 	default:
 		return 0
 	}
@@ -283,10 +279,6 @@ func SizeOfObject(o Object) int {
 			s += len(f.ParamPointer) * codec.SizeBool()
 		}
 		return codec.SizeByte() + s
-	case _chan:
-		// channels travel as just their int64 id; the receiver upgrades the
-		// core via ResolveChans (see chan.go) before any send/recv call.
-		return codec.SizeByte() + codec.SizeInt64()
 	default:
 		panic("sizeof: unsupported type: " + o.TypeName())
 	}
@@ -449,10 +441,6 @@ func MarshalObject(n int, b []byte, o Object) int {
 				n = codec.MarshalBool(n, b, p)
 			}
 		}
-	case _chan:
-		c := o.(*Chan)
-		n = codec.MarshalByte(n, b, _chan)
-		n = codec.MarshalInt64(n, b, c.id)
 	default:
 		panic("marshal: unsupported type: " + o.TypeName())
 	}
@@ -832,16 +820,6 @@ func UnmarshalObject(nn int, b []byte) (n int, o Object, err error) {
 			}
 		}
 		return n, nl, nil
-	case _chan:
-		c := o.(*Chan)
-		n, c.id, err = codec.UnmarshalInt64(n, b)
-		if err != nil {
-			return nn, nil, err
-		}
-		// core stays nil here — caller (live codec / runtime) must run
-		// ResolveChans() to bind it to a LocalChanCore (if owner) or
-		// RemoteChanCore (otherwise) before any send/recv call.
-		return n, c, nil
 	}
 	return nn, nil, errors.New("unmarshal: unsupported type: " + o.TypeName())
 }

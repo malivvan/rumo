@@ -71,8 +71,8 @@ sys := import("sys")
 
 ## Functions
 
-- `goos() => string`: target operating system (runtime.GOOS)
-- `goarch() => string`: target architecture (runtime.GOARCH)
+- `os() => string`: target operating system (runtime.GOOS)
+- `arch() => string`: target architecture (runtime.GOARCH)
 - `compiler() => string`: Go compiler used to build the host (gc/gccgo)
 - `go_version() => string`: Go runtime version
 - `num_cpu() => int`: number of logical CPUs available

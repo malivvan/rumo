@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/malivvan/rumo/std/base64"
+	"github.com/malivvan/rumo/std/crand"
 	"github.com/malivvan/rumo/std/fmt"
 	"github.com/malivvan/rumo/std/hex"
 	"github.com/malivvan/rumo/std/json"
@@ -20,6 +21,7 @@ import (
 // BuiltinModules are builtin type standard library modules.
 var BuiltinModules = map[string]*module.BuiltinModule{
 	"base64":   base64.Module,
+	"crand":   crand.Module,
 	"fmt":   fmt.Module,
 	"hex":   hex.Module,
 	"json":   json.Module,

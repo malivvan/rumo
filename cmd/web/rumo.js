@@ -1,36 +1,24 @@
 // rumo.js — page-side wrapper. Each top-level VM runs in its own dedicated
-// Worker (a DedicatedWorker named "vm-<id>") so that every active
-// rumo VM appears as a separate worker in DevTools and as a distinct row
-// in the live monitor. A "rumo-coordinator" SharedWorker holds the
-// in-memory filesystem, the routine registry, and the lifecycle bus —
-// making them shared across every page tab on the same origin.
-//
-// Why DedicatedWorker for the vm-host (and not SharedWorker)?
-//
-//   The vm-host needs to talk to the coordinator (FS, routine registry,
-//   chan queues, monitor). To do so it constructs the
-//   `new SharedWorker(workerURL, "rumo-coordinator")`. Per the HTML/Workers
-//   spec — and as enforced by Chromium and Firefox — a SharedWorker scope
-//   does NOT expose the SharedWorker constructor (https://crbug.com/1102827).
-//   Running the vm-host as a DedicatedWorker side-steps this restriction:
-//   DedicatedWorker scopes CAN construct SharedWorkers and DedicatedWorkers.
-//   This is also why each `go fn()` child uses a DedicatedWorker.
+// SharedWorker (named "rumo-vm-<id>") so that every active rumo VM appears
+// as a separate worker in DevTools and as a distinct row in the live monitor.
+// A separate "rumo-coordinator" SharedWorker holds the in-memory filesystem,
+// the routine registry, and the lifecycle bus — making them shared across
+// every page tab connected to the same origin.
 //
 // Architecture
 //
 //   page.js
 //     │
-//     ├──► rumo-coordinator     (1 SharedWorker, owns FS + monitor registry)
+//     ├──► rumo-coordinator   (1 SharedWorker, owns FS + monitor registry)
 //     │
-//     ├──► vm-A                 (1 DedicatedWorker per VM run; streams output)
-//     │     └──► vm-A-1         (child DedicatedWorker per `go fn()`)
-//     ├──► vm-B
-//     └──► vm-C
+//     ├──► rumo-vm-A          (1 SharedWorker per VM run; streams output)
+//     ├──► rumo-vm-B
+//     └──► rumo-vm-C
 //
 // Lifecycle for every VM created via rumo.run / runCompiled / spawn:
 //   1. ask coordinator for a fresh routine id (`routine.register`)
 //   2. fetch the FS snapshot (`fs.snapshot`)
-//   3. create `new Worker(workerURL, { name: "vm-<id>" })`
+//   3. create `new SharedWorker(workerURL, "rumo-vm-<id>")`
 //   4. forward output chunks to onOutput AND to the coordinator
 //      (`routine.update`) so monitor byte counts stay live
 //   5. on done → `routine.done` → coordinator promotes the row to the
@@ -42,10 +30,7 @@
     const COORD_NAME = "rumo-coordinator";
 
     // -----------------------------------------------------------------------
-    // PortClient — request/response over a MessagePort, SharedWorker.port,
-    // or DedicatedWorker. Worker objects don't have .start()/.close(); we
-    // detect that and adapt accordingly so the same client works for every
-    // role (coordinator SharedWorker, vm-host DedicatedWorker, ...).
+    // PortClient — request/response over a SharedWorker MessagePort
     // -----------------------------------------------------------------------
     class PortClient {
         constructor(port) {
@@ -54,21 +39,15 @@
             this._pending = new Map();
             this._listeners = [];
             this._readyResolve = null;
-            this._readyReject = null;
-            this.ready = new Promise((res, rej) => {
-                this._readyResolve = res;
-                this._readyReject = rej;
-            });
+            this.ready = new Promise((res) => { this._readyResolve = res; });
             port.onmessage = (e) => this._dispatch(e.data);
             port.onmessageerror = (e) => console.error("rumo: messageerror", e);
-            // SharedWorker.port / MessagePort require .start(); plain Worker
-            // objects auto-start and don't expose it.
-            if (typeof port.start === "function") port.start();
+            port.start();
         }
         _dispatch(msg) {
             if (!msg) return;
             if (msg.type === "ready") {
-                if (this._readyResolve) { this._readyResolve(msg); this._readyResolve = null; this._readyReject = null; }
+                if (this._readyResolve) { this._readyResolve(msg); this._readyResolve = null; }
                 return;
             }
             if (msg.id !== undefined && this._pending.has(msg.id)) {
@@ -94,27 +73,7 @@
                 this.port.postMessage(Object.assign({ id, op }, payload || {}));
             });
         }
-        // callTransfer is identical to call() but additionally hands ownership
-        // of the listed transferables (typically MessagePort instances) to the
-        // peer. The transferables, if also referenced inside `payload`, will
-        // appear at the same position on the receiving side.
-        callTransfer(op, payload, transfer) {
-            return new Promise((resolve, reject) => {
-                const id = this._next++;
-                this._pending.set(id, { resolve, reject });
-                this.port.postMessage(Object.assign({ id, op }, payload || {}), transfer || []);
-            });
-        }
         post(msg) { this.port.postMessage(msg); }
-        postTransfer(msg, transfer) { this.port.postMessage(msg, transfer || []); }
-        close() {
-            // SharedWorker.port / MessagePort have .close(); a plain Worker
-            // is terminated via .terminate(). We don't own SharedWorker
-            // ports beyond the page, so close() is a no-op there.
-            if (typeof this.port.close === "function") {
-                try { this.port.close(); } catch (_) {}
-            }
-        }
     }
 
     function encode(v) {
@@ -156,11 +115,11 @@
             return this._coord.call("compile", { source: encode(source), path: path || "" });
         }
 
-        // ── per-VM execution (each in its own DedicatedWorker) ─────────────
+        // ── per-VM execution (each in its own SharedWorker) ────────────────
         async _runInWorker(kind, body, opts) {
             opts = opts || {};
             // 1) register routine in coordinator (assigns id)
-            const workerName = "vm-" + Math.random().toString(36).slice(2, 10);
+            const workerName = "rumo-vm-" + Math.random().toString(36).slice(2, 10);
             const routineId = await this._coord.call("routine.register", {
                 kind,
                 name: opts.path || opts.name || (kind + ".rumo"),
@@ -168,30 +127,15 @@
             });
             // 2) snapshot shared FS so the per-VM worker can resolve imports
             const fsSnap = await this._coord.call("fs.snapshot");
-            // 3) Establish a private MessagePort between the new vm-host
-            //    and the coordinator. Workers cannot reliably construct
-            //    SharedWorkers from inside their own scope (Chromium
-            //    restricts SharedWorker creation to Window in many
-            //    versions, https://crbug.com/1102827), so we use a
-            //    transferable MessageChannel instead — fully portable.
-            const coordCh = new MessageChannel();
-            this._coord.postTransfer(
-                { op: "coord.attach", port: coordCh.port1 },
-                [coordCh.port1],
-            );
-            // 4) spin up the vm-host as a DedicatedWorker. Plain Workers
-            //    are creatable from any context (Window or Worker), can
-            //    construct further DedicatedWorkers for `go fn()` children,
-            //    and accept transferred MessagePorts the same as any other.
-            const sw = new Worker(this._workerURL, { name: workerName });
-            const vm = new PortClient(sw);
+            // 3) spin up the dedicated VM SharedWorker
+            const sw = new SharedWorker(this._workerURL, workerName);
+            const vm = new PortClient(sw.port);
             try {
                 await vm.ready;
             } catch (err) {
                 await this._coord.call("routine.done", {
                     routineId, error: "vm-host failed to start: " + err.message,
                 });
-                try { sw.terminate(); } catch (_) {}
                 throw err;
             }
 
@@ -214,13 +158,6 @@
                 stdin: opts.stdin || "",
                 fs: fsSnap,
                 path: opts.path || "",
-                workerURL: this._workerURL,
-                routineId,
-                // coordPort is the partner of the port we just handed to
-                // the coordinator. The vm-host uses it for routine.allocate
-                // / chan.* / etc. without needing to construct a
-                // SharedWorker itself.
-                coordPort: coordCh.port2,
             });
 
             const handle = {
@@ -231,23 +168,19 @@
                 _bytes: () => bytes,
             };
 
-            const cleanup = () => {
+            const donePromise = vm.call(op, payload).then((result) => {
                 removeListener();
-                // DedicatedWorker is terminated; the coordinator
-                // SharedWorker stays alive across runs.
-                try { sw.terminate(); } catch (_) {}
-            };
-
-            const donePromise = vm.callTransfer(op, payload, [coordCh.port2]).then((result) => {
                 this._coord.call("routine.done", {
                     routineId,
                     error: result.error,
                 }).catch(() => {});
-                cleanup();
+                // close port so the SharedWorker terminates if no one else is connected
+                try { sw.port.close(); } catch (_) {}
                 return result;
             }).catch(async (err) => {
+                removeListener();
                 await this._coord.call("routine.done", { routineId, error: err.message });
-                cleanup();
+                try { sw.port.close(); } catch (_) {}
                 throw err;
             });
 

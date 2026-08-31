@@ -351,7 +351,7 @@ func builtinArgs(ctx context.Context, callArgs ...Object) (Object, error) {
 	if len(callArgs) != 0 {
 		return nil, ErrWrongNumArguments
 	}
-	v, ok := ctx.Value(ContextKey("vm")).(*VM)
+	v, ok := VMFromContext(ctx)
 	if !ok || v == nil {
 		return &Array{}, nil
 	}
@@ -500,14 +500,13 @@ func builtinBool(ctx context.Context, args ...Object) (Object, error) {
 	if _, ok := args[0].(*Bool); ok {
 		return args[0], nil
 	}
-	v, ok := ToBool(args[0])
-	if ok {
-		if v {
-			return TrueValue, nil
-		}
-		return FalseValue, nil
+	// ToBool always succeeds (every Object has truthiness), so the second
+	// return value is intentionally ignored here.
+	v, _ := ToBool(args[0])
+	if v {
+		return TrueValue, nil
 	}
-	return UndefinedValue, nil
+	return FalseValue, nil
 }
 
 func builtinChar(ctx context.Context, args ...Object) (Object, error) {

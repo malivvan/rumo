@@ -11,6 +11,7 @@ title: interop
 - [Sandbox Environments](#sandbox-environments)
 - [Concurrency](#concurrency)
 - [Compiler and VM](#compiler-and-vm)
+- [Conventions to be aware of](#conventions-to-be-aware-of)
 
 ## Using Scripts
 
@@ -234,4 +235,19 @@ Scripts and Script Variables. It's a bit more involved as you have to manage
 the symbol tables and global variables between them, but, basically that's what
 Script and Script Variable is doing internally.
 
-_TODO: add more information here_
+## Conventions to be aware of
+
+- **Builtin functions compare equal by name.** `vm.BuiltinFunction.Equals`
+  is name-based so that bytecode round-trips keep equality. The builtin
+  name space is therefore global: host callables must use unique names and
+  must not reuse the name of an existing builtin (e.g. `len`).
+- **`module.WrapError(nil)` returns `vm.TrueValue`.** stdlib helpers that
+  wrap zero-or-one-error Go functions rely on this so scripts can test
+  `if file.close() == true`. "No error" is represented as `true`, an
+  error as an `error` value.
+- **The native FFI is deny-by-default.** Every `dlopen` must be approved
+  with `vm.AllowNativePath` (paths are canonicalised on both sides); see
+  [native](native.md).
+- **Permissions deny by default.** The zero-value `vm.Permissions` denies
+  every privileged `std/os` operation; grant capabilities explicitly or
+  via `vm.UnrestrictedPermissions()`.

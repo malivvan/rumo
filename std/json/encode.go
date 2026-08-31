@@ -10,7 +10,9 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"unicode/utf8"
 
@@ -124,16 +126,32 @@ var safeSet = [utf8.RuneSelf]bool{
 
 var hex = "0123456789abcdef"
 
+// encoder tracks encode state for a single Encode call. The visited set
+// detects cyclic *Array/*Map/*StructInstance graphs — keyed on the typed
+// pointer, which is comparable and needs no unsafe tricks.
+type encoder struct {
+	visited map[vm.Object]struct{}
+}
+
 // Encode returns the JSON encoding of the object.
 func Encode(o vm.Object) ([]byte, error) {
+	e := &encoder{visited: make(map[vm.Object]struct{})}
+	return e.encode(o)
+}
+
+func (e *encoder) encode(o vm.Object) ([]byte, error) {
 	var b []byte
 
 	switch o := o.(type) {
 	case *vm.Array:
+		if err := e.enter(o); err != nil {
+			return nil, err
+		}
+		defer e.leave(o)
 		b = append(b, '[')
 		len1 := len(o.Value) - 1
 		for idx, elem := range o.Value {
-			eb, err := Encode(elem)
+			eb, err := e.encode(elem)
 			if err != nil {
 				return nil, err
 			}
@@ -144,23 +162,66 @@ func Encode(o vm.Object) ([]byte, error) {
 		}
 		b = append(b, ']')
 	case *vm.Map:
+		if err := e.enter(o); err != nil {
+			return nil, err
+		}
+		defer e.leave(o)
 		b = append(b, '{')
-		len1 := len(o.Value) - 1
-		idx := 0
-		for key, value := range o.Value {
+		// Sort keys so the output is deterministic for the same input.
+		keys := make([]string, 0, len(o.Value))
+		for key := range o.Value {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for idx, key := range keys {
 			b = encodeString(b, key)
 			b = append(b, ':')
-			eb, err := Encode(value)
+			eb, err := e.encode(o.Value[key])
 			if err != nil {
 				return nil, err
 			}
 			b = append(b, eb...)
-			if idx < len1 {
+			if idx < len(keys)-1 {
 				b = append(b, ',')
 			}
-			idx++
 		}
 		b = append(b, '}')
+	case *vm.StructInstance:
+		if err := e.enter(o); err != nil {
+			return nil, err
+		}
+		defer e.leave(o)
+		b = append(b, '{')
+		keys := make([]string, 0, len(o.Values))
+		for key := range o.Values {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for idx, key := range keys {
+			b = encodeString(b, key)
+			b = append(b, ':')
+			eb, err := e.encode(o.Values[key])
+			if err != nil {
+				return nil, err
+			}
+			b = append(b, eb...)
+			if idx < len(keys)-1 {
+				b = append(b, ',')
+			}
+		}
+		b = append(b, '}')
+	case *vm.Error:
+		// Encode the error's message as a JSON string so error values
+		// produce valid JSON instead of `{"k":}`.
+		msg := "error"
+		if o.Value != nil {
+			if s, ok := vm.ToString(o.Value); ok {
+				msg = s
+			} else {
+				msg = o.Value.TypeName()
+			}
+		}
+		b = encodeString(b, msg)
 	case *vm.Bool:
 		if o.IsFalsy() {
 			b = strconv.AppendBool(b, false)
@@ -232,6 +293,8 @@ func Encode(o vm.Object) ([]byte, error) {
 		b = strconv.AppendInt(b, int64(o.Value), 10)
 	case *vm.Int16:
 		b = strconv.AppendInt(b, int64(o.Value), 10)
+	case *vm.Int32:
+		b = strconv.AppendInt(b, int64(o.Value), 10)
 	case *vm.Byte:
 		b = strconv.AppendInt(b, int64(int8(o.Value)), 10)
 	case *vm.Uint8:
@@ -249,9 +312,25 @@ func Encode(o vm.Object) ([]byte, error) {
 	case *vm.Undefined:
 		b = append(b, "null"...)
 	default:
-		// unknown type: ignore
+		// Never silently drop a value: that produced invalid JSON like
+		// `[1,,3]` in the past. Report the offending type instead.
+		return nil, fmt.Errorf("unsupported type: %s", o.TypeName())
 	}
 	return b, nil
+}
+
+// enter registers o in the visited set, failing on cyclic graphs.
+func (e *encoder) enter(o vm.Object) error {
+	if _, ok := e.visited[o]; ok {
+		return errors.New("unsupported value: cyclic data structure")
+	}
+	e.visited[o] = struct{}{}
+	return nil
+}
+
+// leave removes o from the visited set (deferred by encode).
+func (e *encoder) leave(o vm.Object) {
+	delete(e.visited, o)
 }
 
 // encodeString encodes given string as JSON string according to

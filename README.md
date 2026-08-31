@@ -168,7 +168,15 @@ make test       # run tests
 make install    # install tools 
 make build      # build for current platform 
 make release    # build for all platforms
+make js         # build the js/wasm runtime + browser bundle into build/web/
+make serve/js   # build and serve the js/wasm runtime at http://localhost:8080
 ```
+
+The `js/wasm` target produces a plain Go webassembly binary that runs in the
+browser like any other Go wasm module (GOMAXPROCS=1 semantics): script
+routines are in-process goroutines, and the bundled page hosts the runtime in
+a worker. Load `build/web/index.html` through any static file server and use
+the `rumo` JavaScript API to run scripts in the browser.
 
 ## Fork / Credits
 This is a continuation of the [github.com/d5/tengo](https://github.com/d5/tengo) project starting of this [pull request](https://github.com/d5/tengo/pull/330) implementing go routines and channels. Special thanks goes to [d5](https://github.com/d5/) for his work on the tengo language and [Bai-Yingjie](https://github.com/Bai-Yingjie) for implementing the foundation of concurrency while retaining the original tests of the project. 

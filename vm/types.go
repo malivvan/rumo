@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"unsafe"
 
 	"github.com/malivvan/rumo/vm/token"
 )
@@ -531,11 +530,11 @@ func (s *StructInstance) TypeName() string {
 }
 
 func (s *StructInstance) String() string {
-	return s.stringWithVisited(make(map[uintptr]bool))
+	return s.stringWithVisited(make(map[Object]bool))
 }
 
-func (s *StructInstance) stringWithVisited(vis map[uintptr]bool) string {
-	key := uintptr(unsafe.Pointer(s))
+func (s *StructInstance) stringWithVisited(vis map[Object]bool) string {
+	key := Object(s)
 	if vis[key] {
 		return s.TypeName() + "{...}"
 	}
@@ -562,11 +561,11 @@ func (s *StructInstance) stringWithVisited(vis map[uintptr]bool) string {
 
 // Copy returns a deep copy of the instance.
 func (s *StructInstance) Copy() Object {
-	return s.copyWithMemo(make(map[uintptr]Object))
+	return s.copyWithMemo(make(map[Object]Object))
 }
 
-func (s *StructInstance) copyWithMemo(memo map[uintptr]Object) Object {
-	key := uintptr(unsafe.Pointer(s))
+func (s *StructInstance) copyWithMemo(memo map[Object]Object) Object {
+	key := Object(s)
 	if existing, ok := memo[key]; ok {
 		return existing
 	}
@@ -588,10 +587,10 @@ func (s *StructInstance) copyWithMemo(memo map[uintptr]Object) Object {
 // Equals returns true if s and x are instances of the same user type and
 // every field compares equal.
 func (s *StructInstance) Equals(x Object) bool {
-	return s.equalsWithVisited(x, make(map[[2]uintptr]bool))
+	return s.equalsWithVisited(x, make(map[[2]Object]bool))
 }
 
-func (s *StructInstance) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool) bool {
+func (s *StructInstance) equalsWithVisited(xObj Object, vis map[[2]Object]bool) bool {
 	other, ok := xObj.(*StructInstance)
 	if !ok {
 		return false
@@ -599,13 +598,9 @@ func (s *StructInstance) equalsWithVisited(xObj Object, vis map[[2]uintptr]bool)
 	if s.Type != other.Type {
 		return false
 	}
-	sPtr := uintptr(unsafe.Pointer(s))
-	oPtr := uintptr(unsafe.Pointer(other))
-	lo, hi := sPtr, oPtr
-	if lo > hi {
-		lo, hi = hi, lo
-	}
-	pairKey := [2]uintptr{lo, hi}
+	sPtr := Object(s)
+	oPtr := Object(other)
+	pairKey := [2]Object{sPtr, oPtr}
 	if vis[pairKey] {
 		return true
 	}

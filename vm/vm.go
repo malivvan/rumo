@@ -15,11 +15,21 @@ import (
 	"github.com/malivvan/rumo/vm/token"
 )
 
-// ContextKey is a type for context keys used in the VM.
-type ContextKey string
+// contextKey is the unexported type for context keys used by the VM. The
+// unexported type prevents other packages from forging the key and
+// colliding with the VM entry stored in a context. Use VMFromContext to
+// retrieve the running VM.
+type contextKey string
 
-func (c ContextKey) String() string {
-	return string(c)
+const vmContextKey contextKey = "vm"
+
+// VMFromContext returns the running VM stored in ctx, if any. Builtins and
+// stdlib helpers must use this instead of reaching into the context with a
+// forged key: it is safe to call with a context that has no VM and never
+// panics.
+func VMFromContext(ctx context.Context) (*VM, bool) {
+	v, ok := ctx.Value(vmContextKey).(*VM)
+	return v, ok && v != nil
 }
 
 // deferredCall holds a captured function and its arguments for a defer statement.
@@ -107,7 +117,7 @@ func NewVM(ctx context.Context, bytecode *Bytecode, globals []Object, cfg *Confi
 		Out:         os.Stdout,
 		Args:        nil, // callers must set Args explicitly; do not default to os.Args
 	}
-	v.ctx, v.cancel = context.WithCancel(context.WithValue(ctx, ContextKey("vm"), v))
+	v.ctx, v.cancel = context.WithCancel(context.WithValue(ctx, vmContextKey, v))
 	frame := &frame{
 		fn: bytecode.MainFunction,
 		ip: -1,
@@ -173,7 +183,7 @@ func (v *VM) ShallowClone() *VM {
 		Out:         v.Out,
 		Args:        v.Args,
 	}
-	vClone.ctx, vClone.cancel = context.WithCancel(context.WithValue(v.ctx, ContextKey("vm"), vClone))
+	vClone.ctx, vClone.cancel = context.WithCancel(context.WithValue(v.ctx, vmContextKey, vClone))
 	frame := &frame{
 		fn: emptyEntry,
 		ip: -1,
@@ -290,10 +300,6 @@ func (v *VM) Abort() {
 	v.childCtl.Unlock()
 }
 
-func (v *VM) Globals() []Object {
-	return v.globals
-}
-
 // addChild registers a child VM and/or a context cancel function with the
 // parent. The returned token (> 0) identifies the cancel entry; pass it to
 // delChild so the entry can be removed. A token of 0 means no cancel function
@@ -390,9 +396,17 @@ func (v *VM) postRun() (err error) {
 }
 
 func (v *VM) run() {
+	ctxCheck := 0
 	for {
-		if atomic.LoadInt64(&v.aborting) != 0 && !v.inAbortUnwind {
-			// Abort requested. Start executing deferred calls across all
+		// Periodically observe context cancellation so a host-side cancel
+		// (e.g. an HTTP request context) aborts the VM even if nobody calls
+		// Abort() from outside. Checking every 256 opcodes keeps the cost
+		// negligible while bounding the abort latency of a hot loop.
+		ctxCheck++
+		if ctxCheck&0xFF == 0 && v.ctx.Err() != nil {
+			v.Abort()
+		}
+		if atomic.LoadInt64(&v.aborting) != 0 && !v.inAbortUnwind {			// Abort requested. Start executing deferred calls across all
 			// pending frames before exiting. handleReturn walks up the
 			// frame stack, running each frame's defers in LIFO order.
 			v.inAbortUnwind = true
@@ -406,7 +420,28 @@ func (v *VM) run() {
 		}
 		v.ip++
 
-		switch v.curInsts[v.ip] {
+		// Validate the full instruction (opcode + operands) up front so a
+		// truncated or hand-crafted bytecode stream produces a clean error
+		// instead of an out-of-range panic mid-dispatch.
+		if v.ip >= len(v.curInsts) {
+			v.err = ErrTruncatedBytecode
+			return
+		}
+		op := parser.Opcode(v.curInsts[v.ip])
+		if int(op) >= len(parser.OpcodeOperands) {
+			v.err = ErrTruncatedBytecode
+			return
+		}
+		instrLen := 1
+		for _, w := range parser.OpcodeOperands[op] {
+			instrLen += w
+		}
+		if v.ip+instrLen > len(v.curInsts) {
+			v.err = ErrTruncatedBytecode
+			return
+		}
+
+		switch op {
 		case parser.OpConstant:
 			v.ip += 2
 			cidx := int(v.curInsts[v.ip]) | int(v.curInsts[v.ip-1])<<8
@@ -437,6 +472,24 @@ func (v *VM) run() {
 			if v.allocs == 0 {
 				v.err = ErrObjectAllocLimit
 				return
+			}
+
+			// Enforce the per-VM string/bytes size limits on every binary
+			// operation result. The object methods guard against
+			// DefaultConfig, but a VM configured with stricter limits must
+			// be checked here so e.g. SetMaxStringLen(1<<10) cannot be
+			// bypassed by concatenation.
+			switch r := res.(type) {
+			case *String:
+				if v.config.MaxStringLen > 0 && len(r.Value) > v.config.MaxStringLen {
+					v.err = ErrStringLimit
+					return
+				}
+			case *Bytes:
+				if v.config.MaxBytesLen > 0 && len(r.Value) > v.config.MaxBytesLen {
+					v.err = ErrBytesLimit
+					return
+				}
 			}
 
 			v.stack[v.sp-2] = res
@@ -852,10 +905,20 @@ func (v *VM) run() {
 
 				// test if it's tail-call (disabled when defers are pending)
 				if callee == v.curFrame.fn && len(v.curFrame.defers) == 0 { // recursion
-					nextOp := v.curInsts[v.ip+1]
-					if nextOp == parser.OpReturn ||
-						(nextOp == parser.OpPop &&
-							parser.OpReturn == v.curInsts[v.ip+2]) {
+					// Bounds-check the lookahead: the compiler always emits
+					// OpReturn (or OpPop+OpReturn) after a self-call, but a
+					// hand-crafted bytecode file may not. Degrade to a normal
+					// call instead of panicking on a truncated stream.
+					nextIdx := v.ip + 1
+					tailCall := false
+					if nextIdx < len(v.curInsts) {
+						nextOp := v.curInsts[nextIdx]
+						tailCall = nextOp == parser.OpReturn ||
+							(nextOp == parser.OpPop &&
+								nextIdx+1 < len(v.curInsts) &&
+								v.curInsts[nextIdx+1] == parser.OpReturn)
+					}
+					if tailCall {
 						for p := 0; p < numArgs; p++ {
 							v.stack[v.curFrame.basePointer+p] =
 								v.stack[v.sp-numArgs+p]
@@ -1090,7 +1153,7 @@ func (v *VM) run() {
 			numFree := int(v.curInsts[v.ip])
 			fn, ok := v.constants[constIndex].(*CompiledFunction)
 			if !ok {
-				v.err = fmt.Errorf("not function: %s", fn.TypeName())
+				v.err = fmt.Errorf("not function: %s", v.constants[constIndex].TypeName())
 				return
 			}
 			free := make([]*ObjectPtr, numFree)

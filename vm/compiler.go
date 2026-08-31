@@ -19,7 +19,13 @@ type compilationScope struct {
 	SymbolInit   map[string]bool
 	SourceMap    map[int]parser.Pos
 	hasDefer     bool // true if this scope emitted at least one OpDefer
-	labels       map[string]int
+	// fnName is the name the enclosing function literal was assigned to
+	// ("" for anonymous literals). selfCall is set when the body calls a
+	// function by that name — used to narrow the defer/TCO warning to
+	// plausible self-recursion.
+	fnName     string
+	selfCall   bool
+	labels     map[string]int
 	pendingGotos map[string][]pendingGoto
 }
 
@@ -96,6 +102,7 @@ type Compiler struct {
 	indent          int
 	warnings        []*CompilerWarning
 	embeds          []EmbedFile // files baked in via //embed directives
+	pendingFnName   string      // name of the FuncLit about to be compiled ("" if anonymous)
 }
 
 // Warnings returns all non-fatal diagnostics emitted during compilation.
@@ -499,6 +506,8 @@ func (c *Compiler) Compile(node parser.Node) error {
 		c.emit(node, parser.OpSliceIndex)
 	case *parser.FuncLit:
 		c.enterScope()
+		c.scopes[c.scopeIndex].fnName = c.pendingFnName
+		c.pendingFnName = ""
 
 		for _, p := range node.Type.Params.List {
 			s := c.symbolTable.Define(p.Name)
@@ -523,10 +532,11 @@ func (c *Compiler) Compile(node parser.Node) error {
 		// defers (vm/vm.go: `len(v.curFrame.defers) == 0`), so a function
 		// that both uses defer and contains a tail-call pattern will silently
 		// consume stack frames on every recursive call, eventually causing a
-		// stack-overflow.  We cannot determine at compile time whether the
-		// call is self-recursive, so we conservatively warn whenever defer
-		// is combined with any tail-call-shaped instruction sequence.
+		// stack-overflow.  We only warn when the body also contains a direct
+		// self-recursive call by name (`selfCall`), so an unrelated
+		// tail-position call does not trigger the warning.
 		if c.scopes[c.scopeIndex].hasDefer &&
+			c.scopes[c.scopeIndex].selfCall &&
 			scopeHasTailCallPattern(c.scopes[c.scopeIndex].Instructions) {
 			c.addWarning(node,
 				"function uses 'defer' which disables tail-call optimisation; "+
@@ -620,6 +630,15 @@ func (c *Compiler) Compile(node parser.Node) error {
 	case *parser.CallExpr:
 		if err := c.Compile(node.Func); err != nil {
 			return err
+		}
+		// Remember direct self-recursive calls (`f` calling `f` by name)
+		// so the defer/TCO warning below only fires for plausible
+		// self-recursion instead of any tail-position call.
+		if id, ok := node.Func.(*parser.Ident); ok {
+			sc := &c.scopes[c.scopeIndex]
+			if sc.fnName != "" && id.Name == sc.fnName {
+				sc.selfCall = true
+			}
 		}
 		for _, arg := range node.Args {
 			if err := c.Compile(arg); err != nil {
@@ -911,6 +930,16 @@ func (c *Compiler) compileAssign(
 	if op != token.Assign && op != token.Define {
 		if err := c.Compile(lhs[0]); err != nil {
 			return err
+		}
+	}
+
+	// Remember the function name for `name := func() {...}` assignments so
+	// the FuncLit compiler can record plausible self-recursive calls.
+	if op == token.Define && len(rhs) == 1 && len(lhs) == 1 {
+		if id, ok := lhs[0].(*parser.Ident); ok {
+			if _, ok := rhs[0].(*parser.FuncLit); ok {
+				c.pendingFnName = id.Name
+			}
 		}
 	}
 
@@ -1544,7 +1573,11 @@ func (c *Compiler) compileSwitchStmt(node *parser.SwitchStmt) error {
 		if i == defaultIdx {
 			continue
 		}
-		cases = append(cases, &caseInfo{clause: st.(*parser.CaseClause)})
+		cc := st.(*parser.CaseClause)
+		if len(cc.List) == 0 {
+			return c.errorf(cc, "case clause must have at least one expression")
+		}
+		cases = append(cases, &caseInfo{clause: cc})
 	}
 
 	// caseEndJumps collects unconditional jumps to the switch end emitted

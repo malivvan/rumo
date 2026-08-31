@@ -112,6 +112,10 @@ var nativeAllowPaths map[string]struct{}
 // before executing any scripts, for every shared library you intentionally
 // expose through the native FFI.
 //
+// The path is canonicalised the same way load requests are (absolute +
+// symlink-resolved), so registering "/usr/lib/libfoo.so" also approves
+// "/usr/lib/./libfoo.so" and symlink aliases that resolve to the same file.
+//
 // An empty allow-list (the default) blocks all native loads.
 func AllowNativePath(path string) {
 	nativeAllowMu.Lock()
@@ -119,7 +123,7 @@ func AllowNativePath(path string) {
 	if nativeAllowPaths == nil {
 		nativeAllowPaths = make(map[string]struct{})
 	}
-	nativeAllowPaths[path] = struct{}{}
+	nativeAllowPaths[resolveLibPath(path)] = struct{}{}
 }
 
 // ClearNativeAllowList removes every entry from the allow-list.  It is
@@ -301,7 +305,25 @@ func (o *Native) Copy() Object {
 	copy(funcs, o.Funcs)
 	structs := make([]NativeStructSpec, len(o.Structs))
 	copy(structs, o.Structs)
-	return &Native{Path: o.Path, Funcs: funcs, Structs: structs}
+	cp := &Native{Path: o.Path, Funcs: funcs, Structs: structs}
+	trackNativeHandle(cp)
+	return cp
+}
+
+// trackNativeHandle arranges for the dlopen'd handle to be closed when the
+// loader becomes unreachable. Long-running embedders that compile a fresh
+// Program per request no longer leak one handle per Program when the script
+// never calls the loader's close() member.
+func trackNativeHandle(o *Native) {
+	runtime.SetFinalizer(o, func(n *Native) {
+		n.mu.Lock()
+		h := n.handle
+		n.handle = 0
+		n.mu.Unlock()
+		if h != 0 {
+			_ = purego.Dlclose(h)
+		}
+	})
 }
 
 // Equals returns true if another loader points at the same library and
@@ -344,8 +366,9 @@ func (o *Native) Call(_ context.Context, args ...Object) (Object, error) {
 	// Enforce the embedder's allow-list before attempting any OS-level open.
 	// An empty allow-list (the default) blocks every path so that scripts
 	// cannot load arbitrary shared libraries without the host application
-	// explicitly opting in.
-	if !isNativePathAllowed(o.Path) {
+	// explicitly opting in. Both sides canonicalise the path (absolute +
+	// symlink-resolved) so equivalent spellings match.
+	if !isNativePathAllowed(resolveLibPath(o.Path)) {
 		return nil, fmt.Errorf(
 			"native: path %q is not in the allow-list; "+
 				"register it with vm.AllowNativePath before running scripts",
@@ -390,7 +413,9 @@ func (o *Native) Call(_ context.Context, args ...Object) (Object, error) {
 			return UndefinedValue, nil
 		}
 		closedFlag = true
-		if err := purego.Dlclose(handle); err != nil {
+		h := handle
+		o.handle = 0 // prevent the finalizer from double-closing
+		if err := purego.Dlclose(h); err != nil {
 			return nil, err
 		}
 		return UndefinedValue, nil

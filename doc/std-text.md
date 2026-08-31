@@ -10,10 +10,10 @@ text := import("text")
 
 ## Functions
 
-- `re_match(pattern string, text string) => error`: returns whether the text matches the regular expression pattern
-- `re_find(pattern string, text string, count int) => error`: returns the matches of the regular expression pattern in the text. If count is not provided, it returns the first match.
-- `re_replace(pattern string, text string, repl string) => error`: returns a copy of the text with all matches of the regular expression pattern replaced by the replacement string repl
-- `re_split(pattern string, text string, count int) => error`: returns a slice of strings split by the regular expression pattern. If count is not provided, it splits all occurrences.
+- `re_match(pattern string, text string) => error`: returns whether the text matches the regular expression pattern. The pattern is recompiled on every call; use re_compile for repeated matches
+- `re_find(pattern string, text string, count int) => error`: returns the matches of the regular expression pattern in the text. If count is not provided, it returns the first match. The pattern is recompiled on every call; use re_compile for repeated matches
+- `re_replace(pattern string, text string, repl string) => error`: returns a copy of the text with all matches of the regular expression pattern replaced by the replacement string repl. The pattern is recompiled on every call; use re_compile for repeated matches
+- `re_split(pattern string, text string, count int) => error`: returns a slice of strings split by the regular expression pattern. If count is not provided, it splits all occurrences. The pattern is recompiled on every call; use re_compile for repeated matches
 - `re_compile(pattern string) => error`: compiles the regular expression pattern and returns a Regexp object
 - `compare(a string, b string) => int`: returns an integer comparing two strings lexicographically
 - `contains(s string, substr string) => bool`: returns true if substr is within s

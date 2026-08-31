@@ -14,12 +14,19 @@ func CallFunc(ctx context.Context, fn Object, args ...Object) (Object, error) {
 		return nil, fmt.Errorf("cannot call nil function")
 	}
 	if cfn, ok := fn.(*CompiledFunction); ok {
-		if vmVal := ctx.Value(ContextKey("vm")); vmVal != nil {
-			parentVM := vmVal.(*VM)
-			clone := parentVM.ShallowClone()
-			return clone.RunCompiled(cfn, args...)
+		parentVM, ok := VMFromContext(ctx)
+		if !ok {
+			return nil, fmt.Errorf("no VM in context to run compiled function")
 		}
-		return nil, fmt.Errorf("no VM in context to run compiled function")
+		clone := parentVM.ShallowClone()
+		// Register the clone with the parent so that parentVM.Abort()
+		// reaches this callback too (mirrors the routineVM pattern in
+		// routinevm.go).
+		if _, err := parentVM.addChild(clone, nil); err != nil {
+			return nil, err
+		}
+		defer parentVM.delChild(clone, 0)
+		return clone.RunCompiled(cfn, args...)
 	}
 	return fn.Call(ctx, args...)
 }

@@ -22,9 +22,9 @@ import (
 // only meaningful for receive cases; for sends and the default clause they
 // are UndefinedValue / FalseValue.
 //
-// Only channels backed by LocalChanCore can participate in a select.  A
-// remote-backed channel produces a runtime error — implementing select for
-// the cross-worker transport is left as future work.
+// Only channels backed by LocalChanCore can participate in a select. All
+// channels created by the `chan` builtin are local Go channels, so this
+// always holds for script-created channels.
 func builtinSelect(ctx context.Context, args ...Object) (Object, error) {
 	if len(args) != 2 {
 		return nil, ErrWrongNumArguments
@@ -39,7 +39,7 @@ func builtinSelect(ctx context.Context, args ...Object) (Object, error) {
 
 	n := len(casesArr.Value)
 	selCases := make([]reflect.SelectCase, 0, n+2)
-	for i, c := range casesArr.Value {
+	for _, c := range casesArr.Value {
 		entry, ok := c.(*Array)
 		if !ok || len(entry.Value) != 3 {
 			return nil, ErrInvalidArgumentType{
@@ -61,12 +61,11 @@ func builtinSelect(ctx context.Context, args ...Object) (Object, error) {
 		local, ok := chObj.core.(*LocalChanCore)
 		if !ok {
 			return nil, ErrInvalidArgumentType{
-				Name: "case chan",
-				Expected: "local chan (remote channels are not supported in select)",
+				Name:     "case chan",
+				Expected: "local chan",
 				Found:    chObj.TypeName(),
 			}
 		}
-		_ = i
 		sc := reflect.SelectCase{Chan: reflect.ValueOf(local.oc.ch)}
 		switch opObj.Value {
 		case 0: // recv

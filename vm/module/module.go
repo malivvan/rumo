@@ -4,9 +4,8 @@ import (
 	"github.com/malivvan/rumo/vm"
 )
 
+// wrapError delegates to the exported WrapError so there is exactly one
+// error-wrapping implementation. See WrapError for the nil-error convention.
 func wrapError(err error) vm.Object {
-	if err == nil {
-		return vm.TrueValue
-	}
-	return &vm.Error{Value: &vm.String{Value: err.Error()}}
+	return WrapError(err)
 }

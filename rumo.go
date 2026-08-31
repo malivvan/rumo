@@ -189,14 +189,32 @@ type readLine struct {
 	buffer bytes.Buffer
 }
 
+// maxREPLLineLen caps how large a single REPL input line may grow. A longer
+// line is rejected with an error instead of buffering gigabytes of input.
+const maxREPLLineLen = 1 << 20
+
 func (rl *readLine) ReadLine() (line string, err error) {
 	_, err = rl.stdout.Write([]byte(rl.prompt))
-	r := bufio.NewReader(rl.stdin)
-	b, err := r.ReadBytes('\n')
 	if err != nil {
 		return "", err
 	}
-	line = string(b[:len(b)-1])
+	r := bufio.NewReader(rl.stdin)
+	rl.buffer.Reset()
+	for {
+		part, readErr := r.ReadSlice('\n')
+		rl.buffer.Write(part)
+		if readErr == nil {
+			break
+		}
+		if readErr == bufio.ErrBufferFull {
+			if rl.buffer.Len() > maxREPLLineLen {
+				return "", fmt.Errorf("input line exceeds %d bytes", maxREPLLineLen)
+			}
+			continue
+		}
+		return "", readErr
+	}
+	line = strings.TrimRight(rl.buffer.String(), "\r\n")
 	return line, nil
 }
 
@@ -319,7 +337,8 @@ func RunREPL(ctx context.Context, stdin io.Reader, stdout io.Writer, stderr io.W
 		machine.Out = stdout
 		machine.Args = []string{} // REPL scripts have no args by default
 		if err := machine.Run(); err != nil {
-			_, _ = fmt.Fprintln(stdout, err.Error())
+			// Runtime errors go to stderr; stdout carries script output.
+			_, _ = fmt.Fprintln(stderr, err.Error())
 			continue
 		}
 		constants = bytecode.Constants
@@ -331,21 +350,31 @@ func addPrints(file *parser.File) *parser.File {
 	for _, s := range file.Stmts {
 		switch s := s.(type) {
 		case *parser.ExprStmt:
+			pos := s.Expr.Pos()
 			stmts = append(stmts, &parser.ExprStmt{
 				Expr: &parser.CallExpr{
-					Func: &parser.Ident{Name: "__repl_println__"},
-					Args: []parser.Expr{s.Expr},
+					Func: &parser.Ident{
+						Name:    "__repl_println__",
+						NamePos: pos,
+					},
+					LParen: pos,
+					Args:   []parser.Expr{s.Expr},
+					RParen: s.Expr.End(),
 				},
 			})
 		case *parser.AssignStmt:
 			stmts = append(stmts, s)
 
+			pos := s.Pos()
 			stmts = append(stmts, &parser.ExprStmt{
 				Expr: &parser.CallExpr{
 					Func: &parser.Ident{
-						Name: "__repl_println__",
+						Name:    "__repl_println__",
+						NamePos: pos,
 					},
-					Args: s.LHS,
+					LParen: pos,
+					Args:   s.LHS,
+					RParen: s.End(),
 				},
 			})
 		default:

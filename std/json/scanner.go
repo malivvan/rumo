@@ -6,7 +6,15 @@
 
 package json
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
+
+// maxNestingDepth caps the parser nesting level, mirroring encoding/json's
+// limit of 10 000. Deeper inputs produce a clean SyntaxError instead of
+// exhausting the stack.
+const maxNestingDepth = 10000
 
 func checkValid(data []byte, scan *scanner) error {
 	scan.reset()
@@ -126,7 +134,17 @@ func (s *scanner) eof() int {
 }
 
 // pushParseState pushes a new parse state p onto the parse stack.
+// Nesting beyond maxNestingDepth is reported as a syntax error instead of
+// growing the stack without bound.
 func (s *scanner) pushParseState(p int) {
+	if len(s.parseState) == maxNestingDepth {
+		s.err = &SyntaxError{
+			msg:    fmt.Sprintf("exceeded max depth %d", maxNestingDepth),
+			Offset: s.bytes,
+		}
+		s.step = stateError
+		return
+	}
 	s.parseState = append(s.parseState, p)
 }
 

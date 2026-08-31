@@ -380,6 +380,16 @@ func (b *Bytecode) RemoveDuplicates() {
 	bytesConsts := make(map[[32]byte]int) // keyed by SHA-256 of content
 	mapConsts := make(map[[32]byte]int)   // keyed by canonical content hash
 
+	// Hashing every Bytes constant is wasteful when no duplication is
+	// possible. Count them once up front and only hash when there is more
+	// than one.
+	bytesTotal := 0
+	for _, c := range b.Constants {
+		if _, ok := c.(*Bytes); ok {
+			bytesTotal++
+		}
+	}
+
 	for curIdx, c := range b.Constants {
 		switch c := c.(type) {
 		case *CompiledFunction:
@@ -466,6 +476,14 @@ func (b *Bytecode) RemoveDuplicates() {
 			// directives that read the same file produce identical Bytes
 			// constants; sharing a single constant saves memory without any
 			// observable difference (Bytes has no mutable IndexSet path).
+			// Skip hashing entirely when the pool contains at most one
+			// Bytes constant.
+			if bytesTotal <= 1 {
+				newIdx := len(deduped)
+				indexMap[curIdx] = newIdx
+				deduped = append(deduped, c)
+				continue
+			}
 			h := sha256.Sum256(c.Value)
 			if newIdx, ok := bytesConsts[h]; ok {
 				indexMap[curIdx] = newIdx
@@ -617,14 +635,4 @@ func updateConstIndexes(insts []byte, indexMap map[int]int) {
 
 func inferModuleName(mod *Map) string {
 	return mod.moduleName
-}
-
-// FixDecodedObject re-binds module references and canonicalises decoded
-// builtins / bools / undefined values inside o. Use it on objects produced
-// by UnmarshalLive (e.g. globals shipped from another worker) before letting
-// a VM call them — without it, *BuiltinFunction values have a nil Value
-// pointer and *Map module proxies are still detached from their
-// host implementations.
-func FixDecodedObject(o Object, modules *ModuleMap) (Object, error) {
-	return fixDecodedObject(o, modules)
 }
